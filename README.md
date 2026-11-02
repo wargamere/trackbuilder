@@ -17,6 +17,10 @@ npm run build:cg     # -> dist/crazygames, prints the build size
 
 Each build is `index.html` at the root plus one JS file. All paths are relative (`base: './'`). `scripts/size.mjs` fails the build if any asset path is absolute or the total is over 20 MB.
 
+## Web deploy (GitHub Pages)
+
+`.github/workflows/pages.yml` runs the tests, builds the web version and publishes `dist/web` to Pages. In the repository's **Settings → Pages → Build and deployment**, set **Source** to **GitHub Actions**. With "Deploy from a branch", Pages serves the raw source `index.html`, which can't run without Vite, so you get a blank page.
+
 ## Layout
 
 ```
