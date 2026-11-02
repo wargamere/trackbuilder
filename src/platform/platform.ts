@@ -17,11 +17,12 @@ export const CAPS = {
 } as const;
 
 /**
- * Whether to show the on-screen touch controls. Web: a coarse pointer with no
- * fine one (phones, tablets). The CrazyGames build will use the SDK's device
- * type here instead (Phase 6).
+ * Whether to show the on-screen touch controls. On CrazyGames the SDK's
+ * system info decides (mobile / tablet = touch). Otherwise: a coarse pointer
+ * with no fine one (phones, tablets).
  */
-export function prefersTouchControls(): boolean {
+export function prefersTouchControls(device: 'desktop' | 'tablet' | 'mobile' | null = null): boolean {
+  if (device) return device !== 'desktop';
   if (typeof matchMedia !== 'function') return false;
   const coarse = matchMedia('(pointer: coarse)').matches;
   const fine = matchMedia('(any-pointer: fine)').matches;

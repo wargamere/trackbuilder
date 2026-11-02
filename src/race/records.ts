@@ -1,3 +1,4 @@
+import type { PaintId } from '../config/paint.ts';
 import { loadJSON, saveJSON, storage } from '../platform/storage.ts';
 import { decodeGhost, encodeGhost, type GhostLap } from './ghost.ts';
 import type { BestLap } from './session.ts';
@@ -27,6 +28,8 @@ export interface RunResult {
   /** Where the car ended up, for the results camera. */
   carX: number;
   carZ: number;
+  /** Paints this run unlocked. */
+  unlockedPaints: PaintId[];
 }
 
 /**

@@ -1,7 +1,9 @@
+import { type PerspectiveCamera, Vector3 } from 'three';
 import { audio } from '../audio/audio.ts';
 import { CameraRig } from '../car/camera.ts';
 import { InputManager, type InputAction } from '../car/input.ts';
-import { CarModel, DEFAULT_PAINT } from '../car/model.ts';
+import { CarModel } from '../car/model.ts';
+import { currentPaintHex, recordFinishedRun } from '../car/paint.ts';
 import { CarPhysics, CarState, lerpState, NO_INPUT, type DriveInput } from '../car/physics.ts';
 import { HANDLING } from '../config/handling.ts';
 import { RACE } from '../config/race.ts';
@@ -9,9 +11,11 @@ import { STR, fmt } from '../config/strings.ts';
 import { FixedStep } from '../core/fixedStep.ts';
 import type { GameContext, Screen } from '../core/screen.ts';
 import { CAPS, prefersTouchControls } from '../platform/platform.ts';
+import { platform } from '../platform/services.ts';
 import { writeHashCode } from '../platform/web.ts';
 import { encodeTrack } from '../track/code.ts';
 import type { Track } from '../track/track.ts';
+import { h } from '../ui/dom.ts';
 import { Hud } from '../ui/hud.ts';
 import { PauseMenu } from '../ui/pauseMenu.ts';
 import { TouchControls } from '../ui/touchControls.ts';
@@ -45,6 +49,8 @@ export class RaceScreen implements Screen {
   /** Ghost being replayed this lap (the best lap when the lap started). */
   private ghost: GhostLap | null = null;
   private readonly view = new CarState();
+  private readonly ghostLabel: HTMLElement;
+  private readonly labelPos = new Vector3();
   private readonly tickInput: DriveInput = { ...NO_INPUT };
   private readonly events: RaceEvent[] = [];
   private paused = false;
@@ -69,8 +75,15 @@ export class RaceScreen implements Screen {
     });
     this.touch = new TouchControls(this.input.touch);
     this.input.onAction = (a) => this.onAction(a);
-    this.model = game.view3d ? new CarModel() : null;
-    this.ghostModel = game.view3d ? new CarModel(DEFAULT_PAINT, RACE.ghostOpacity) : null;
+    this.model = game.view3d ? new CarModel(currentPaintHex()) : null;
+    this.ghostModel = game.view3d ? new CarModel(currentPaintHex(), RACE.ghostOpacity) : null;
+    this.ghostLabel = h('div', { class: 'ghost-label', text: STR.race.ghostYou });
+    this.ghostLabel.hidden = true;
+    this.hud.root.append(this.ghostLabel);
+    // Logged-in CrazyGames players see their username on their ghost (no other login exists).
+    void platform.username().then((name) => {
+      if (name) this.ghostLabel.textContent = fmt(STR.race.ghostUser, { name });
+    });
     if (this.model && this.ghostModel) {
       this.ghostModel.root.visible = false;
       game.view3d?.scene.add(this.model.root, this.ghostModel.root);
@@ -93,7 +106,7 @@ export class RaceScreen implements Screen {
       this.car = new CarPhysics(t);
       this.carTrack = t;
     }
-    const touch = prefersTouchControls();
+    const touch = prefersTouchControls(platform.deviceType());
     this.hud.setTouchLayout(touch);
     if (touch) {
       this.game.ui.insertBefore(this.touch.root, this.pauseMenu.root); // pause menu stays on top
@@ -118,6 +131,7 @@ export class RaceScreen implements Screen {
     this.touch.root.remove();
     this.hud.clearFlash();
     if (this.ghostModel) this.ghostModel.root.visible = false;
+    this.ghostLabel.hidden = true;
     audio.setEngine(false);
   }
 
@@ -131,6 +145,7 @@ export class RaceScreen implements Screen {
     const car = this.car;
     if (!car) return;
     const def = this.game.track.def;
+    this.applyPaint();
     this.game.library.save(def); // built-in samples are skipped
     if (CAPS.links) writeHashCode(encodeTrack(def.name, def.control));
     car.placeAt(-8);
@@ -149,9 +164,16 @@ export class RaceScreen implements Screen {
     audio.setEngine(true);
   }
 
+  /** Puts the selected paint on the car and its ghost. */
+  applyPaint(): void {
+    const hex = currentPaintHex();
+    this.model?.setPaint(hex);
+    this.ghostModel?.setPaint(hex);
+  }
+
   private toggleSound(): void {
     audio.toggleMute();
-    this.pauseMenu.setSound(!audio.isMuted);
+    this.pauseMenu.setSound(!audio.silent);
   }
 
   private controlsText(): string {
@@ -180,7 +202,7 @@ export class RaceScreen implements Screen {
     this.input.clear();
     this.touch.release();
     audio.setEngine(!p);
-    this.pauseMenu.setSound(!audio.isMuted);
+    this.pauseMenu.setSound(!audio.silent);
     if (p) this.pauseMenu.show(this.controlsText());
     else {
       this.pauseMenu.hide();
@@ -274,6 +296,9 @@ export class RaceScreen implements Screen {
       rec.bestScore = score;
       this.game.records.save(t.def.id);
     }
+    // Celebrate a personal best, at most once per run.
+    if (s.newBest || newBestScore) platform.happytime();
+    const unlockedPaints = recordFinishedRun();
     this.game.lastResult = {
       trackId: t.def.id,
       trackName: t.def.name,
@@ -289,8 +314,24 @@ export class RaceScreen implements Screen {
       newBestScore,
       carX: this.car!.state.x,
       carZ: this.car!.state.z,
+      unlockedPaints,
     };
     this.game.go('results');
+  }
+
+  /** Keeps the ghost's name tag above it on screen (hidden when off-screen or far away). */
+  private placeGhostLabel(pose: { x: number; z: number } | null, cam: PerspectiveCamera): void {
+    const near = pose && Math.hypot(pose.x - this.view.x, pose.z - this.view.z) < 120;
+    if (!pose || !near) {
+      this.ghostLabel.hidden = true;
+      return;
+    }
+    const p = this.labelPos.set(pose.x, 2.3, pose.z).project(cam);
+    const visible = p.z < 1 && Math.abs(p.x) < 1.1 && Math.abs(p.y) < 1.1;
+    this.ghostLabel.hidden = !visible;
+    if (!visible) return;
+    const s = this.game.surface;
+    this.ghostLabel.style.transform = `translate(${((p.x + 1) / 2) * s.w}px, ${((1 - p.y) / 2) * s.h}px) translate(-50%, -100%)`;
   }
 
   private updateHud(alpha: number): void {
@@ -311,6 +352,8 @@ export class RaceScreen implements Screen {
     if (!v || !car || !session || !this.model || !this.ghostModel) return;
 
     if (this.game.interrupted && !this.paused) this.setPaused(true);
+    // Gameplay is "on" only while actually driving: not in the countdown, paused or finished.
+    platform.setGameplay(session.phase === 'racing' && !this.paused && !this.game.interrupted);
     this.input.pollGamepad();
     let alpha = 1;
     if (!this.paused) alpha = this.fixed.advance(dt, () => this.tick());
@@ -328,6 +371,7 @@ export class RaceScreen implements Screen {
     if (pose) this.ghostModel.setPose(pose.x, pose.z, pose.heading);
 
     this.rig.update(v.camera, this.view, dt);
+    this.placeGhostLabel(pose, v.camera);
     v.render();
     this.hud.setSpeed(this.view.speed);
     this.updateHud(alpha);

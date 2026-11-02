@@ -45,13 +45,17 @@ export class AudioEngine {
   private filter: BiquadFilterNode | null = null;
   private squeal: Voice | null = null;
   private rumble: Voice | null = null;
-  private muted = settings().muted;
-  /** Muted by something outside the player's choice (an ad in Phase 6, a hidden tab). */
+  /** The player's sound toggle (read from settings in installUnlock, after platform init). */
+  private muted = false;
+  /** Muted while a video ad plays. */
   private held = false;
+  /** The platform's mute setting (CrazyGames settings.muteAudio); overrides the player's toggle. */
+  private platformMuted = false;
   private engineOn = false;
 
-  /** Creates/resumes the context on user gestures. Call once at start-up. */
+  /** Creates/resumes the context on user gestures. Call once at start-up, after platform init. */
   installUnlock(): void {
+    this.muted = settings().muted;
     const unlock = () => this.unlock();
     for (const type of ['pointerdown', 'touchend', 'click', 'keydown']) {
       window.addEventListener(type, unlock, { capture: true, passive: true });
@@ -124,7 +128,7 @@ export class AudioEngine {
   }
 
   private targetMaster(): number {
-    return this.muted || this.held ? 0 : 0.55;
+    return this.muted || this.held || this.platformMuted ? 0 : 0.55;
   }
 
   private applyMaster(): void {
@@ -145,10 +149,21 @@ export class AudioEngine {
     this.setMuted(!this.muted);
   }
 
-  /** Silences everything regardless of the player's setting (ads, Phase 6). */
+  /** Silences everything while a video ad plays. */
   setHeld(h: boolean): void {
     this.held = h;
     this.applyMaster();
+  }
+
+  /** The platform's own mute setting; while it is on, the in-game toggle can't unmute. */
+  setPlatformMuted(m: boolean): void {
+    this.platformMuted = m;
+    this.applyMaster();
+  }
+
+  /** True when no sound plays for any reason (for the pause menu label). */
+  get silent(): boolean {
+    return this.muted || this.platformMuted;
   }
 
   /** Engine, squeal and rumble on (racing) or faded out (menus, pause). */

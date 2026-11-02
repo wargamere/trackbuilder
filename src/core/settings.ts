@@ -1,3 +1,4 @@
+import type { PaintId } from '../config/paint.ts';
 import { loadJSON, saveJSON } from '../platform/storage.ts';
 
 /** Player preferences, saved between visits. */
@@ -7,9 +8,24 @@ export interface Settings {
   editorMode: 'draw' | 'dots';
   smoothing: 'sharp' | 'normal' | 'smooth';
   snap: boolean;
+  /** Selected car paint. */
+  paint: PaintId;
+  /** Paints unlocked by watching a rewarded ad. */
+  adPaints: PaintId[];
+  /** Finished runs (paints unlock as this grows). */
+  runs: number;
 }
 
-const DEFAULTS: Settings = { muted: false, camera: 'chase', editorMode: 'draw', smoothing: 'normal', snap: false };
+const DEFAULTS: Settings = {
+  muted: false,
+  camera: 'chase',
+  editorMode: 'draw',
+  smoothing: 'normal',
+  snap: false,
+  paint: 'yellow',
+  adPaints: [],
+  runs: 0,
+};
 const KEY = 'settings';
 
 let current: Settings | null = null;

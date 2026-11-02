@@ -38,7 +38,7 @@ export class Hud {
     const top = h(
       'div',
       { class: 'hud-top' },
-      button(STR.buttons.drawTrack, actions.drawTrack, { icon: '✎', class: 'draw compact' }),
+      button(STR.buttons.drawTrack, actions.drawTrack, { icon: '✎', class: 'draw' }),
       this.info,
       h('div', { class: 'spacer' }),
       pause,

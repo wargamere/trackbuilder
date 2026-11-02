@@ -34,6 +34,8 @@ export interface GameContext {
   readonly library: TrackLibrary;
   /** The run the results screen shows. */
   lastResult: RunResult | null;
-  /** True while something outside the game needs it paused (portrait prompt; ads in Phase 6). */
+  /** True while something outside the game needs it paused (portrait prompt, video ads). */
   interrupted: boolean;
+  /** Re-applies the selected paint to the car. */
+  refreshPaint(): void;
 }

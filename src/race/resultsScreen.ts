@@ -1,26 +1,41 @@
+import { nextLockedPaint, paintUnlocked, selectPaint, unlockPaintByAd } from '../car/paint.ts';
+import { PAINTS } from '../config/paint.ts';
 import { STR, fmt } from '../config/strings.ts';
 import type { GameContext, Screen } from '../core/screen.ts';
+import { settings } from '../core/settings.ts';
+import { platform } from '../platform/services.ts';
 import { button, h } from '../ui/dom.ts';
 import { ShareDialog } from '../ui/shareDialog.ts';
 import { formatTime } from './session.ts';
 
 /**
  * RESULTS state: the run's times and score over a slow orbit of the finished
- * car. "Race again" restarts on the same track (your best lap becomes the
- * ghost); "Draw new track" opens the editor.
+ * car, plus the paint shop.
+ *  - "Race again" restarts on the same track (your best lap becomes the ghost).
+ *    In a Full Launch build this is where a midgame ad may play: a natural
+ *    break between races. The UI is blocked until the ad finishes or fails.
+ *  - Paints unlock by finishing runs; in a Full Launch build the next one can
+ *    also be unlocked now with a rewarded ad (never offered during a race).
  */
 export class ResultsScreen implements Screen {
   readonly layer = '3d';
   private readonly game: GameContext;
   private readonly root: HTMLElement;
   private readonly body: HTMLElement;
+  private readonly paint: HTMLElement;
+  private readonly blocker: HTMLElement;
   private angle = 0;
+  private busy = false;
+  private paintNote: { text: string; kind: 'ok' | 'warn' } | null = null;
   private abort: AbortController | null = null;
   private readonly share = new ShareDialog();
 
   constructor(game: GameContext) {
     this.game = game;
     this.body = h('div', { class: 'results-body' });
+    this.paint = h('div', { class: 'paint-shop' });
+    this.blocker = h('div', { class: 'ad-blocker' }, h('div', { class: 'spinner' }), h('span', { text: STR.ads.loading }));
+    this.blocker.hidden = true;
     this.root = h(
       'div',
       { class: 'screen overlay results' },
@@ -28,26 +43,37 @@ export class ResultsScreen implements Screen {
         'div',
         { class: 'panel' },
         h('h2', { text: STR.results.title }),
-        this.body,
         h(
           'div',
-          { class: 'menu row' },
-          button(STR.buttons.raceAgain, () => this.game.go('race'), { icon: '⟲', class: 'primary', key: 'Enter' }),
-          button(STR.buttons.newTrack, () => this.game.go('editor'), { icon: '✎', key: 'E' }),
-        ),
-        h(
-          'div',
-          { class: 'menu row secondary' },
-          button(STR.buttons.shareTrack, () => this.share.open(this.game.track.def, this.game.ui), { icon: '⧉' }),
-          button(STR.buttons.myTracks, () => this.game.go('library'), { icon: '☰' }),
+          { class: 'results-grid' },
+          this.body,
+          h(
+            'div',
+            { class: 'results-side' },
+            h(
+              'div',
+              { class: 'menu row' },
+              button(STR.buttons.raceAgain, () => void this.raceAgain(), { icon: '⟲', class: 'primary', key: 'Enter' }),
+              button(STR.buttons.newTrack, () => this.leave('editor'), { icon: '✎', key: 'E' }),
+            ),
+            this.paint,
+            h(
+              'div',
+              { class: 'menu row secondary' },
+              button(STR.buttons.shareTrack, () => this.share.open(this.game.track.def, this.game.ui), { icon: '⧉' }),
+              button(STR.buttons.myTracks, () => this.leave('library'), { icon: '☰' }),
+            ),
+          ),
         ),
       ),
+      this.blocker,
     );
   }
 
   enter(): void {
     const r = this.game.lastResult;
     this.body.replaceChildren();
+    this.paintNote = null;
     if (r) {
       const row = (label: string, value: string, badge?: string) =>
         h('div', { class: 'stat' }, h('span', { class: 'stat-label', text: label }), h('span', { class: 'stat-value', text: value }), badge ? h('span', { class: 'badge', text: badge }) : null);
@@ -72,24 +98,33 @@ export class ResultsScreen implements Screen {
         ),
         h('p', { class: 'score-hint', text: STR.results.scoreHint }),
       );
+      if (r.unlockedPaints.length) {
+        const name = STR.paint.names[r.unlockedPaints[r.unlockedPaints.length - 1]];
+        this.paintNote = { text: fmt(STR.paint.unlockedByRun, { name }), kind: 'ok' };
+      }
     }
+    this.renderPaint();
     this.game.ui.append(this.root);
     this.angle = 0;
+    this.busy = false;
+    this.blocker.hidden = true;
     this.abort = new AbortController();
     window.addEventListener(
       'keydown',
       (e) => {
-        if (e.ctrlKey || e.metaKey || e.altKey || e.repeat || this.share.isOpen) return;
-        if (e.code === 'Enter' || e.code === 'NumpadEnter' || e.code === 'Space') {
+        if (e.ctrlKey || e.metaKey || e.altKey || e.repeat || this.share.isOpen || this.busy) return;
+        if (e.code === 'Enter' || e.code === 'NumpadEnter') {
           e.preventDefault();
-          this.game.go('race');
+          void this.raceAgain();
         } else if (e.code === 'KeyE') {
           e.preventDefault();
-          this.game.go('editor');
+          this.leave('editor');
         }
       },
       { signal: this.abort.signal },
     );
+    // Check for an ad blocker in the background so the paint offer can say so.
+    if (platform.adsEnabled) void platform.hasAdblock().then(() => this.renderPaint());
   }
 
   exit(): void {
@@ -102,6 +137,91 @@ export class ResultsScreen implements Screen {
   resize(): void {
     const s = this.game.surface;
     this.game.view3d?.resize(s.w, s.h);
+  }
+
+  private leave(to: 'editor' | 'library'): void {
+    if (!this.busy) this.game.go(to);
+  }
+
+  /** Race again, after a midgame ad if one is available (the SDK paces them). */
+  private async raceAgain(): Promise<void> {
+    if (this.busy) return;
+    if (platform.adsEnabled) {
+      this.busy = true;
+      this.blocker.hidden = false;
+      await platform.requestAd('midgame');
+      this.blocker.hidden = true;
+      this.busy = false;
+    }
+    this.game.go('race');
+  }
+
+  private async watchAdForPaint(): Promise<void> {
+    const next = nextLockedPaint();
+    if (!next || this.busy) return;
+    this.busy = true;
+    this.blocker.hidden = false;
+    const result = await platform.requestAd('rewarded');
+    this.blocker.hidden = true;
+    this.busy = false;
+    const name = STR.paint.names[next.id];
+    if (result === 'finished') {
+      unlockPaintByAd(next.id);
+      this.game.refreshPaint();
+      this.paintNote = { text: fmt(STR.paint.rewarded, { name }), kind: 'ok' };
+    } else {
+      // Never reward on adError.
+      this.paintNote = { text: STR.paint.noAd, kind: 'warn' };
+    }
+    this.renderPaint();
+  }
+
+  /** Swatches, how to unlock the next paint, and (Full Launch) the rewarded-ad offer. */
+  private renderPaint(): void {
+    const selected = settings().paint;
+    const swatches = h('div', { class: 'swatches' });
+    for (const p of PAINTS) {
+      const unlocked = paintUnlocked(p.id);
+      const name = STR.paint.names[p.id];
+      const b = h('button', { class: `swatch${unlocked ? '' : ' locked'}${p.id === selected ? ' on' : ''}` });
+      b.type = 'button';
+      b.tabIndex = -1;
+      b.style.background = `#${p.hex.toString(16).padStart(6, '0')}`;
+      b.title = unlocked ? name : fmt(STR.paint.locked, { name, runs: p.runs });
+      b.setAttribute('aria-label', b.title);
+      if (!unlocked) b.textContent = '🔒';
+      b.addEventListener('click', () => {
+        if (!unlocked || this.busy) return;
+        selectPaint(p.id);
+        this.game.refreshPaint();
+        this.renderPaint();
+      });
+      swatches.append(b);
+    }
+    const next = nextLockedPaint();
+    const info = next
+      ? fmt(STR.paint.next, { name: STR.paint.names[next.id], n: Math.max(1, next.runs - settings().runs) })
+      : STR.paint.allUnlocked;
+    const parts: (HTMLElement | null)[] = [
+      h('div', { class: 'label', text: STR.paint.title }),
+      swatches,
+      h('div', { class: 'paint-info', text: info }),
+    ];
+    const note = h('div', { class: `paint-note ${this.paintNote?.kind ?? ''}`, text: this.paintNote?.text ?? '' });
+    if (next && platform.adsEnabled) {
+      const offer = button(fmt(STR.paint.watchAd, { name: STR.paint.names[next.id] }), () => void this.watchAdForPaint(), { icon: '🎬' });
+      parts.push(offer);
+      void platform.hasAdblock().then((blocked) => {
+        if (!blocked) return;
+        offer.disabled = true;
+        offer.title = STR.paint.adblock;
+        if (!this.paintNote) this.paintNote = { text: STR.paint.adblock, kind: 'warn' };
+        note.textContent = this.paintNote.text;
+        note.className = `paint-note ${this.paintNote.kind}`;
+      });
+    }
+    parts.push(note);
+    this.paint.replaceChildren(...parts.filter((p): p is HTMLElement => !!p));
   }
 
   frame(dt: number): void {

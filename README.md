@@ -12,7 +12,8 @@ npm run dev          # web build, dev server
 npm run dev:cg       # same, with PLATFORM = 'crazygames'
 npm test             # geometry/validation unit tests (Node test runner)
 npm run build:web    # -> dist/web, prints the build size
-npm run build:cg     # -> dist/crazygames, prints the build size
+npm run build:cg     # -> dist/crazygames, prints the build size (ads off: Basic Launch)
+npm run build:cg:ads # same with video ads enabled (Full Launch)
 ```
 
 Each build is `index.html` at the root plus one JS file. All paths are relative (`base: './'`). `scripts/size.mjs` fails the build if any asset path is absolute or the total is over 20 MB.
@@ -44,8 +45,9 @@ src/
   ui/         dom helpers, editor overlay, HUD, pause menu, touch controls,
               libraryScreen.ts (My tracks), shareDialog.ts, style.css
   audio/      audio.ts (synthesised engine, tyre squeal, grass rumble, beeps)
-  platform/   platform.ts (PLATFORM flag + CAPS), storage.ts (key-value store),
-              crazygames.ts (SDK wrapper), web.ts (share links, rotate prompt)
+  platform/   platform.ts (PLATFORM flag + CAPS), services.ts (what the game calls:
+              loading/gameplay events, ads, user, device), crazygames.ts (SDK wrapper),
+              storage.ts (key-value store), web.ts (share links, rotate prompt)
   main.ts     state machine: RACE (boot) ⇄ EDITOR ⇄ RESULTS ⇄ LIBRARY
 ```
 
@@ -120,6 +122,32 @@ Your best lap is recorded tick by tick and replayed as a translucent ghost. The 
   - M toggles sound (also in the pause menu).
 - **Web build only:** on a phone held upright, a "turn your phone sideways" screen covers the game and pauses the race.
 
+### CrazyGames SDK (v3)
+
+The code follows https://docs.crazygames.com/sdk/intro/. It lives in `src/platform/crazygames.ts` (SDK wrapper) and `src/platform/services.ts` (what the game calls). Every call is a no-op if the SDK is blocked, fails to start, or reports the environment as `disabled`, so the game still runs.
+
+- **Script and init:** the CrazyGames build puts `crazygames-sdk-v3.js` in `<head>`. Boot awaits `SDK.init()` (giving up after 5 s), then calls `loadingStart`, sets up the game, and calls `loadingStop` on the first rendered frame. That frame is already the race, with no clicks.
+- **Data:** saved data goes through the SDK `data` module only, as the docs ask. localStorage is used only if the SDK isn't available or reports `dataModuleDisabled`.
+- **Gameplay events:**
+  - `gameplayStart` when GO appears and when you resume;
+  - `gameplayStop` on pause, finish/results, editor and My tracks.
+  - Only real changes are reported.
+  - Nothing is sent while the tab is hidden, since the docs say CrazyGames handles focus changes itself. When you come back to the pause menu, the stop is sent then.
+- `happytime()` fires once per run that sets a new best lap or high score.
+- **Ads** (only with `npm run build:cg:ads`, for Full Launch; during Basic Launch the SDK disables ads anyway):
+  - **Midgame:** requested when you press *Race again* on the results screen, a natural break between races, never during driving or drawing. The SDK paces midgame ads (at most one per 3 minutes), so the game adds no timer of its own, as the docs recommend.
+  - **Rewarded:** *Watch an ad to unlock {paint} now* on the results screen. Paints also unlock by finishing runs, so there's always a way without ads.
+  - **While an ad runs:** the UI is blocked from request until `adFinished`/`adError`; audio is muted only once `adStarted` fires. `adError` never rewards. An `adsDisabled` error turns ads off for the session.
+  - **Ad blockers:** with one detected, the reward button is disabled with a notice, and everything else works normally.
+- **Account:** a logged-in player's CrazyGames username labels their ghost car. There's no other login.
+- **Platform mute:** `game.settings.muteAudio`, and its change listener, override the in-game sound toggle.
+- **Device type:** `user.systemInfo.device.type` decides touch controls: mobile/tablet get them, desktop doesn't.
+- **Common fixes from the docs:** no wheel scrolling, no context menu, and Space/arrow keys never scroll the host page.
+
+Tested against the real SDK in its `local` mode (localhost): the SDK's own log showed loading start/stop, gameplay start/stop, happytime, rewarded and midgame ads, a username, and data reads in the expected order.
+
+**Submitting:** run `npm run build:cg` (or `build:cg:ads` for Full Launch), zip the *contents* of `dist/crazygames` (so `index.html` is at the root), upload it in the CrazyGames Developer Portal, and choose "Yes, using the Data Module" for Progress Save.
+
 ## Status
 
 - [x] Phase 1: track drawing (2D editor)
@@ -127,4 +155,4 @@ Your best lap is recorded tick by tick and replayed as a translucent ghost. The 
 - [x] Phase 3: car and driving
 - [x] Phase 4: race / time trial (plus a bigger editor upgrade: dots mode, crossings, tighter corners)
 - [x] Phase 5: track library, sharing, audio
-- [ ] Phase 6: CrazyGames SDK
+- [x] Phase 6: CrazyGames SDK

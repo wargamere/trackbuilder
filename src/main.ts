@@ -6,6 +6,7 @@ import { Surface2D } from './core/surface2d.ts';
 import { EditorScreen } from './editor/drawing.ts';
 import { getSampleTrack, trackFromCode } from './editor/pipeline.ts';
 import { CAPS, PLATFORM } from './platform/platform.ts';
+import { platform, sdkEventLog } from './platform/services.ts';
 import { installOrientationPrompt, readHashCode } from './platform/web.ts';
 import { RaceScreen } from './race/raceScreen.ts';
 import { RecordBook, type RunResult } from './race/records.ts';
@@ -67,10 +68,16 @@ class Game implements GameContext {
     this.track = track;
   }
 
+  refreshPaint(): void {
+    (this.screens.race as RaceScreen | undefined)?.applyPaint();
+  }
+
   go(id: ScreenId): void {
     const next = this.screens[id];
     if (!next || id === this.currentId) return;
     this.current?.exit();
+    // Menus, editor and results are breaks in gameplay; the race reports its own start.
+    platform.setGameplay(false);
     canvas3d.classList.toggle('layer-hidden', next.layer !== '3d');
     canvas2d.classList.toggle('layer-hidden', next.layer !== '2d');
     surface.resize();
@@ -100,28 +107,71 @@ function bootTrack(): Track {
   return getSampleTrack(0);
 }
 
-audio.installUnlock();
-
-// Boot straight into the race: no clicks needed.
-const game = new Game(bootTrack());
-game.go('race');
-
-if (CAPS.orientationPrompt) {
-  const prompt = h('div', { class: 'rotate-prompt' }, h('div', { class: 'rotate-icon', text: '📱' }), h('p', { text: STR.rotate }));
-  app.append(prompt);
-  installOrientationPrompt(prompt, (portrait) => (game.interrupted = portrait));
+/**
+ * Browser defaults that get in a game's way (CrazyGames "common fixes"): page
+ * scroll from the wheel, the context menu, and Space / arrow keys scrolling the
+ * host page (except while typing in a text field).
+ */
+function installCommonFixes(): void {
+  window.addEventListener('wheel', (e) => e.preventDefault(), { passive: false });
+  document.addEventListener('contextmenu', (e) => e.preventDefault());
+  window.addEventListener('keydown', (e) => {
+    const typing = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement;
+    if (!typing && [' ', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) e.preventDefault();
+  });
 }
-// Handle for automated browser checks in dev builds; stripped from production.
-if (import.meta.env.DEV) Object.assign(window, { __game: game, __audio: audio });
 
-window.addEventListener('resize', () => game.resize());
+/**
+ * Boot: initialise the platform (CrazyGames SDK) first, because saved data
+ * lives in the SDK's data module; then straight into the race on the boot track,
+ * no clicks needed. Loading is reported from SDK init to the first rendered frame.
+ */
+async function boot(): Promise<void> {
+  installCommonFixes();
+  await platform.init();
+  platform.loadingStart();
 
-let last = performance.now();
-function loop(now: number): void {
-  // The first rAF timestamp can be earlier than the performance.now() above, so clamp at 0.
-  const dt = Math.min(0.1, Math.max(0, (now - last) / 1000));
-  last = now;
-  game.frame(dt, now / 1000);
+  audio.installUnlock();
+  audio.setPlatformMuted(platform.platformMuted());
+  platform.onPlatformMuteChange((m) => audio.setPlatformMuted(m));
+
+  const game = new Game(bootTrack());
+  platform.setAdHooks({
+    onAdStart: () => {
+      audio.setHeld(true);
+      game.interrupted = true;
+    },
+    onAdEnd: () => {
+      audio.setHeld(false);
+      game.interrupted = false;
+    },
+  });
+  game.go('race');
+
+  if (CAPS.orientationPrompt) {
+    const prompt = h('div', { class: 'rotate-prompt' }, h('div', { class: 'rotate-icon', text: '📱' }), h('p', { text: STR.rotate }));
+    app.append(prompt);
+    installOrientationPrompt(prompt, (portrait) => (game.interrupted = portrait));
+  }
+  // Handle for automated browser checks in dev builds; stripped from production.
+  if (import.meta.env.DEV) Object.assign(window, { __game: game, __audio: audio, __sdkEvents: sdkEventLog });
+
+  window.addEventListener('resize', () => game.resize());
+
+  let last = performance.now();
+  let loaded = false;
+  const loop = (now: number): void => {
+    // The first rAF timestamp can be earlier than the performance.now() above, so clamp at 0.
+    const dt = Math.min(0.1, Math.max(0, (now - last) / 1000));
+    last = now;
+    game.frame(dt, now / 1000);
+    if (!loaded) {
+      loaded = true;
+      platform.loadingStop(); // the scene has rendered: loading is done
+    }
+    requestAnimationFrame(loop);
+  };
   requestAnimationFrame(loop);
 }
-requestAnimationFrame(loop);
+
+void boot();

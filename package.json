@@ -11,6 +11,7 @@
     "test": "node --test \"tests/**/*.test.ts\"",
     "build:web": "npm run typecheck && vite build --mode web && node scripts/size.mjs dist/web",
     "build:cg": "npm run typecheck && vite build --mode crazygames && node scripts/size.mjs dist/crazygames",
+    "build:cg:ads": "npm run typecheck && ADS=1 vite build --mode crazygames && node scripts/size.mjs dist/crazygames",
     "build": "npm run build:web && npm run build:cg",
     "preview:web": "vite preview --outDir dist/web",
     "preview:cg": "vite preview --outDir dist/crazygames"

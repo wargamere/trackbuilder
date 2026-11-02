@@ -109,6 +109,34 @@ export const STR = {
     lapTime: 'Lap {n}: {time}',
     finalLap: 'Final lap!',
     finished: 'Finished!',
+    ghostYou: 'Your best',
+    ghostUser: '{name} · best',
+  },
+
+  paint: {
+    title: 'Paint',
+    names: {
+      yellow: 'Yellow',
+      red: 'Red',
+      blue: 'Blue',
+      green: 'Green',
+      white: 'White',
+      black: 'Black',
+      pink: 'Pink',
+      purple: 'Purple',
+    },
+    locked: '{name}: unlocks after {runs} finished runs',
+    next: 'Next: {name} after {n} more finished run(s).',
+    allUnlocked: 'All paints unlocked!',
+    unlockedByRun: 'New paint unlocked: {name}!',
+    watchAd: 'Watch an ad to unlock {name} now',
+    adblock: 'Ad blocker detected: keep racing to unlock paints.',
+    rewarded: '{name} unlocked and on your car!',
+    noAd: 'No ad available right now. Keep racing to unlock it.',
+  },
+
+  ads: {
+    loading: 'Loading…',
   },
 
   results: {

@@ -5,8 +5,9 @@ import { PLATFORM } from './platform.ts';
  * A small synchronous key-value store with the same get/set shape on every
  * platform:
  *  - web: localStorage,
- *  - crazygames: the CrazyGames SDK `data` module, falling back to localStorage
- *    when the SDK isn't available (blocked, local testing, environment disabled).
+ *  - crazygames: the CrazyGames SDK `data` module (after SDK init), falling back
+ *    to localStorage when the SDK isn't available (blocked, environment disabled).
+ * Nothing may be read before platform init has finished (see main.ts).
  * If storage itself is unavailable (private mode, blocked third-party storage),
  * values live in memory for the session instead, so the game never breaks.
  */
@@ -94,45 +95,48 @@ class SafeStore implements KeyValueStore {
 const local = browserStore();
 
 /**
- * CrazyGames: mirror every write to both the SDK data module and localStorage,
- * and read from the SDK only when it answers synchronously with a string.
- * That works whether the SDK is present, blocked or behaves asynchronously.
+ * CrazyGames: the docs ask games to rely fully on the SDK data module (it keeps
+ * guest progress locally and syncs logged-in players across devices), so once
+ * the SDK is initialised it is the only store. Before init, when the SDK is
+ * unavailable (blocked, disabled domain), or if it reports the data module as
+ * disabled for this game, localStorage is used instead.
  */
-class MirroredStore implements KeyValueStore {
+class CrazyGamesStore implements KeyValueStore {
+  private moduleDisabled = false;
+
+  private target(): KeyValueStore | null {
+    if (this.moduleDisabled) return local;
+    return crazyGamesData() ?? local;
+  }
+
   getItem(key: string): string | null {
-    const sdk = crazyGamesData();
-    if (sdk) {
-      try {
-        const v: unknown = sdk.getItem(key);
-        if (typeof v === 'string') return v;
-      } catch {
-        /* fall through to localStorage */
-      }
-    }
-    return local?.getItem(key) ?? null;
+    return this.target()?.getItem(key) ?? null;
   }
+
   setItem(key: string, value: string): void {
+    const t = this.target();
     try {
-      crazyGamesData()?.setItem(key, value);
-    } catch {
-      /* SDK refused: localStorage still has it */
+      t?.setItem(key, value);
+    } catch (e) {
+      const code = (e as { code?: string } | null)?.code;
+      if (code === 'dataModuleDisabled' && t !== local) {
+        this.moduleDisabled = true;
+        local?.setItem(key, value);
+        return;
+      }
+      throw e; // e.g. dataLimitExcedeed: SafeStore keeps it in memory for the session
     }
-    local?.setItem(key, value);
   }
+
   removeItem(key: string): void {
-    try {
-      crazyGamesData()?.removeItem(key);
-    } catch {
-      /* ignore */
-    }
-    local?.removeItem(key);
+    this.target()?.removeItem(key);
   }
 }
 
-const mirrored = new MirroredStore();
+const crazyStore = new CrazyGamesStore();
 
 /** The game's store for this platform. */
-export const storage: KeyValueStore = new SafeStore(PLATFORM === 'crazygames' ? () => mirrored : () => local);
+export const storage: KeyValueStore = new SafeStore(PLATFORM === 'crazygames' ? () => crazyStore : () => local);
 
 /** JSON helpers; a corrupt value reads as `fallback`. */
 export function loadJSON<T>(key: string, fallback: T): T {
