@@ -158,9 +158,10 @@ export function spliceSection(
   const M = Math.round(BLEND_MARGIN / sp);
   const A0 = wrap(A - M, n);
   const B1 = wrap(B + M, n);
-  const replaced = wrap(B1 - A0, n);
+  // Samples replaced, margins included (measured from A, so it can't wrap past a whole lap).
+  const replaced = wrap(B - A, n) + 2 * M;
   const keptCount = n - replaced;
-  if (keptCount * sp < 40 || replaced === 0) return { ok: false, whole: true };
+  if (keptCount * sp < 40) return { ok: false, whole: true };
 
   // The new line: evenly spaced, de-jittered, and eased onto the road at both ends.
   let s = resampleOpen(stroke, TRACK.controlSpacing);

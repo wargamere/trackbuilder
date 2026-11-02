@@ -26,23 +26,27 @@ Each build is `index.html` at the root plus one JS file. All paths are relative 
 
 ```
 src/
-  config/     strings.ts (all UI text), track.ts (track + ink tuning),
+  config/     strings.ts (all UI text), track.ts (track + ink tuning), themes.ts,
               handling.ts (all car, input and camera tuning), race.ts (race rules)
   core/       math, screen/state types, 2D canvas surface, fixedStep.ts
   editor/     drawing.ts (editor screen + input), smoothing.ts, validation.ts,
-              pipeline.ts (stroke -> track), render2d.ts
+              pipeline.ts (stroke -> track), render2d.ts, viewport.ts (zoom/pan),
+              pen.ts (lazy pen), splice.ts (redraw a section), heights.ts
+              (soft editing, hills), profile.ts (height profile graph)
   track/      spline.ts (centripetal Catmull-Rom -> evenly spaced centre line),
               corners.ts, ink.ts, track.ts (TrackDef/Track), samples.ts,
-              mesh.ts (road ribbon + kerbs), scenery.ts (trees, cones, gantry),
-              code.ts (track codes), library.ts (saved tracks)
+              mesh.ts (road ribbon, kerbs, barriers, bridge decks), surface.ts
+              (terrain, decks, barrier and pillar placement), ground.ts (ground
+              under a car), scenery.ts (trees, cones, gantry), code.ts (track
+              codes), library.ts (saved tracks)
   render/     view3d.ts (renderer, sky, ground, hills, lights), textures.ts
               (procedural canvas textures), geom.ts (merge/tint helpers)
   car/        physics.ts (fixed-step arcade physics), input.ts (keyboard, gamepad,
               touch), model.ts (low-poly car), camera.ts (chase + bonnet)
   race/       raceScreen.ts (fixed-step loop, interpolation, pause), session.ts
               (countdown, checkpoints, lap timing, splits), ghost.ts, records.ts,
-              resultsScreen.ts
-  ui/         dom helpers, editor overlay, HUD, pause menu, touch controls,
+              resultsScreen.ts, bot.ts (test driver), medals.ts (medal times)
+  ui/         dom helpers, editor overlay, HUD, minimap, pause menu, touch controls,
               libraryScreen.ts (My tracks), shareDialog.ts, style.css
   audio/      audio.ts (synthesised engine, tyre squeal, grass rumble, beeps)
   platform/   platform.ts (PLATFORM flag + CAPS), services.ts (what the game calls:
@@ -53,11 +57,17 @@ src/
 
 ### 3D scene
 
-Everything static is merged or instanced, which comes to about 10 draw calls for a whole track: sky, ground, hills, road, kerbs, the gantry frame, one atlas mesh for the banner and start line, two instanced tree meshes and instanced cones. All textures are drawn on small canvases at startup. Lambert materials, no shadows. In dev builds (`npm run dev`) the race HUD shows fps, draw calls and triangles.
+Everything static is merged or instanced, which comes to about 15 draw calls for a whole track: sky, terrain, outer ground, hills, road, bridge decks, kerbs, barriers, pillars, the gantry frame, one atlas mesh for the banner and start line, two instanced prop meshes and instanced cones. All textures are drawn on small canvases at startup. Lambert materials, no shadows. In dev builds (`npm run dev`) the race HUD shows fps, draw calls and triangles.
+
+**Elevation.** Every dot has a height (0–40 m, in 0.5 m steps) and the spline carries it round the loop. The road banks into corners (off / 7° / 15°, scaled by how tight the corner is). `track/surface.ts` builds the ground from the road: a 5 m heightfield that follows the road, with the shoulders tilted like the road, and fades back to flat 55 m away. Where two stretches are near each other the lower one wins, so the ground runs under bridges. A final pass pushes the ground down anywhere it would show through the road. Road above the ground there becomes a **bridge deck** with concrete sides, rails and pillars, and no pillar stands on a road below.
+
+**Barriers** (optional per track, always on decks) run along both edges, red and white on top, with gaps where another stretch at the same level comes through.
+
+**Scenery themes:** Meadow (pines and broadleaf trees), Desert (cacti and rocks) and Snow (snowy pines). Each recolours the sky, fog, light, hills and ground texture.
 
 ### Driving
 
-Physics runs at a fixed 120 Hz from an accumulator (`core/fixedStep.ts`), and rendering interpolates between the last two physics states. Nothing in `car/physics.ts` reads the clock or the frame time, so the same inputs give the same result at any refresh rate (a test checks 60, 144, 240 Hz and jittery frame times give identical ticks). The model is hand-written arcade physics: an engine force that fades towards top speed, brakes, reverse, drag, steering lock that shrinks with speed, a yaw rate limited by tyre grip (slightly over-allowed, so the car drifts a bit), lateral grip that bleeds off sliding, much less grip and speed on grass, a handbrake and tree collisions.
+Physics runs at a fixed 120 Hz from an accumulator (`core/fixedStep.ts`), and rendering interpolates between the last two physics states. Nothing in `car/physics.ts` reads the clock or the frame time, so the same inputs give the same result at any refresh rate (a test checks 60, 144, 240 Hz and jittery frame times give identical ticks). The model is hand-written arcade physics: an engine force that fades towards top speed, brakes, reverse, drag, steering lock that shrinks with speed, a yaw rate limited by tyre grip (slightly over-allowed, so the car drifts a bit), lateral grip that bleeds off sliding, much less grip and speed on grass, a handbrake and tree collisions. On hills gravity pulls along the slope. Banked corners add grip (more when the bank leans into the turn). Barriers push the car back with a small bounce: a glancing hit scrubs a little speed and a square one a lot, with a knock and a camera jolt. The car, the ghost and the camera follow the ground's height, pitch and roll.
 
 | | Keyboard | Gamepad | Touch |
 |---|---|---|---|
@@ -71,31 +81,47 @@ Physics runs at a fixed 120 Hz from an accumulator (`core/fixedStep.ts`), and re
 
 ### Track editor
 
-A track is a closed loop of **dots** with a smooth spline through them (`TrackDef.control`), and that is the only thing stored.
+A track is a closed loop of **dots** with a smooth spline through them (`TrackDef.control`), plus a few options, and that is the only thing stored.
 
-- **Draw mode:** draw one stroke. If you stop short of the start, the loop closes itself. Smoothing (in Options) sets how much hand wobble is removed and how tight a drawn corner may stay: Sharp 6 m, Normal 10 m, Smooth 22 m.
+- **Draw mode:**
+  - draw one stroke; if you stop short of the start, the loop closes itself;
+  - the pen is "lazy": the ink trails the pointer on a short string, so hand wobble never reaches the paper. The string is longer with more smoothing, and a little longer for fingers;
+  - **redraw part of a track:** start a line on the road and end it on the road. The stretch between is replaced (shown in red while drawing), and the other dots don't move. Drawing against the direction of travel replaces the stretch behind;
+  - Smoothing (in Options) sets how much wobble is removed and how tight a drawn corner may stay: Sharp 6 m, Normal 10 m, Smooth 22 m.
 - **Dots mode:** click to place dots, then click the first dot (or press Enter) to close the loop. Click the road to insert a dot.
-- **Both modes:**
-  - drag any dot to reshape the track;
+- **Height mode:**
+  - drag dots up and down on the map, or by their handles in the height profile along the bottom (red where it is too steep; crossings marked grey for level, blue for bridges);
+  - click the road to add a dot at the road's height there;
+  - Random hills (H) makes rolling hills that keep every crossing level or a proper bridge; there are also Smooth and Flatten;
+  - the road is coloured by height.
+- **All modes:**
+  - drag any dot to reshape the track. **Soft editing** (on by default) moves the neighbouring dots part of the way too, so curves and hills stay smooth; hold Shift to move just one dot;
   - right-click or double-tap a dot to delete it;
   - drag the start flag to move the start line;
+  - **zoom and pan:** mouse wheel or pinch to zoom (up to 8×), drag with two fingers, the middle button or Space held to move around, and buttons for +, − and fit (+ / − / F);
   - Undo (Z) and Redo (Y / Shift+Z), Clear (C), switch mode (M), Reverse direction (R);
-  - snap to grid (G), track name, sample tracks (Options, O).
+  - Options (O): name, smoothing, snap to grid (G), soft editing, scenery, banking (off / normal / steep), barriers, sample tracks.
 - **Validation runs live** and marks the problem spot:
   - too short or too long (out of ink);
   - corner tighter than 4.5 m;
-  - two stretches too close together;
-  - a crossing that is too shallow or on the start line.
+  - a slope steeper than 30%;
+  - two stretches too close together (unless one passes 6 m over the other);
+  - where the road crosses itself, the two roads must be level (within 1 m), or one at least 6 m higher for a bridge;
+  - a level crossing must not be too shallow or on the start line.
 
-  Tracks *may* cross themselves: the road is drawn without writing depth, so a flat crossroads doesn't flicker, and the car tracker searches near its last position, so it stays on its own stretch.
+  Level crossings work because the ground-level road is drawn without writing depth, so a flat crossroads doesn't flicker, and the car tracker searches near its last position, so it stays on its own stretch.
 
-Freehand pipeline: raw stroke → merge points closer than 2 m → trim any overshoot, or close the gap → resample every 6 m → Taubin de-jitter → open up corners tighter than the smoothing level's radius → Douglas-Peucker to editable dots (1.6 m tolerance, at most 70 m apart) → round to 0.5 m.
+Freehand pipeline: raw stroke → lazy pen → merge points closer than 2 m → trim any overshoot, or close the gap → resample every 6 m → Taubin de-jitter → open up corners tighter than the smoothing level's radius → Douglas-Peucker to editable dots (1.6 m tolerance, at most 70 m apart) → round to 0.5 m.
 
 ### Time trial
 
 3-2-1-GO, then 3 laps. The timer starts when you cross the line. Ten checkpoints sit around the lap, and a lap counts only if you pass them in order, driving along the track. A jump of more than 3 m along the track in one physics tick (cutting across the grass to another stretch, or a reset) never passes a checkpoint. Lap times are interpolated within the 120 Hz tick. Each checkpoint shows a split against your best lap, and driving backwards shows "Wrong way!".
 
-Your best lap is recorded tick by tick and replayed as a translucent ghost. The results screen shows the total time, each lap, the best lap and a score: average speed on your best lap × ink multiplier × 10. Bests and ghosts are kept for the session; Phase 5 will save them.
+Your best lap is recorded tick by tick and replayed as a translucent ghost. The results screen shows the total time, each lap, the best lap and a score: average speed on your best lap × ink multiplier × 10.
+
+**Medals.** The first time a track is raced, the test bot drives it in the background (in slices during the countdown, about 30–60 ms in all). Its flying lap is the gold time; silver is +10% and bronze +25%. The targets show under the lap timer and light up as you beat them. The results screen shows the medal for the run and the next one to aim for, and My tracks shows each track's medal. Author times are saved with the track's records.
+
+A **minimap** in the top-right corner shows the track (bridges drawn on top), you and the ghost.
 
 ### Saving, sharing and sound
 
@@ -106,7 +132,7 @@ Your best lap is recorded tick by tick and replayed as a translucent ghost. The 
   If storage itself is blocked (private mode, sandboxed iframe), values live in memory for the session.
 
   What's saved: your tracks, best lap and splits, best score and the best-lap ghost per track (40 most recent tracks), and settings (sound, camera, editor mode, smoothing, snap). Ghosts are stored at 30 samples/s as int16 (5 cm), about 11 KB per 45 s lap.
-- **Track codes** (`track/code.ts`): `IC1.` + base64url of the dots, delta-encoded as zig-zag varints in 0.5 m steps, plus the name and a checksum. That's about 100–200 characters. Pasting a damaged code gives a clear error.
+- **Track codes** (`track/code.ts`): `IC1.` + base64url of the dots, delta-encoded as zig-zag varints in 0.5 m steps, plus their heights, one byte of options (banking, barriers, scenery), the name and a checksum. That's about 100–250 characters. Codes from before heights existed still load. Pasting a damaged code gives a clear error.
   - The web build also puts the current track's code in the URL hash (`#track=…`), so the address bar is a share link, and has a "Copy link" button.
   - The CrazyGames build never touches the URL or shows links.
 - **My tracks** (Pause → My tracks, Results, editor Options):
@@ -156,3 +182,4 @@ Tested against the real SDK in its `local` mode (localhost): the SDK's own log s
 - [x] Phase 4: race / time trial (plus a bigger editor upgrade: dots mode, crossings, tighter corners)
 - [x] Phase 5: track library, sharing, audio
 - [x] Phase 6: CrazyGames SDK
+- [x] Elevation, banking, barriers, bridges, scenery themes; editor zoom/pan, lazy pen, section redraw, soft editing and Height mode; minimap and medals

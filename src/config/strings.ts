@@ -117,6 +117,8 @@ export const STR = {
     keys: { undo: 'Z', redo: 'Y', clear: 'C', mode: 'M', options: 'O', race: 'Enter', back: 'Esc', hills: 'H', zoomIn: '+', zoomOut: '−', zoomFit: 'F' },
   },
 
+  medals: { gold: 'Gold', silver: 'Silver', bronze: 'Bronze' },
+
   race: {
     gantry: 'START · FINISH',
     trackInfo: '{name} · {len} m · ×{mult}',
@@ -183,6 +185,10 @@ export const STR = {
     newBestScore: 'New high score!',
     scoreHint: 'Score = average speed × ink multiplier × 10. Short, twisty tracks multiply more.',
     kmh: '{v} km/h',
+    medal: 'Medal (best lap)',
+    noMedal: 'None yet',
+    nextMedal: '{medal}: {time}',
+    allMedals: 'Top medal!',
   },
 
   library: {

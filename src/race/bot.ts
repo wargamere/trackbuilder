@@ -1,8 +1,8 @@
-import { angleDelta, type CarState, type DriveInput } from '../src/car/physics.ts';
-import { HANDLING } from '../src/config/handling.ts';
-import { clamp } from '../src/core/math.ts';
-import { sampleAt } from '../src/track/spline.ts';
-import type { Track } from '../src/track/track.ts';
+import { angleDelta, type CarState, type DriveInput } from '../car/physics.ts';
+import { HANDLING } from '../config/handling.ts';
+import { clamp } from '../core/math.ts';
+import { sampleAt } from '../track/spline.ts';
+import type { Track } from '../track/track.ts';
 
 /**
  * A simple test driver: steers at a point ahead on the centre line and brakes

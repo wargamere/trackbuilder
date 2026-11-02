@@ -23,6 +23,7 @@ import { Hud } from '../ui/hud.ts';
 import { PauseMenu } from '../ui/pauseMenu.ts';
 import { TouchControls } from '../ui/touchControls.ts';
 import { GhostRecorder, ghostPose, type GhostLap } from './ghost.ts';
+import { AuthorLap, medalTimes } from './medals.ts';
 import { scoreFor } from './records.ts';
 import { formatDelta, formatTime, RaceSession, type Progress, type RaceEvent } from './session.ts';
 
@@ -59,6 +60,8 @@ export class RaceScreen implements Screen {
   private ghostIndex = -1;
   /** Strongest barrier hit since the last frame (m/s into the wall). */
   private hit = 0;
+  /** Bot lap being simulated (a few slices per frame) to set this track's medal times. */
+  private author: { id: string; lap: AuthorLap } | null = null;
   private readonly tickInput: DriveInput = { ...NO_INPUT };
   private readonly events: RaceEvent[] = [];
   private paused = false;
@@ -162,6 +165,7 @@ export class RaceScreen implements Screen {
     const rec = this.game.records.get(this.game.track.def.id);
     this.session = new RaceSession(this.game.track.center.length, rec.best);
     this.ghost = rec.ghost;
+    if (rec.author === undefined && this.author?.id !== def.id) this.author = { id: def.id, lap: new AuthorLap(this.game.track) };
     this.ghostIndex = -1;
     this.hit = 0;
     this.finishedFor = -1;
@@ -328,6 +332,7 @@ export class RaceScreen implements Screen {
       carX: this.car!.state.x,
       carZ: this.car!.state.z,
       unlockedPaints,
+      author: rec.author ?? null,
     };
     this.game.go('results');
   }
@@ -347,8 +352,25 @@ export class RaceScreen implements Screen {
     this.ghostLabel.style.transform = `translate(${((p.x + 1) / 2) * s.w}px, ${((1 - p.y) / 2) * s.h}px) translate(-50%, -100%)`;
   }
 
+  /** Advances the bot's timed lap a little; when done, the medal times are saved and shown. */
+  private measureAuthor(): void {
+    const a = this.author;
+    if (!a) return;
+    if (a.id !== this.game.track.def.id) {
+      this.author = null;
+      return;
+    }
+    if (!a.lap.run(1500)) return;
+    this.author = null;
+    const rec = this.game.records.get(a.id);
+    rec.author = a.lap.result ?? null;
+    this.game.records.save(a.id);
+  }
+
   private updateHud(alpha: number): void {
     const s = this.session!;
+    const rec = this.game.records.get(this.game.track.def.id);
+    this.hud.setMedals(rec.author ? medalTimes(rec.author) : null, rec.best?.time ?? null);
     if (s.lapStart === null) this.hud.setLap(s.phase === 'countdown' ? '' : STR.race.warmup);
     else this.hud.setLap(fmt(STR.race.lap, { n: Math.min(s.laps.length + 1, s.lapsToRun), total: s.lapsToRun }));
     this.hud.setTime(formatTime(s.lapTime(alpha) ?? 0));
@@ -399,6 +421,8 @@ export class RaceScreen implements Screen {
 
     this.rig.update(v.camera, this.view, dt);
     this.placeGhostLabel(pose, v.camera);
+    this.hud.minimap.draw(this.game.track, this.view, pose);
+    this.measureAuthor();
     v.render();
     this.hud.setSpeed(this.view.speed);
     this.updateHud(alpha);

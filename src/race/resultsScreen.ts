@@ -6,6 +6,7 @@ import { settings } from '../core/settings.ts';
 import { platform } from '../platform/services.ts';
 import { button, h } from '../ui/dom.ts';
 import { ShareDialog } from '../ui/shareDialog.ts';
+import { medalFor, medalTimes, nextMedal } from './medals.ts';
 import { formatTime } from './session.ts';
 
 /**
@@ -95,6 +96,7 @@ export class ResultsScreen implements Screen {
           row(STR.results.laps, r.laps.map((t) => formatTime(t)).join('  ·  ')),
           row(STR.results.avgSpeed, fmt(STR.results.kmh, { v: r.avgSpeedKmh.toFixed(1) })),
           row(STR.results.multiplier, `×${r.multiplier.toFixed(2)}`),
+          this.medalRow(r.bestLap, r.author),
         ),
         h('p', { class: 'score-hint', text: STR.results.scoreHint }),
       );
@@ -125,6 +127,24 @@ export class ResultsScreen implements Screen {
     );
     // Check for an ad blocker in the background so the paint offer can say so.
     if (platform.adsEnabled) void platform.hasAdblock().then(() => this.renderPaint());
+  }
+
+  /** The medal the run's best lap won, and the time for the next one up. */
+  private medalRow(bestLap: number, author: number | null): HTMLElement | null {
+    if (!author) return null;
+    const m = medalTimes(author);
+    const won = medalFor(bestLap, m);
+    const next = nextMedal(won);
+    return h(
+      'div',
+      { class: 'stat' },
+      h('span', { class: 'stat-label', text: STR.results.medal }),
+      h('span', { class: 'stat-value' }, won ? h('i', { class: `medal ${won}` }) : null, won ? STR.medals[won] : STR.results.noMedal),
+      h('span', {
+        class: `badge${won ? '' : ' muted'}`,
+        text: next ? fmt(STR.results.nextMedal, { medal: STR.medals[next], time: formatTime(m[next]) }) : STR.results.allMedals,
+      }),
+    );
   }
 
   exit(): void {

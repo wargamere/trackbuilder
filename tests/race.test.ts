@@ -7,7 +7,7 @@ import { getSampleTrack, trackFromStroke } from '../src/editor/pipeline.ts';
 import type { Track } from '../src/track/track.ts';
 import { GhostRecorder, ghostPose } from '../src/race/ghost.ts';
 import { formatTime, RaceSession, type Progress, type RaceEvent } from '../src/race/session.ts';
-import { botInput } from './bot.ts';
+import { botInput } from '../src/race/bot.ts';
 
 const DT = 1 / HANDLING.tickRate;
 const COUNTDOWN_TICKS = RACE.countdown * HANDLING.tickRate;

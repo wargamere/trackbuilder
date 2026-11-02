@@ -1308,3 +1308,73 @@ body {
     justify-content: center;
   }
 }
+
+/* ------------------------------------------------------- minimap, medals */
+
+.minimap {
+  position: absolute;
+  top: calc(0.6rem + max(2.5rem, 32px) + 0.5rem);
+  right: 0.6rem;
+  width: clamp(96px, 14vw, 190px);
+  height: clamp(64px, 9.5vw, 128px);
+  border-radius: 0.6rem;
+  background: rgba(20, 26, 38, 0.38);
+  pointer-events: none;
+}
+
+.hud-medals {
+  display: flex;
+  justify-content: center;
+  gap: 0.55em;
+  margin-top: 0.15em;
+  font-size: 0.68rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.hud-medals:empty {
+  display: none;
+}
+
+.medal-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3em;
+  opacity: 0.55;
+}
+
+.medal-chip.won {
+  opacity: 1;
+}
+
+.medal {
+  display: inline-block;
+  width: 0.85em;
+  height: 0.85em;
+  border-radius: 50%;
+  border: 2px solid rgba(0, 0, 0, 0.35);
+  vertical-align: -0.1em;
+  margin-right: 0.3em;
+}
+
+.medal-chip .medal {
+  margin-right: 0;
+}
+
+.medal.gold {
+  background: #f2b705;
+}
+
+.medal.silver {
+  background: #c3ccd6;
+}
+
+.medal.bronze {
+  background: #c7793a;
+}
+
+.badge.muted {
+  background: rgba(27, 58, 138, 0.12);
+  color: var(--ink);
+}

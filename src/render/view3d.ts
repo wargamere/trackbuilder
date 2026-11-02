@@ -26,15 +26,13 @@ import type { ThemeId } from '../config/track.ts';
 import { valueNoise } from '../core/random.ts';
 import { buildKerbGeometry, buildRoadGeometry, buildWallGeometry } from '../track/mesh.ts';
 import { buildScenery } from '../track/scenery.ts';
-import { surfaceFor, type Terrain } from '../track/surface.ts';
+import { surfaceFor, TERRAIN_RECT, type Terrain } from '../track/surface.ts';
 import type { Track } from '../track/track.ts';
 import { tint } from './geom.ts';
 import { makeAsphaltTexture, makeAtlasTexture, makeGroundTexture } from './textures.ts';
 
 const GROUND_SIZE = 2800;
 const HILL_RADIUS = 1250;
-/** The flat outer ground sits a little below the track's terrain mesh, which covers the middle. */
-const OUTER_GROUND_Y = -0.4;
 /** Metres per repeat of the ground texture. */
 const GROUND_TILE = 7;
 
@@ -115,21 +113,52 @@ export class View3D {
     return m;
   }
 
-  /** Big flat ground around the track's terrain. Vertex colours add large lighter/darker patches. */
+  /**
+   * Big flat ground around the track's terrain grid: a frame of four strips
+   * with a hole exactly where the terrain mesh goes, so the two never overlap.
+   * Vertex colours add large lighter/darker patches.
+   */
   private buildOuterGround(): Mesh {
-    const seg = 56;
-    const g = new PlaneGeometry(GROUND_SIZE, GROUND_SIZE, seg, seg).rotateX(-Math.PI / 2).translate(0, OUTER_GROUND_Y, 0);
-    const pos = g.getAttribute('position');
-    const uv = g.getAttribute('uv');
-    const col = new Float32Array(pos.count * 3);
-    for (let i = 0; i < pos.count; i++) {
-      const x = pos.getX(i);
-      const z = pos.getZ(i);
-      const k = groundShade(x, z);
-      col.set([k, k, k], i * 3);
-      uv.setXY(i, x / GROUND_TILE, z / GROUND_TILE);
-    }
+    const R = TERRAIN_RECT;
+    const G = GROUND_SIZE / 2;
+    const pos: number[] = [];
+    const uv: number[] = [];
+    const col: number[] = [];
+    const idx: number[] = [];
+    const strip = (x0: number, z0: number, x1: number, z1: number) => {
+      const nx = Math.max(1, Math.round((x1 - x0) / 50));
+      const nz = Math.max(1, Math.round((z1 - z0) / 50));
+      const base = pos.length / 3;
+      for (let j = 0; j <= nz; j++) {
+        for (let i = 0; i <= nx; i++) {
+          const x = x0 + ((x1 - x0) * i) / nx;
+          const z = z0 + ((z1 - z0) * j) / nz;
+          const k = groundShade(x, z);
+          pos.push(x, 0, z);
+          uv.push(x / GROUND_TILE, z / GROUND_TILE);
+          col.push(k, k, k);
+        }
+      }
+      for (let j = 0; j < nz; j++) {
+        for (let i = 0; i < nx; i++) {
+          const a = base + j * (nx + 1) + i;
+          const b = a + 1;
+          const c = a + nx + 1;
+          const d = c + 1;
+          idx.push(a, c, b, b, c, d);
+        }
+      }
+    };
+    strip(-G, -G, G, R.z0);
+    strip(-G, R.z1, G, G);
+    strip(-G, R.z0, R.x0, R.z1);
+    strip(R.x1, R.z0, G, R.z1);
+    const g = new BufferGeometry();
+    g.setAttribute('position', new Float32BufferAttribute(pos, 3));
+    g.setAttribute('uv', new Float32BufferAttribute(uv, 2));
     g.setAttribute('color', new Float32BufferAttribute(col, 3));
+    g.setIndex(idx);
+    g.computeVertexNormals();
     return new Mesh(g, this.mats.ground);
   }
 

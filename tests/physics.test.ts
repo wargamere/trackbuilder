@@ -8,7 +8,7 @@ import { rng } from '../src/core/random.ts';
 import { getSampleTrack, SAMPLE_COUNT } from '../src/editor/pipeline.ts';
 import { placeTrees } from '../src/track/placement.ts';
 import { buildTrack } from '../src/track/track.ts';
-import { botInput } from './bot.ts';
+import { botInput } from '../src/race/bot.ts';
 
 const input = (throttle: number, brake: number, steer: number, handbrake = false): DriveInput => ({ throttle, brake, steer, handbrake });
 

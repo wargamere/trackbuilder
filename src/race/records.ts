@@ -1,6 +1,7 @@
 import type { PaintId } from '../config/paint.ts';
 import { loadJSON, saveJSON, storage } from '../platform/storage.ts';
 import { decodeGhost, encodeGhost, type GhostLap } from './ghost.ts';
+import { AUTHOR_VERSION } from './medals.ts';
 import type { BestLap } from './session.ts';
 
 /** Personal bests for one track. */
@@ -8,6 +9,8 @@ export interface TrackRecord {
   best: BestLap | null;
   ghost: GhostLap | null;
   bestScore: number;
+  /** The bot's flying lap (medal targets), once measured; null if it couldn't finish. */
+  author: number | null | undefined;
 }
 
 /** What the results screen shows about a finished run. */
@@ -30,6 +33,8 @@ export interface RunResult {
   carZ: number;
   /** Paints this run unlocked. */
   unlockedPaints: PaintId[];
+  /** The bot's lap on this track (medal targets), if known. */
+  author: number | null;
 }
 
 /**
@@ -45,7 +50,12 @@ interface StoredRecord {
   best: BestLap | null;
   bestScore: number;
   ghost: string | null;
+  author?: number | null;
+  authorV?: number;
 }
+
+const storedAuthor = (s: StoredRecord | null): number | null | undefined =>
+  s && s.authorV === AUTHOR_VERSION && (typeof s.author === 'number' || s.author === null) ? s.author : undefined;
 
 /** Records for this many tracks are kept; the least recently raced are dropped. */
 const MAX_TRACKS = 40;
@@ -67,19 +77,21 @@ export class RecordBook {
       best: s?.best && typeof s.best.time === 'number' ? s.best : null,
       bestScore: typeof s?.bestScore === 'number' ? s.bestScore : 0,
       ghost: s?.ghost ? decodeGhost(s.ghost) : null,
+      author: storedAuthor(s),
     };
     this.cache.set(id, r);
     return r;
   }
 
-  /** Best lap and score without decoding the ghost (for lists). */
-  summary(id: string): { best: BestLap | null; bestScore: number } {
+  /** Best lap, score and author time without decoding the ghost (for lists). */
+  summary(id: string): { best: BestLap | null; bestScore: number; author: number | null | undefined } {
     const r = this.cache.get(id);
-    if (r) return { best: r.best, bestScore: r.bestScore };
+    if (r) return { best: r.best, bestScore: r.bestScore, author: r.author };
     const s = loadJSON<StoredRecord | null>(key(id), null);
     return {
       best: s?.best && typeof s.best.time === 'number' ? s.best : null,
       bestScore: typeof s?.bestScore === 'number' ? s.bestScore : 0,
+      author: storedAuthor(s),
     };
   }
 
@@ -87,6 +99,10 @@ export class RecordBook {
   save(id: string): void {
     const r = this.get(id);
     const stored: StoredRecord = { best: r.best, bestScore: r.bestScore, ghost: r.ghost ? encodeGhost(r.ghost) : null };
+    if (r.author !== undefined) {
+      stored.author = r.author;
+      stored.authorV = AUTHOR_VERSION;
+    }
     saveJSON(key(id), stored);
     const index = loadJSON<string[]>(INDEX_KEY, []).filter((x) => x !== id);
     index.push(id);

@@ -188,7 +188,7 @@ export class EditorScreen implements Screen {
     this.options = { ...t.options };
     this.history = [];
     this.future = [];
-    this.note = null;
+    this.note = this.modeTip();
     this.selected = this.hover = -1;
     this.cursor = null;
     this.dirty = true;
@@ -299,10 +299,18 @@ export class EditorScreen implements Screen {
     if (this.drag) return;
     const layout = (m === 'height') !== (this.mode === 'height');
     this.mode = m;
-    this.note = null;
+    this.note = this.modeTip();
     this.cursor = null;
     updateSettings({ editorMode: m });
     if (layout) this.resize();
+  }
+
+  /** A one-line tip shown when entering a mode with a finished track. */
+  private modeTip(): { text: string; kind: MessageKind } | null {
+    if (!this.closed || this.dots.length < 3) return null;
+    if (this.mode === 'height') return { text: STR.editor.hintHeight, kind: 'info' };
+    if (this.mode === 'draw') return { text: STR.editor.hintRedraw, kind: 'info' };
+    return null;
   }
 
   private setSnap(on: boolean): void {

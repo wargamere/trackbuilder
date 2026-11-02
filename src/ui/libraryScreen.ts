@@ -2,6 +2,7 @@ import { STR, fmt } from '../config/strings.ts';
 import type { GameContext, Screen } from '../core/screen.ts';
 import { getSampleTrack, SAMPLE_COUNT, trackFromCode } from '../editor/pipeline.ts';
 import { drawPaper, fitView, PAPER } from '../editor/render2d.ts';
+import { medalFor, medalTimes } from '../race/medals.ts';
 import { formatTime } from '../race/session.ts';
 import { sampleClosedCatmullRom } from '../track/spline.ts';
 import { buildTrack, type TrackDef } from '../track/track.ts';
@@ -181,6 +182,7 @@ export class LibraryScreen implements Screen {
     drawThumbnail(thumb, def.control);
     const rec = this.game.records.summary(def.id);
     const stats = fmt(STR.library.stats, { len: Math.round(info.len).toLocaleString('en-US'), mult: info.mult.toFixed(2) });
+    const medal = rec.best && rec.author ? medalFor(rec.best.time, medalTimes(rec.author)) : null;
     const best = rec.best
       ? fmt(STR.library.best, { time: formatTime(rec.best.time), score: rec.bestScore.toLocaleString('en-US') })
       : STR.library.notRaced;
@@ -217,7 +219,7 @@ export class LibraryScreen implements Screen {
       thumb,
       h('div', { class: 'card-name', text: def.name }),
       h('div', { class: 'card-stats', text: stats }),
-      h('div', { class: `card-best${rec.best ? '' : ' none'}`, text: best }),
+      h('div', { class: `card-best${rec.best ? '' : ' none'}` }, medal ? h('i', { class: `medal ${medal}`, title: STR.medals[medal] }) : null, best),
       actions,
     );
   }

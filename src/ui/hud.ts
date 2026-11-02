@@ -1,5 +1,8 @@
 import { STR } from '../config/strings.ts';
+import { MEDALS, type MedalTimes } from '../race/medals.ts';
+import { formatTime } from '../race/session.ts';
 import { button, h } from './dom.ts';
+import { Minimap } from './minimap.ts';
 
 export interface HudActions {
   drawTrack(): void;
@@ -24,6 +27,9 @@ export class Hud {
   private readonly speedValue: HTMLElement;
   private readonly hint: HTMLElement;
   private readonly debug: HTMLElement;
+  private readonly medals: HTMLElement;
+  private medalKey = '';
+  readonly minimap = new Minimap();
   private lastSpeed = -1;
   private lastTime = '';
   private hintTimer = 0;
@@ -47,13 +53,28 @@ export class Hud {
     this.time = h('div', { class: 'lap-time', text: '0:00.00' });
     this.lastBest = h('div', { class: 'lap-sub' });
     this.split = h('div', { class: 'hud-split' });
-    const timer = h('div', { class: 'hud-timer' }, this.lapLabel, this.time, this.lastBest, this.split);
+    this.medals = h('div', { class: 'hud-medals' });
+    const timer = h('div', { class: 'hud-timer' }, this.lapLabel, this.time, this.lastBest, this.medals, this.split);
     this.center = h('div', { class: 'hud-center' });
     this.speedValue = h('span', { class: 'speed-value', text: '0' });
     const speed = h('div', { class: 'hud-speed' }, this.speedValue, h('span', { class: 'speed-unit', text: STR.race.speedUnit }));
     this.hint = h('div', { class: 'hud-hint' });
     this.debug = h('div', { class: 'hud-debug' });
-    this.root = h('div', { class: 'screen hud' }, top, timer, this.center, speed, this.hint, this.debug);
+    this.root = h('div', { class: 'screen hud' }, top, timer, this.minimap.root, this.center, speed, this.hint, this.debug);
+  }
+
+  /** Medal targets under the timer; the ones your best lap has won are lit. */
+  setMedals(m: MedalTimes | null, best: number | null): void {
+    const key = m ? `${m.gold}|${m.silver}|${m.bronze}|${best}` : '';
+    if (key === this.medalKey) return;
+    this.medalKey = key;
+    this.medals.replaceChildren();
+    if (!m) return;
+    for (const { id } of MEDALS) {
+      const won = best !== null && best <= m[id];
+      const chip = h('span', { class: `medal-chip ${id}${won ? ' won' : ''}`, title: STR.medals[id] }, h('i', { class: `medal ${id}` }), formatTime(m[id]));
+      this.medals.append(chip);
+    }
   }
 
   /** Rearranges the HUD around the on-screen touch controls. */

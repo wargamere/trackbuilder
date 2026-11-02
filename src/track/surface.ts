@@ -33,9 +33,22 @@ export interface TrackSurface {
 }
 
 const TERRAIN_STEP = 5;
-const TERRAIN_MARGIN = 230;
 /** How far from the road the ground takes to blend back to flat. */
 const BLEND = 55;
+/**
+ * The heightfield covers the drawable area plus this margin, which is more than
+ * the road's reach (barrier line + blend), so its border is always flat (0) and
+ * meets the flat ground outside it without a seam.
+ */
+const TERRAIN_MARGIN = 90;
+
+/** Extent of the terrain grid (world x, z); the renderer puts flat ground around it. */
+export const TERRAIN_RECT = {
+  x0: -WORLD.width / 2 - TERRAIN_MARGIN,
+  z0: -WORLD.height / 2 - TERRAIN_MARGIN,
+  x1: -WORLD.width / 2 - TERRAIN_MARGIN + Math.ceil((WORLD.width + TERRAIN_MARGIN * 2) / TERRAIN_STEP) * TERRAIN_STEP,
+  z1: -WORLD.height / 2 - TERRAIN_MARGIN + Math.ceil((WORLD.height + TERRAIN_MARGIN * 2) / TERRAIN_STEP) * TERRAIN_STEP,
+} as const;
 
 const smoothstep = (a: number, b: number, x: number) => {
   const t = Math.max(0, Math.min(1, (x - a) / (b - a)));
@@ -129,11 +142,10 @@ function passHeight(c: Centerline, i: number, x: number, z: number): number {
 }
 
 function buildTerrain(c: Centerline, grid: SampleGrid): Terrain {
-  const x0 = -WORLD.width / 2 - TERRAIN_MARGIN;
-  const z0 = -WORLD.height / 2 - TERRAIN_MARGIN;
+  const { x0, z0 } = TERRAIN_RECT;
   const step = TERRAIN_STEP;
-  const nx = Math.ceil((WORLD.width + TERRAIN_MARGIN * 2) / step) + 1;
-  const nz = Math.ceil((WORLD.height + TERRAIN_MARGIN * 2) / step) + 1;
+  const nx = Math.round((TERRAIN_RECT.x1 - x0) / step) + 1;
+  const nz = Math.round((TERRAIN_RECT.z1 - z0) / step) + 1;
   const h = new Float32Array(nx * nz);
   const reach = TRACK.wallOffset + BLEND + 2;
   const tmp: number[] = [];
