@@ -15,11 +15,10 @@ import {
   Vector3,
 } from 'three';
 import { TRACK } from '../config/track.ts';
-import { dist2, wrap, type Vec2 } from '../core/math.ts';
-import { hashString, rng, valueNoise } from '../core/random.ts';
 import { merge, tint } from '../render/geom.ts';
 import { ATLAS } from '../render/textures.ts';
 import { ROAD_Y } from './mesh.ts';
+import { placeCones, placeTrees } from './placement.ts';
 import { leftOf, type Centerline } from './spline.ts';
 import type { Track } from './track.ts';
 
@@ -64,57 +63,25 @@ function coneGeometry(): BufferGeometry {
   return cone;
 }
 
-// ------------------------------------------------------------------ placement
-
-/** True if `p` is at least `clearance` metres from every centre-line point. */
-function clearOfTrack(c: Centerline, p: Vec2, clearance: number): boolean {
-  const c2 = clearance * clearance;
-  for (const q of c.points) if (dist2(p, q) < c2) return false;
-  return true;
-}
-
 const tmpObj = new Object3D();
 const tmpColor = new Color();
 
-/**
- * Trees: two instanced meshes (conifers and broadleaf), scattered on a jittered
- * grid. Value noise clusters them into woods, and none are allowed near the road.
- */
-function buildTrees(track: Track, mat: Material, seed: number): InstancedMesh[] {
-  const rand = rng(seed);
-  const c = track.center;
-  const clearance = TRACK.roadWidth / 2 + 11;
-  const step = 15;
-  const extentX = 600;
-  const extentZ = 420;
-  const spots: { x: number; z: number; s: number; r: number; kind: number }[] = [];
-  for (let gx = -extentX; gx <= extentX; gx += step) {
-    for (let gz = -extentZ; gz <= extentZ; gz += step) {
-      const x = gx + (rand() - 0.5) * step * 0.9;
-      const z = gz + (rand() - 0.5) * step * 0.9;
-      const wood = valueNoise(x / 110, z / 110, seed & 0xffff);
-      // Thinner beyond the drawable area: those trees are small and fogged anyway.
-      const far = Math.abs(x) > 420 || Math.abs(z) > 260 ? 0.5 : 1;
-      const chance = (wood > 0.55 ? 0.7 : wood > 0.42 ? 0.2 : 0.035) * far;
-      if (rand() > chance) continue;
-      if (!clearOfTrack(c, { x, y: z }, clearance)) continue;
-      spots.push({ x, z, s: 0.75 + rand() * 0.7, r: rand() * Math.PI * 2, kind: wood > 0.5 ? (rand() < 0.75 ? 0 : 1) : rand() < 0.35 ? 0 : 1 });
-    }
-  }
+/** Trees: two instanced meshes (conifers and broadleaf). Positions come from placement.ts. */
+function buildTrees(track: Track, mat: Material): InstancedMesh[] {
+  const spots = placeTrees(track);
   const out: InstancedMesh[] = [];
   const geoms = [coniferGeometry(), broadleafGeometry()];
-  for (let kind = 0; kind < 2; kind++) {
+  for (const kind of [0, 1] as const) {
     const list = spots.filter((s) => s.kind === kind);
     if (!list.length) continue;
     const mesh = new InstancedMesh(geoms[kind], mat, list.length);
     list.forEach((s, i) => {
       tmpObj.position.set(s.x, 0, s.z);
-      tmpObj.rotation.set(0, s.r, 0);
-      tmpObj.scale.setScalar(s.s);
+      tmpObj.rotation.set(0, s.rot, 0);
+      tmpObj.scale.setScalar(s.scale);
       tmpObj.updateMatrix();
       mesh.setMatrixAt(i, tmpObj.matrix);
-      const shade = 0.8 + rand() * 0.35;
-      mesh.setColorAt(i, tmpColor.setRGB(shade, shade * (0.95 + rand() * 0.1), shade * 0.95));
+      mesh.setColorAt(i, tmpColor.setRGB(s.shade, s.shade, s.shade * 0.95));
     });
     mesh.computeBoundingSphere();
     out.push(mesh);
@@ -122,21 +89,9 @@ function buildTrees(track: Track, mat: Material, seed: number): InstancedMesh[] 
   return out;
 }
 
-/** Three cones just beyond the outside kerb at the apex of every tight corner. */
+/** Cones at tight-corner apexes (instanced). */
 function buildCones(track: Track, mat: Material): InstancedMesh | null {
-  const c = track.center;
-  const n = c.points.length;
-  const off = TRACK.roadWidth / 2 + TRACK.kerbWidth + 2.2;
-  const spots: Vec2[] = [];
-  for (const corner of track.tightCorners) {
-    const side = corner.sign > 0 ? 1 : -1;
-    for (const o of [-3, 0, 3]) {
-      const i = wrap(corner.apex + o, n);
-      const l = leftOf(c.tangents[i]);
-      const p = { x: c.points[i].x + l.x * off * side, y: c.points[i].y + l.y * off * side };
-      if (clearOfTrack(c, p, TRACK.roadWidth / 2 + 1.5)) spots.push(p);
-    }
-  }
+  const spots = placeCones(track);
   if (!spots.length) return null;
   const mesh = new InstancedMesh(coneGeometry(), mat, spots.length);
   spots.forEach((p, i) => {
@@ -231,7 +186,6 @@ function buildStartAtlasMesh(frame: Matrix4, mat: Material): Mesh {
 export function buildScenery(track: Track, mats: SceneryMaterials): { group: Group; dispose(): void } {
   const group = new Group();
   group.name = 'scenery';
-  const seed = hashString(track.def.id);
   const frame = startFrame(track.center);
   const owned: BufferGeometry[] = [];
 
@@ -240,7 +194,7 @@ export function buildScenery(track: Track, mats: SceneryMaterials): { group: Gro
   owned.push(gantry.geometry, atlas.geometry);
   group.add(gantry, atlas);
 
-  const instanced: InstancedMesh[] = [...buildTrees(track, mats.prop, seed)];
+  const instanced: InstancedMesh[] = [...buildTrees(track, mats.prop)];
   const cones = buildCones(track, mats.prop);
   if (cones) instanced.push(cones);
   for (const m of instanced) group.add(m);

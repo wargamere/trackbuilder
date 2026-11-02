@@ -15,6 +15,8 @@ export const STR = {
     sample: 'Sample',
     back: 'Back',
     resume: 'Resume',
+    resetCar: 'Reset car',
+    pause: 'Pause',
   },
 
   editor: {
@@ -46,9 +48,16 @@ export const STR = {
   },
 
   race: {
-    previewNote: 'Phase 2 preview — the car arrives in Phase 3.',
     gantry: 'START · FINISH',
     trackInfo: '{name} · {len} m · ×{mult}',
+    speedUnit: 'km/h',
+    paused: 'Paused',
+    hintKeyboard: 'W/↑ drive · S/↓ brake & reverse · A D/← → steer · Space handbrake · R reset · C camera · Esc pause',
+    hintGamepad: 'RT drive · LT brake & reverse · stick steer · B handbrake · Back reset · Y camera · Start pause',
+    hintTouch: 'Hold ◀ ▶ to steer, GAS and BRAKE on the right. Hold BRAKE to reverse.',
+    controlsTitle: 'Controls',
+    touchGas: 'GAS',
+    touchBrake: 'BRAKE',
   },
 
   errors: {
