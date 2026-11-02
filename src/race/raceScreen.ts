@@ -14,6 +14,9 @@ import { CAPS, prefersTouchControls } from '../platform/platform.ts';
 import { platform } from '../platform/services.ts';
 import { writeHashCode } from '../platform/web.ts';
 import { encodeTrack } from '../track/code.ts';
+import { groundPose, type GroundPose } from '../track/ground.ts';
+import { locatorFor } from '../track/locator.ts';
+import { surfaceFor, terrainHeight } from '../track/surface.ts';
 import type { Track } from '../track/track.ts';
 import { h } from '../ui/dom.ts';
 import { Hud } from '../ui/hud.ts';
@@ -51,6 +54,11 @@ export class RaceScreen implements Screen {
   private readonly view = new CarState();
   private readonly ghostLabel: HTMLElement;
   private readonly labelPos = new Vector3();
+  /** Ghost's ground pose and its last track index (a hint for the locator). */
+  private readonly ghostGround: GroundPose = { y: 0, pitch: 0, roll: 0 };
+  private ghostIndex = -1;
+  /** Strongest barrier hit since the last frame (m/s into the wall). */
+  private hit = 0;
   private readonly tickInput: DriveInput = { ...NO_INPUT };
   private readonly events: RaceEvent[] = [];
   private paused = false;
@@ -105,6 +113,8 @@ export class RaceScreen implements Screen {
     if (this.carTrack !== t) {
       this.car = new CarPhysics(t);
       this.carTrack = t;
+      const terrain = surfaceFor(t).terrain;
+      this.rig.groundAt = (x, z) => terrainHeight(terrain, x, z);
     }
     const touch = prefersTouchControls(platform.deviceType());
     this.hud.setTouchLayout(touch);
@@ -147,11 +157,13 @@ export class RaceScreen implements Screen {
     const def = this.game.track.def;
     this.applyPaint();
     this.game.library.save(def); // built-in samples are skipped
-    if (CAPS.links) writeHashCode(encodeTrack(def.name, def.control));
+    if (CAPS.links) writeHashCode(encodeTrack(def.name, def.control, def.options));
     car.placeAt(-8);
     const rec = this.game.records.get(this.game.track.def.id);
     this.session = new RaceSession(this.game.track.center.length, rec.best);
     this.ghost = rec.ghost;
+    this.ghostIndex = -1;
+    this.hit = 0;
     this.finishedFor = -1;
     this.fixed.reset();
     this.paused = false;
@@ -223,6 +235,7 @@ export class RaceScreen implements Screen {
     const inp = session.phase === 'racing' ? this.input.sample(this.tickInput) : session.phase === 'finished' ? BRAKE : NO_INPUT;
     const prev = this.progress();
     car.step(inp);
+    this.hit = Math.max(this.hit, car.state.wallHit);
     this.events.length = 0;
     session.step(prev, this.progress(), this.events);
     for (const e of this.events) this.onRaceEvent(e);
@@ -326,7 +339,7 @@ export class RaceScreen implements Screen {
       this.ghostLabel.hidden = true;
       return;
     }
-    const p = this.labelPos.set(pose.x, 2.3, pose.z).project(cam);
+    const p = this.labelPos.set(pose.x, this.ghostGround.y + 2.3, pose.z).project(cam);
     const visible = p.z < 1 && Math.abs(p.x) < 1.1 && Math.abs(p.y) < 1.1;
     this.ghostLabel.hidden = !visible;
     if (!visible) return;
@@ -368,7 +381,21 @@ export class RaceScreen implements Screen {
     const lapTime = session.phase === 'racing' ? session.lapTime(alpha) : null;
     const pose = this.ghost && lapTime !== null ? ghostPose(this.ghost, lapTime) : null;
     this.ghostModel.root.visible = !!pose;
-    if (pose) this.ghostModel.setPose(pose.x, pose.z, pose.heading);
+    if (pose) {
+      const t = this.game.track;
+      const at = locatorFor(t).locate({ x: pose.x, y: pose.z }, this.ghostIndex);
+      this.ghostIndex = at.index;
+      const g = groundPose(t, surfaceFor(t), pose.x, pose.z, pose.heading, at, this.ghostGround);
+      this.ghostModel.setPose(pose.x, g.y, pose.z, pose.heading, g.pitch, g.roll);
+    }
+
+    // Barrier hits: a knock and a jolt, scaled by how hard.
+    if (this.hit > 1.5) {
+      const k = Math.min(1, this.hit / 18);
+      audio.thud(k);
+      this.rig.bump(k);
+    }
+    this.hit = 0;
 
     this.rig.update(v.camera, this.view, dt);
     this.placeGhostLabel(pose, v.camera);

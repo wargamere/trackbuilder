@@ -4,6 +4,7 @@ import { TRACK } from '../src/config/track.ts';
 import type { Vec2 } from '../src/core/math.ts';
 import { getSampleTrack, SAMPLE_COUNT, trackFromStroke } from '../src/editor/pipeline.ts';
 import { buildKerbGeometry, buildRoadGeometry } from '../src/track/mesh.ts';
+import { surfaceFor } from '../src/track/surface.ts';
 import { buildTrack, type Track } from '../src/track/track.ts';
 
 const line = (a: Vec2, b: Vec2, n: number): Vec2[] =>
@@ -22,7 +23,7 @@ function sharpTrack(): Track {
 test('road ribbon never folds back on itself, even at the tightest corners', () => {
   const tracks = [sharpTrack(), ...Array.from({ length: SAMPLE_COUNT }, (_, i) => getSampleTrack(i))];
   for (const t of tracks) {
-    const g = buildRoadGeometry(t.center);
+    const g = buildRoadGeometry(t.center, surfaceFor(t)).ground;
     const pos = g.getAttribute('position');
     const n = t.center.points.length;
     assert.equal(pos.count, (n + 1) * 2);
@@ -41,7 +42,7 @@ test('road ribbon never folds back on itself, even at the tightest corners', () 
 
 test('road texture V ends on a whole number of tiles, so the loop has no seam', () => {
   const t = getSampleTrack(0);
-  const g = buildRoadGeometry(t.center);
+  const g = buildRoadGeometry(t.center, surfaceFor(t)).ground;
   const uv = g.getAttribute('uv');
   const lastV = uv.getY(uv.count - 1);
   assert.equal(lastV, Math.round(lastV));

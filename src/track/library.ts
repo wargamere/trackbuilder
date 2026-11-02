@@ -28,7 +28,7 @@ export class TrackLibrary {
     for (const t of this.items) {
       const d = decodeTrack(t.code);
       if (!d.ok) continue;
-      out.push({ def: { id: contentId(d.dots), name: d.name, control: d.dots }, code: t.code, savedAt: t.savedAt });
+      out.push({ def: { id: contentId(d.dots, d.options), name: d.name, control: d.dots, options: d.options }, code: t.code, savedAt: t.savedAt });
     }
     return out;
   }
@@ -36,11 +36,11 @@ export class TrackLibrary {
   /** Saves (or refreshes) a track; the same shape is only kept once. */
   save(def: TrackDef): void {
     if (def.builtIn) return;
-    const code = encodeTrack(def.name, def.control);
-    const id = contentId(def.control);
+    const code = encodeTrack(def.name, def.control, def.options);
+    const id = contentId(def.control, def.options);
     this.items = this.items.filter((t) => {
       const d = decodeTrack(t.code);
-      return !d.ok || contentId(d.dots) !== id;
+      return !d.ok || contentId(d.dots, d.options) !== id;
     });
     this.items.unshift({ code, savedAt: Date.now() });
     if (this.items.length > MAX_TRACKS) this.items.length = MAX_TRACKS;
@@ -50,7 +50,7 @@ export class TrackLibrary {
   remove(id: string): void {
     this.items = this.items.filter((t) => {
       const d = decodeTrack(t.code);
-      return d.ok && contentId(d.dots) !== id;
+      return d.ok && contentId(d.dots, d.options) !== id;
     });
     saveJSON(KEY, this.items);
   }

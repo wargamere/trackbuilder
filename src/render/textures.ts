@@ -72,16 +72,16 @@ export function makeAsphaltTexture(): Texture {
   return finish(c, false, true);
 }
 
-/** Tiling grass. Large-scale colour variation comes from the ground's vertex colours. */
-export function makeGrassTexture(): Texture {
+/** Tiling ground (grass, sand or snow). Large-scale colour variation comes from the terrain's vertex colours. */
+export function makeGroundTexture(g: { base: string; speck: [number, number, number]; lo: number; hi: number }): Texture {
   const S = 128;
   const [c, ctx] = canvas(S, S);
   const rand = rng(11);
-  ctx.fillStyle = '#6a9a48';
+  ctx.fillStyle = g.base;
   ctx.fillRect(0, 0, S, S);
   speckle(ctx, S, S, 5000, rand, (v) => {
-    const g = Math.round(120 + v * 70);
-    return `rgb(${Math.round(g * 0.55)},${g},${Math.round(g * 0.35)})`;
+    const b = g.lo + v * (g.hi - g.lo);
+    return `rgb(${Math.round(Math.min(255, b * g.speck[0]))},${Math.round(Math.min(255, b * g.speck[1]))},${Math.round(Math.min(255, b * g.speck[2]))})`;
   });
   return finish(c, true, true);
 }

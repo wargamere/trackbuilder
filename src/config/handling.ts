@@ -57,6 +57,21 @@ export const HANDLING = {
     gripFactor: 0.45,
   },
 
+  // ------------------------------------------------------- slopes and banking
+  /** Share of gravity along a slope that acts on the car (1 = full physics, lower = more arcade). */
+  slopeFactor: 0.8,
+  /** Share of the bank's help in corners (g·sin(bank) × this). */
+  bankGripFactor: 1.2,
+
+  // ------------------------------------------------------------------- walls
+  /** Bounce off a barrier (share of the impact speed). */
+  wallBounce: 0.25,
+  /** Speed lost per m/s of impact, and the least speed kept. */
+  wallScrub: 0.04,
+  wallMinKeep: 0.55,
+  /** Half the car's body width (keeps the body, not the centre, off the barrier). */
+  halfWidth: 1.0,
+
   // ------------------------------------------------------------------- bodies
   /** Collision radius of the car (against tree trunks). */
   carRadius: 1.1,

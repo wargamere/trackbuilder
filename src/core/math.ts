@@ -6,6 +6,11 @@ export interface Vec2 {
   y: number;
 }
 
+/** A track dot: ground position plus an optional height above the base ground, in metres. */
+export interface Dot extends Vec2 {
+  h?: number;
+}
+
 export const vec = (x: number, y: number): Vec2 => ({ x, y });
 export const sub = (a: Vec2, b: Vec2): Vec2 => ({ x: a.x - b.x, y: a.y - b.y });
 export const add = (a: Vec2, b: Vec2): Vec2 => ({ x: a.x + b.x, y: a.y + b.y });

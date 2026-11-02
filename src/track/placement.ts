@@ -1,3 +1,4 @@
+import { THEMES } from '../config/themes.ts';
 import { TRACK } from '../config/track.ts';
 import { dist2, wrap, type Vec2 } from '../core/math.ts';
 import { hashString, rng, valueNoise } from '../core/random.ts';
@@ -14,12 +15,12 @@ export interface TreeSpot {
   z: number;
   scale: number;
   rot: number;
-  kind: 0 | 1; // 0 conifer, 1 broadleaf
+  /** Which of the theme's two prop kinds (see THEMES[theme].props). */
+  kind: 0 | 1;
   shade: number;
+  /** Collision radius (m). */
+  radius: number;
 }
-
-/** Trunk radius of a tree at scale 1, used for collisions. */
-export const TREE_TRUNK_RADIUS = 0.5;
 
 /** True if `p` is at least `clearance` metres from every centre-line point. */
 function clearOfTrack(c: Centerline, p: Vec2, clearance: number): boolean {
@@ -38,7 +39,8 @@ export function placeTrees(track: Track): TreeSpot[] {
   const seed = hashString(track.def.id);
   const rand = rng(seed);
   const c = track.center;
-  const clearance = TRACK.roadWidth / 2 + 11;
+  const clearance = TRACK.wallOffset + 6;
+  const radius = THEMES[track.options.theme].propRadius;
   const step = 15;
   const extentX = 600;
   const extentZ = 420;
@@ -54,7 +56,8 @@ export function placeTrees(track: Track): TreeSpot[] {
       if (rand() > chance) continue;
       if (!clearOfTrack(c, { x, y: z }, clearance)) continue;
       const kind = wood > 0.5 ? (rand() < 0.75 ? 0 : 1) : rand() < 0.35 ? 0 : 1;
-      spots.push({ x, z, scale: 0.75 + rand() * 0.7, rot: rand() * Math.PI * 2, kind, shade: 0.8 + rand() * 0.35 });
+      const scale = 0.75 + rand() * 0.7;
+      spots.push({ x, z, scale, rot: rand() * Math.PI * 2, kind, shade: 0.8 + rand() * 0.35, radius: radius[kind] * scale });
     }
   }
   treeCache.set(track, spots);

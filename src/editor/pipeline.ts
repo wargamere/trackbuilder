@@ -55,11 +55,11 @@ export type CodeResult = { ok: true; track: Track } | { ok: false; error: 'forma
 export function trackFromCode(text: string): CodeResult {
   const d = decodeTrack(text);
   if (!d.ok) return d;
-  const id = contentId(d.dots);
+  const id = contentId(d.dots, d.options);
   for (let i = 0; i < SAMPLE_COUNT; i++) {
     const s = getSampleTrack(i);
-    if (contentId(s.def.control) === id) return { ok: true, track: s };
+    if (contentId(s.def.control, s.def.options) === id) return { ok: true, track: s };
   }
-  const res = trackFromControl({ id, name: d.name.trim() || 'Shared track', control: d.dots });
+  const res = trackFromControl({ id, name: d.name.trim() || 'Shared track', control: d.dots, options: d.options });
   return res.ok ? res : { ok: false, error: res.issue };
 }

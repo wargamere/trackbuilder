@@ -173,6 +173,47 @@ body {
   flex: 1;
 }
 
+.editor .bar.tools {
+  justify-content: center;
+  gap: 0.4rem;
+  padding-top: 0.35rem;
+  padding-bottom: 0.35rem;
+  pointer-events: none;
+}
+
+.editor .bar.tools[hidden],
+.editor .zoom-box[hidden] {
+  display: none;
+}
+
+.editor .bar.tools .btn {
+  min-height: max(2rem, 28px);
+  font-size: 0.9rem;
+}
+
+.editor .zoom-box {
+  position: absolute;
+  right: 0.6rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.4rem;
+  pointer-events: none;
+}
+
+.btn.round {
+  justify-content: center;
+  width: max(2.4rem, 32px);
+  min-height: max(2.4rem, 32px);
+  padding: 0;
+  border-radius: 50%;
+  font-size: 1.25rem;
+}
+
+.btn.round .btn-icon {
+  margin: 0;
+}
+
 .editor .label {
   font-size: 0.72rem;
   font-weight: 800;

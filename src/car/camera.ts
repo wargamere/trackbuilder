@@ -15,6 +15,17 @@ export class CameraRig {
   private yaw = 0;
   private fov: number = CAMERA.chase.fov;
   private shakeTime = 0;
+  /** Extra lift that keeps the chase camera above rising ground behind the car. */
+  private lift = 0;
+  /** Barrier-hit shake, decaying (m). */
+  private knock = 0;
+  /** Ground height lookup for camera clearance (terrain, which follows the road). */
+  groundAt: (x: number, z: number) => number = () => 0;
+
+  /** A jolt of camera shake (barrier hits); `strength` 0..1. */
+  bump(strength: number): void {
+    this.knock = Math.max(this.knock, 0.25 * Math.min(1, strength));
+  }
 
   toggle(): void {
     this.mode = this.mode === 'chase' ? 'bonnet' : 'chase';
@@ -25,6 +36,8 @@ export class CameraRig {
   snap(st: CarState): void {
     this.yaw = st.heading;
     this.fov = CAMERA.chase.fov;
+    this.lift = 0;
+    this.knock = 0;
   }
 
   update(cam: PerspectiveCamera, st: CarState, dt: number): void {
@@ -33,10 +46,19 @@ export class CameraRig {
     const speed = Math.abs(st.speed);
     let fov: number;
 
+    this.shakeTime += dt;
+    const kick = this.knock > 0.002 ? Math.sin(this.shakeTime * 61) * this.knock : 0;
+    this.knock *= Math.exp(-9 * dt);
+    // Look a little up or down the slope the car is on.
+    const tilt = Math.tan(st.pitch);
+
     if (this.mode === 'bonnet') {
       const b = CAMERA.bonnet;
-      cam.position.set(st.x + fx * b.forward, b.height, st.z + fz * b.forward);
-      cam.lookAt(st.x + fx * 30, 0.9, st.z + fz * 30);
+      cam.position.set(st.x + fx * b.forward, st.y + b.height + kick * 0.3, st.z + fz * b.forward);
+      // Lean with the road's banking: up tilts away from the side that is raised.
+      const r = st.roll;
+      cam.up.set(-Math.sin(r) * fz, Math.cos(r), Math.sin(r) * fx);
+      cam.lookAt(st.x + fx * 30, st.y + 0.9 + tilt * 30, st.z + fz * 30);
       this.yaw = st.heading;
       fov = b.fov;
     } else {
@@ -46,10 +68,16 @@ export class CameraRig {
       const yz = Math.sin(this.yaw);
       const dist = c.distance + speed * c.distancePerSpeed;
       // A little rumble when wheels are on the grass.
-      this.shakeTime += dt;
       const shake = st.grass > 0 ? Math.sin(this.shakeTime * 47) * 0.04 * st.grass * Math.min(1, speed / 15) : 0;
-      cam.position.set(st.x - yx * dist, c.height + shake, st.z - yz * dist);
-      cam.lookAt(st.x + yx * c.lookAhead, c.lookHeight, st.z + yz * c.lookAhead);
+      const px = st.x - yx * dist;
+      const pz = st.z - yz * dist;
+      const base = st.y + c.height;
+      // Don't dip into a hill behind the car (going downhill, the road behind is higher).
+      const need = Math.max(0, this.groundAt(px, pz) + 1.6 - base);
+      this.lift += (need - this.lift) * (1 - Math.exp(-(need > this.lift ? 14 : 3) * dt));
+      cam.up.set(0, 1, 0);
+      cam.position.set(px, base + this.lift + shake + kick, pz);
+      cam.lookAt(st.x + yx * c.lookAhead, st.y + c.lookHeight + tilt * c.lookAhead * 0.6, st.z + yz * c.lookAhead);
       fov = Math.min(c.fovMax, c.fov + speed * c.fovPerSpeed);
     }
     this.fov += (fov - this.fov) * (1 - Math.exp(-4 * dt));

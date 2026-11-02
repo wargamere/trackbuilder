@@ -5,7 +5,9 @@ import { loadJSON, saveJSON } from '../platform/storage.ts';
 export interface Settings {
   muted: boolean;
   camera: 'chase' | 'bonnet';
-  editorMode: 'draw' | 'dots';
+  editorMode: 'draw' | 'dots' | 'height';
+  /** Dragging a dot also moves its neighbours. */
+  softEdit: boolean;
   smoothing: 'sharp' | 'normal' | 'smooth';
   snap: boolean;
   /** Selected car paint. */
@@ -20,6 +22,7 @@ const DEFAULTS: Settings = {
   muted: false,
   camera: 'chase',
   editorMode: 'draw',
+  softEdit: true,
   smoothing: 'normal',
   snap: false,
   paint: 'yellow',

@@ -14,12 +14,14 @@ import {
   Object3D,
   Vector3,
 } from 'three';
+import { THEMES, type PropKind } from '../config/themes.ts';
 import { TRACK } from '../config/track.ts';
 import { merge, tint } from '../render/geom.ts';
 import { ATLAS } from '../render/textures.ts';
 import { ROAD_Y } from './mesh.ts';
 import { placeCones, placeTrees } from './placement.ts';
 import { leftOf, type Centerline } from './spline.ts';
+import { surfaceFor, terrainHeight, type Terrain } from './surface.ts';
 import type { Track } from './track.ts';
 
 export interface SceneryMaterials {
@@ -32,26 +34,51 @@ export interface SceneryMaterials {
 // ------------------------------------------------------------------ prototypes
 // Built once and shared by every track (instanced meshes reference them).
 
-let conifer: BufferGeometry | null = null;
-let broadleaf: BufferGeometry | null = null;
+const props = new Map<PropKind, BufferGeometry>();
 let cone: BufferGeometry | null = null;
 
-function coniferGeometry(): BufferGeometry {
-  conifer ??= merge([
-    tint(new CylinderGeometry(0.22, 0.32, 1.6, 5, 1, true).translate(0, 0.8, 0), 0x6b4a2b),
-    tint(new ConeGeometry(2.0, 3.6, 6).translate(0, 3.0, 0), 0x2f6b3a),
-    tint(new ConeGeometry(1.4, 2.8, 6).translate(0, 4.6, 0), 0x3a7d44),
-  ]);
-  return conifer;
-}
+const PROP_BUILDERS: Record<PropKind, () => BufferGeometry> = {
+  conifer: () =>
+    merge([
+      tint(new CylinderGeometry(0.22, 0.32, 1.6, 5, 1, true).translate(0, 0.8, 0), 0x6b4a2b),
+      tint(new ConeGeometry(2.0, 3.6, 6).translate(0, 3.0, 0), 0x2f6b3a),
+      tint(new ConeGeometry(1.4, 2.8, 6).translate(0, 4.6, 0), 0x3a7d44),
+    ]),
+  broadleaf: () =>
+    merge([
+      tint(new CylinderGeometry(0.22, 0.3, 2.2, 5, 1, true).translate(0, 1.1, 0), 0x6b4a2b),
+      tint(new IcosahedronGeometry(2.1, 0).scale(1, 0.9, 1).translate(0, 3.6, 0), 0x5b9a3e),
+      tint(new IcosahedronGeometry(1.3, 0).translate(0.9, 4.5, 0.4), 0x6aab47),
+    ]),
+  snowpine: () =>
+    merge([
+      tint(new CylinderGeometry(0.22, 0.32, 1.6, 5, 1, true).translate(0, 0.8, 0), 0x5a4030),
+      tint(new ConeGeometry(2.0, 3.6, 6).translate(0, 3.0, 0), 0x2c5a3c),
+      tint(new ConeGeometry(1.45, 2.2, 6).translate(0, 4.3, 0), 0xeef3f8),
+      tint(new ConeGeometry(0.8, 1.3, 6).translate(0, 5.5, 0), 0xf6f9fc),
+    ]),
+  cactus: () =>
+    merge([
+      tint(new CylinderGeometry(0.34, 0.4, 3.4, 7).translate(0, 1.7, 0), 0x4f8a3e),
+      tint(new CylinderGeometry(0.2, 0.2, 0.8, 6).rotateZ(Math.PI / 2).translate(0.5, 1.5, 0), 0x4f8a3e),
+      tint(new CylinderGeometry(0.2, 0.22, 1.3, 6).translate(0.85, 2.05, 0), 0x5a9646),
+      tint(new CylinderGeometry(0.18, 0.18, 0.6, 6).rotateZ(Math.PI / 2).translate(-0.4, 2.2, 0), 0x4f8a3e),
+      tint(new CylinderGeometry(0.18, 0.2, 0.9, 6).translate(-0.65, 2.55, 0), 0x5a9646),
+    ]),
+  rock: () =>
+    merge([
+      tint(new IcosahedronGeometry(1.3, 0).scale(1.3, 0.7, 1.05).translate(0, 0.45, 0), 0xa98c6c),
+      tint(new IcosahedronGeometry(0.7, 0).scale(1, 0.8, 1).translate(1.1, 0.25, 0.4), 0x9c7f61),
+    ]),
+};
 
-function broadleafGeometry(): BufferGeometry {
-  broadleaf ??= merge([
-    tint(new CylinderGeometry(0.22, 0.3, 2.2, 5, 1, true).translate(0, 1.1, 0), 0x6b4a2b),
-    tint(new IcosahedronGeometry(2.1, 0).scale(1, 0.9, 1).translate(0, 3.6, 0), 0x5b9a3e),
-    tint(new IcosahedronGeometry(1.3, 0).translate(0.9, 4.5, 0.4), 0x6aab47),
-  ]);
-  return broadleaf;
+function propGeometry(kind: PropKind): BufferGeometry {
+  let g = props.get(kind);
+  if (!g) {
+    g = PROP_BUILDERS[kind]();
+    props.set(kind, g);
+  }
+  return g;
 }
 
 function coneGeometry(): BufferGeometry {
@@ -66,17 +93,18 @@ function coneGeometry(): BufferGeometry {
 const tmpObj = new Object3D();
 const tmpColor = new Color();
 
-/** Trees: two instanced meshes (conifers and broadleaf). Positions come from placement.ts. */
-function buildTrees(track: Track, mat: Material): InstancedMesh[] {
+/** Roadside props: two instanced meshes (the theme's two kinds), standing on the terrain. */
+function buildTrees(track: Track, mat: Material, terrain: Terrain): InstancedMesh[] {
   const spots = placeTrees(track);
   const out: InstancedMesh[] = [];
-  const geoms = [coniferGeometry(), broadleafGeometry()];
+  const kinds = THEMES[track.options.theme].props;
+  const geoms = [propGeometry(kinds[0]), propGeometry(kinds[1])];
   for (const kind of [0, 1] as const) {
     const list = spots.filter((s) => s.kind === kind);
     if (!list.length) continue;
     const mesh = new InstancedMesh(geoms[kind], mat, list.length);
     list.forEach((s, i) => {
-      tmpObj.position.set(s.x, 0, s.z);
+      tmpObj.position.set(s.x, terrainHeight(terrain, s.x, s.z) - 0.1, s.z);
       tmpObj.rotation.set(0, s.rot, 0);
       tmpObj.scale.setScalar(s.scale);
       tmpObj.updateMatrix();
@@ -90,12 +118,12 @@ function buildTrees(track: Track, mat: Material): InstancedMesh[] {
 }
 
 /** Cones at tight-corner apexes (instanced). */
-function buildCones(track: Track, mat: Material): InstancedMesh | null {
+function buildCones(track: Track, mat: Material, terrain: Terrain): InstancedMesh | null {
   const spots = placeCones(track);
   if (!spots.length) return null;
   const mesh = new InstancedMesh(coneGeometry(), mat, spots.length);
   spots.forEach((p, i) => {
-    tmpObj.position.set(p.x, 0, p.y);
+    tmpObj.position.set(p.x, terrainHeight(terrain, p.x, p.y), p.y);
     tmpObj.rotation.set(0, i * 1.7, 0);
     tmpObj.scale.setScalar(1);
     tmpObj.updateMatrix();
@@ -105,14 +133,16 @@ function buildCones(track: Track, mat: Material): InstancedMesh | null {
   return mesh;
 }
 
-/** Matrix placing local (X across to the left, Y up, Z along the road) at the start line. */
+/** Matrix placing local (X across to the left, Y up, Z along the road) at the start line, following height and bank. */
 function startFrame(c: Centerline): Matrix4 {
   const p = c.points[0];
   const t = c.tangents[0];
   const l = leftOf(t);
-  return new Matrix4()
-    .makeBasis(new Vector3(l.x, 0, l.y), new Vector3(0, 1, 0), new Vector3(t.x, 0, t.y))
-    .setPosition(p.x, 0, p.y);
+  const b = c.bank[0];
+  const z = new Vector3(t.x, 0, t.y);
+  const x = new Vector3(l.x * Math.cos(b), Math.sin(b), l.y * Math.cos(b));
+  const y = new Vector3().crossVectors(z, x);
+  return new Matrix4().makeBasis(x, y, z).setPosition(p.x, c.height[0], p.y);
 }
 
 const GANTRY = { postX: TRACK.roadWidth / 2 + 1.4, height: 7, beamY: 6.2, beamH: 1.6, beamD: 0.7 } as const;
@@ -194,8 +224,9 @@ export function buildScenery(track: Track, mats: SceneryMaterials): { group: Gro
   owned.push(gantry.geometry, atlas.geometry);
   group.add(gantry, atlas);
 
-  const instanced: InstancedMesh[] = [...buildTrees(track, mats.prop)];
-  const cones = buildCones(track, mats.prop);
+  const terrain = surfaceFor(track).terrain;
+  const instanced: InstancedMesh[] = [...buildTrees(track, mats.prop, terrain)];
+  const cones = buildCones(track, mats.prop, terrain);
   if (cones) instanced.push(cones);
   for (const m of instanced) group.add(m);
 

@@ -6,7 +6,7 @@ import { settings, updateSettings } from '../core/settings.ts';
  *    through five gears, and the filter opens with throttle,
  *  - tyre squeal: band-passed noise when the car slides on tarmac,
  *  - grass rumble: low-passed noise when wheels are on the grass,
- *  - short beeps for the countdown and laps.
+ *  - short beeps for the countdown and laps, and a knock for barrier hits.
  *
  * There is exactly one AudioContext. It is created on the first user gesture,
  * and resumed on every later touchend/click/keydown while it is suspended (iOS
@@ -45,6 +45,7 @@ export class AudioEngine {
   private filter: BiquadFilterNode | null = null;
   private squeal: Voice | null = null;
   private rumble: Voice | null = null;
+  private noise: AudioBuffer | null = null;
   /** The player's sound toggle (read from settings in installUnlock, after platform init). */
   private muted = false;
   /** Muted while a video ad plays. */
@@ -110,6 +111,7 @@ export class AudioEngine {
     const noise = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
     const ch = noise.getChannelData(0);
     for (let i = 0; i < ch.length; i++) ch[i] = Math.random() * 2 - 1;
+    this.noise = noise;
     const noiseSource = (type: BiquadFilterType, freq: number, q: number, voice: Voice) => {
       const src = ctx.createBufferSource();
       src.buffer = noise;
@@ -208,6 +210,25 @@ export class AudioEngine {
     const squeal = Math.max(0, Math.min(1, (inp.slip - 2.2) / 4)) * (1 - inp.grass) * moving;
     this.squeal.gain.gain.setTargetAtTime(squeal * 0.13, t, 0.04);
     this.rumble.gain.gain.setTargetAtTime(inp.grass * Math.min(1, v / 10) * 0.22, t, 0.06);
+  }
+
+  /** A dull knock for hitting a barrier; `strength` 0..1. */
+  thud(strength: number): void {
+    const ctx = this.ctx;
+    if (!ctx || !this.master || !this.noise) return;
+    const t = ctx.currentTime;
+    const src = ctx.createBufferSource();
+    src.buffer = this.noise;
+    const f = ctx.createBiquadFilter();
+    f.type = 'lowpass';
+    f.frequency.value = 180 + 260 * strength;
+    const g = ctx.createGain();
+    const vol = 0.12 + 0.38 * Math.min(1, strength);
+    g.gain.setValueAtTime(vol, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.22 + 0.15 * strength);
+    src.connect(f).connect(g).connect(this.master);
+    src.start(t, Math.random() * 0.5);
+    src.stop(t + 0.45);
   }
 
   /** A short tone (countdown, lap). */

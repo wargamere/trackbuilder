@@ -34,7 +34,33 @@ export const TRACK = {
   /** ... that turn at least this much (radians). */
   kerbMinTurn: (25 * Math.PI) / 180,
   kerbWidth: 1.6,
+  /** Banked corners reach their full angle at this radius or tighter. */
+  bankRadius: 30,
+  /** Dot heights are limited to this range (m) and rounded to `heightStep`. */
+  maxHeight: 40,
+  heightStep: 0.5,
+  /** Steepest allowed slope (rise / run). */
+  maxGrade: 0.3,
+  /** Roads crossing at different heights need this much clearance to be a bridge; closer heights must be level. */
+  bridgeClearance: 6,
+  levelCrossingTolerance: 1,
+  /** Barrier distance from the centre line, and height. */
+  wallOffset: 6 + 1.6 + 1.2,
+  wallHeight: 0.95,
+  /** The road counts as a raised deck (bridge) when it's this far above the ground below. */
+  deckClearance: 1.2,
 } as const;
+
+/** Per-track options, stored with the track. */
+export type ThemeId = 'meadow' | 'desert' | 'snow';
+export interface TrackOptions {
+  /** 0 = flat corners, 1 = banked, 2 = steeply banked. */
+  banking: 0 | 1 | 2;
+  /** Concrete barriers along both edges (raised decks always get guard rails). */
+  walls: boolean;
+  theme: ThemeId;
+}
+export const DEFAULT_OPTIONS: TrackOptions = { banking: 1, walls: true, theme: 'meadow' };
 
 /**
  * Freehand smoothing levels: how much hand jitter is filtered out (Taubin

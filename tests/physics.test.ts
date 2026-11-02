@@ -12,14 +12,14 @@ import { botInput } from './bot.ts';
 
 const input = (throttle: number, brake: number, steer: number, handbrake = false): DriveInput => ({ throttle, brake, steer, handbrake });
 
-/** A stadium-shaped track with two 1.6 km straights (no trees near the straights). */
+/** A stadium-shaped track with two 1.6 km straights (no trees near the straights, no barriers). */
 function longStraightTrack() {
   const control: Vec2[] = [];
   for (let x = -800; x <= 800; x += 50) control.push({ x, y: -300 });
   for (let a = 1; a < 12; a++) control.push({ x: 800 + 300 * Math.sin((a / 12) * Math.PI), y: -300 * Math.cos((a / 12) * Math.PI) });
   for (let x = 800; x >= -800; x -= 50) control.push({ x, y: 300 });
   for (let a = 1; a < 12; a++) control.push({ x: -800 - 300 * Math.sin((a / 12) * Math.PI), y: 300 * Math.cos((a / 12) * Math.PI) });
-  return buildTrack({ id: 'test-straights', name: 'straights', control });
+  return buildTrack({ id: 'test-straights', name: 'straights', control, options: { walls: false } });
 }
 
 /** Car at rest at (x, z) heading east. */

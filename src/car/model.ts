@@ -154,9 +154,9 @@ export class CarModel {
   }
 
   /** Places a ghost from a recorded pose (no suspension or wheel animation needed). */
-  setPose(x: number, z: number, heading: number): void {
-    this.root.position.set(x, 0, z);
-    this.root.rotation.set(0, Math.PI / 2 - heading, 0);
+  setPose(x: number, y: number, z: number, heading: number, pitch: number, roll: number): void {
+    this.root.position.set(x, y, z);
+    this.root.rotation.set(-pitch, Math.PI / 2 - heading, roll, 'YXZ');
   }
 
   setPaint(hex: number): void {
@@ -165,9 +165,10 @@ export class CarModel {
 
   /** Places the model from an (interpolated) physics state. */
   update(st: CarState, dt: number): void {
-    this.root.position.set(st.x, 0, st.z);
-    // Local +Z must point along the heading (cos h, sin h) in world (x, z).
-    this.root.rotation.set(0, Math.PI / 2 - st.heading, 0);
+    this.root.position.set(st.x, st.y, st.z);
+    // Local +Z must point along the heading (cos h, sin h) in world (x, z); local +X is
+    // the car's left. Yaw first, then the ground's pitch (nose up) and roll (left up).
+    this.root.rotation.set(-st.pitch, Math.PI / 2 - st.heading, st.roll, 'YXZ');
 
     // Body leans out of corners and pitches under braking/acceleration (visual only).
     const k = 1 - Math.exp(-8 * dt);

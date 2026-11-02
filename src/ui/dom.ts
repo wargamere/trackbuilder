@@ -23,6 +23,8 @@ export interface ButtonOpts {
   /** Keyboard shortcut shown as a small hint on devices with a keyboard. */
   key?: string;
   icon?: string;
+  /** Tooltip (and accessible name for icon-only buttons). */
+  title?: string;
 }
 
 /**
@@ -33,8 +35,12 @@ export function button(label: string, onPress: () => void, opts: ButtonOpts = {}
   const b = h('button', { class: `btn ${opts.class ?? ''}`.trim() });
   b.type = 'button';
   b.tabIndex = -1;
+  if (opts.title) {
+    b.title = opts.title;
+    b.setAttribute('aria-label', opts.title);
+  }
   if (opts.icon) b.append(h('span', { class: 'btn-icon', text: opts.icon }));
-  b.append(h('span', { class: 'btn-label', text: label }));
+  if (label) b.append(h('span', { class: 'btn-label', text: label }));
   if (opts.key) b.append(h('kbd', { text: opts.key }));
   b.addEventListener('mousedown', (e) => e.preventDefault()); // keep focus off the button
   b.addEventListener('click', (e) => {

@@ -1,10 +1,10 @@
 import { STR, fmt } from '../config/strings.ts';
-import type { SmoothingLevel } from '../config/track.ts';
+import type { SmoothingLevel, ThemeId, TrackOptions } from '../config/track.ts';
 import type { InkStats } from '../track/ink.ts';
 import { button, h } from './dom.ts';
 
 export type MessageKind = 'info' | 'ok' | 'error' | 'warn';
-export type EditorMode = 'draw' | 'dots';
+export type EditorMode = 'draw' | 'dots' | 'height';
 
 export interface EditorActions {
   back(): void;
@@ -20,6 +20,12 @@ export interface EditorActions {
   rename(name: string): void;
   myTracks(): void;
   share(): void;
+  setSoft(on: boolean): void;
+  setOptions(o: Partial<TrackOptions>): void;
+  hills(): void;
+  flatten(): void;
+  smoothHeights(): void;
+  zoom(how: 'in' | 'out' | 'fit'): void;
 }
 
 /** A row of buttons where exactly one is "on". */
@@ -58,7 +64,13 @@ export class EditorUI {
   private readonly mode: { el: HTMLElement; set(v: EditorMode): void };
   private readonly smoothing: { el: HTMLElement; set(v: SmoothingLevel): void };
   private readonly snap: HTMLInputElement;
+  private readonly soft: HTMLInputElement;
+  private readonly walls: HTMLInputElement;
+  private readonly banking: { el: HTMLElement; set(v: '0' | '1' | '2'): void };
+  private readonly theme: { el: HTMLElement; set(v: ThemeId): void };
   private readonly name: HTMLInputElement;
+  private readonly tools: HTMLElement;
+  private readonly zoomBox: HTMLElement;
 
   constructor(actions: EditorActions, sampleNames: readonly string[]) {
     const k = STR.editor.keys;
@@ -90,6 +102,7 @@ export class EditorUI {
       [
         ['draw', STR.editor.modeDraw, '✎'],
         ['dots', STR.editor.modeDots, '●'],
+        ['height', STR.editor.modeHeight, '▲'],
       ],
       actions.setMode,
     );
@@ -128,24 +141,83 @@ export class EditorUI {
     this.snap.type = 'checkbox';
     this.snap.addEventListener('change', () => actions.setSnap(this.snap.checked));
     const samples = h('div', { class: 'row wrap' }, ...sampleNames.map((n, i) => button(n, () => actions.sample(i), { icon: '★' })));
+    this.soft = h('input');
+    this.soft.type = 'checkbox';
+    this.soft.addEventListener('change', () => actions.setSoft(this.soft.checked));
+    this.walls = h('input');
+    this.walls.type = 'checkbox';
+    this.walls.addEventListener('change', () => actions.setOptions({ walls: this.walls.checked }));
+    this.banking = segmented<'0' | '1' | '2'>(
+      [
+        ['0', STR.editor.banking[0]],
+        ['1', STR.editor.banking[1]],
+        ['2', STR.editor.banking[2]],
+      ],
+      (v) => actions.setOptions({ banking: Number(v) as 0 | 1 | 2 }),
+    );
+    this.theme = segmented<ThemeId>(
+      [
+        ['meadow', STR.editor.themes.meadow],
+        ['desert', STR.editor.themes.desert],
+        ['snow', STR.editor.themes.snow],
+      ],
+      (v) => actions.setOptions({ theme: v }),
+    );
     this.options = h(
       'div',
       { class: 'options-panel' },
       h('label', { class: 'field' }, h('span', { class: 'label', text: STR.editor.optName }), this.name),
       h('div', { class: 'field' }, h('span', { class: 'label', text: STR.editor.optSmoothing }), this.smoothing.el),
       h('label', { class: 'field check' }, this.snap, h('span', { text: STR.editor.optSnap })),
+      h('label', { class: 'field check' }, this.soft, h('span', { text: STR.editor.optSoft })),
+      h('div', { class: 'field' }, h('span', { class: 'label', text: STR.editor.optTheme }), this.theme.el),
+      h('div', { class: 'field' }, h('span', { class: 'label', text: STR.editor.optBanking }), this.banking.el),
+      h('label', { class: 'field check' }, this.walls, h('span', { text: STR.editor.optWalls })),
       h('div', { class: 'row wrap' }, button(STR.buttons.reverse, actions.reverse, { icon: '⇄', key: 'R' }), button(STR.buttons.shareTrack, actions.share, { icon: '⧉' })),
       h('div', { class: 'row' }, button(STR.buttons.myTracks, actions.myTracks, { icon: '☰' })),
       h('div', { class: 'field' }, h('span', { class: 'label', text: STR.editor.optSamples }), samples),
       h('div', { class: 'field' }, h('span', { class: 'label', text: STR.editor.optHelpTitle }), h('p', { class: 'help', text: STR.editor.optHelp })),
     );
     this.options.hidden = true;
-    this.root = h('div', { class: 'screen editor' }, this.top, this.options, this.bottom);
+
+    // Height tools (a second bar under the top one, in Height mode only).
+    this.tools = h(
+      'div',
+      { class: 'bar tools' },
+      button(STR.editor.hills, actions.hills, { icon: '⛰', key: k.hills }),
+      button(STR.editor.smoothHeights, actions.smoothHeights, { icon: '∿' }),
+      button(STR.editor.flatten, actions.flatten, { icon: '▬' }),
+    );
+    this.tools.hidden = true;
+
+    // Zoom buttons at the right edge.
+    this.zoomBox = h(
+      'div',
+      { class: 'zoom-box' },
+      button('', () => actions.zoom('in'), { icon: '+', class: 'round', title: `${STR.editor.zoomIn} (${k.zoomIn})` }),
+      button('', () => actions.zoom('out'), { icon: '−', class: 'round', title: `${STR.editor.zoomOut} (${k.zoomOut})` }),
+      button('', () => actions.zoom('fit'), { icon: '⤢', class: 'round', title: `${STR.editor.zoomFit} (${k.zoomFit})` }),
+    );
+    this.root = h('div', { class: 'screen editor' }, this.top, this.tools, this.zoomBox, this.options, this.bottom);
   }
 
   /** Heights of the top and bottom bars, so the canvas can keep the track clear of them. */
   insets(): { top: number; bottom: number } {
-    return { top: this.top.offsetHeight, bottom: this.bottom.offsetHeight };
+    return { top: this.top.offsetHeight + (this.tools.hidden ? 0 : this.tools.offsetHeight), bottom: this.bottom.offsetHeight };
+  }
+
+  /** Shows the height tools; returns true if that changed the layout. */
+  showTools(on: boolean): boolean {
+    if (this.tools.hidden === !on) return false;
+    this.tools.hidden = !on;
+    this.tools.style.top = `${this.top.offsetHeight}px`;
+    return true;
+  }
+
+  /** Keeps the zoom buttons in the middle of the free area on the right. */
+  placeZoom(top: number, bottom: number): void {
+    this.zoomBox.style.top = `${top}px`;
+    this.zoomBox.style.bottom = `${bottom}px`;
   }
 
   toggleOptions(force?: boolean): void {
@@ -200,6 +272,8 @@ export class EditorUI {
     mode: EditorMode;
     smoothing: SmoothingLevel;
     snap: boolean;
+    soft: boolean;
+    options: TrackOptions;
     name: string;
   }): void {
     this.undoBtn.disabled = !s.canUndo;
@@ -208,6 +282,10 @@ export class EditorUI {
     this.mode.set(s.mode);
     this.smoothing.set(s.smoothing);
     this.snap.checked = s.snap;
+    this.soft.checked = s.soft;
+    this.walls.checked = s.options.walls;
+    this.banking.set(String(s.options.banking) as '0' | '1' | '2');
+    this.theme.set(s.options.theme);
     if (document.activeElement !== this.name) this.name.value = s.name;
   }
 }

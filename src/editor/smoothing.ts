@@ -1,5 +1,5 @@
 import { DOTS, SMOOTHING, TRACK, type SmoothingLevel } from '../config/track.ts';
-import { dist, polylineLength, wrap, type Vec2 } from '../core/math.ts';
+import { dist, polylineLength, wrap, type Dot, type Vec2 } from '../core/math.ts';
 import { buildCenterline, resampleClosed, sampleClosedCatmullRom } from '../track/spline.ts';
 
 export type StrokeResult =
@@ -85,8 +85,8 @@ export function taubin(pts: readonly Vec2[], iterations: number, lambda = 0.5, m
  * Opens up corners tighter than `radius` by locally smoothing the dense points
  * around them (or until it gives up, in which case validation reports the corner).
  */
-export function relaxTightCorners(control: readonly Vec2[], radius: number, maxIterations = 60): Vec2[] {
-  let cur = control.map((p) => ({ x: p.x, y: p.y }));
+export function relaxTightCorners(control: readonly Dot[], radius: number, maxIterations = 60): Dot[] {
+  let cur = control.map((p) => ({ ...p }));
   const n = cur.length;
   const limit = 1 / radius;
   for (let iter = 0; iter < maxIterations; iter++) {
@@ -113,18 +113,23 @@ export function relaxTightCorners(control: readonly Vec2[], radius: number, maxI
       if (!marked[j]) return p;
       const a = cur[wrap(j - 1, n)];
       const b = cur[wrap(j + 1, n)];
-      return { x: p.x + 0.5 * ((a.x + b.x) / 2 - p.x), y: p.y + 0.5 * ((a.y + b.y) / 2 - p.y) };
+      return { ...p, x: p.x + 0.5 * ((a.x + b.x) / 2 - p.x), y: p.y + 0.5 * ((a.y + b.y) / 2 - p.y) };
     });
   }
   return cur;
 }
 
-/** Rounds control points to the quantisation grid so tracks rebuild bit-identically. */
-export function quantizeControl(control: readonly Vec2[]): Vec2[] {
+/** Rounds a height to the allowed range and step. */
+export const quantizeHeight = (h: number): number =>
+  Math.max(0, Math.min(TRACK.maxHeight, Math.round(h / TRACK.heightStep) * TRACK.heightStep));
+
+/** Rounds dots to the quantisation grid so tracks rebuild bit-identically (zero heights are left out). */
+export function quantizeControl(control: readonly Dot[]): Dot[] {
   const q = TRACK.quantize;
-  const out: Vec2[] = [];
+  const out: Dot[] = [];
   for (const p of control) {
-    const r = { x: Math.round(p.x / q) * q, y: Math.round(p.y / q) * q };
+    const h = quantizeHeight(p.h ?? 0);
+    const r: Dot = h ? { x: Math.round(p.x / q) * q, y: Math.round(p.y / q) * q, h } : { x: Math.round(p.x / q) * q, y: Math.round(p.y / q) * q };
     if (out.length === 0 || dist(out[out.length - 1], r) > 1e-6) out.push(r);
   }
   if (out.length > 1 && dist(out[0], out[out.length - 1]) < 1e-6) out.pop();
@@ -137,7 +142,7 @@ export function quantizeControl(control: readonly Vec2[]): Vec2[] {
  * Long gaps get extra dots (at most `maxSpacing` apart along the loop) so every
  * stretch stays easy to grab and edit. Point 0 (the start) is always kept.
  */
-export function simplifyLoop(pts: readonly Vec2[], tolerance: number = DOTS.tolerance, maxSpacing: number = DOTS.maxSpacing): Vec2[] {
+export function simplifyLoop(pts: readonly Dot[], tolerance: number = DOTS.tolerance, maxSpacing: number = DOTS.maxSpacing): Dot[] {
   const n = pts.length;
   if (n < 4) return pts.map((p) => ({ ...p }));
   const keep = new Uint8Array(n);
@@ -173,7 +178,7 @@ export function simplifyLoop(pts: readonly Vec2[], tolerance: number = DOTS.tole
   // Cap the spacing between kept points.
   const idx: number[] = [];
   for (let i = 0; i < n; i++) if (keep[i]) idx.push(i);
-  const out: Vec2[] = [];
+  const out: Dot[] = [];
   for (let k = 0; k < idx.length; k++) {
     const a = idx[k];
     const b = k + 1 < idx.length ? idx[k + 1] : idx[0] + n;
@@ -187,27 +192,29 @@ export function simplifyLoop(pts: readonly Vec2[], tolerance: number = DOTS.tole
 }
 
 /** Re-spaces a hand-authored control loop evenly along its spline. */
-export function evenControl(control: readonly Vec2[]): Vec2[] {
+export function evenControl(control: readonly Dot[]): Dot[] {
   return resampleClosed(sampleClosedCatmullRom(control, 1), TRACK.controlSpacing).points;
 }
 
 /** Dense smoothed loop -> drivable, editable, quantised dots. */
-export const denseToDots = (dense: readonly Vec2[], level: SmoothingLevel = 'normal'): Vec2[] =>
+export const denseToDots = (dense: readonly Dot[], level: SmoothingLevel = 'normal'): Dot[] =>
   quantizeControl(simplifyLoop(relaxTightCorners(dense, SMOOTHING[level].radius)));
 
 /** Snaps a dot to the quantisation grid (and optionally the coarse editing grid). */
-export function snapDot(p: Vec2, grid = 0): Vec2 {
+export function snapDot(p: Dot, grid = 0): Dot {
   const q = grid > 0 ? grid : TRACK.quantize;
-  return { x: Math.round(p.x / q) * q, y: Math.round(p.y / q) * q };
+  const r: Dot = { x: Math.round(p.x / q) * q, y: Math.round(p.y / q) * q };
+  if (p.h) r.h = quantizeHeight(p.h);
+  return r;
 }
 
 /** Same loop and start line, driven the other way round. */
-export function reverseDots(dots: readonly Vec2[]): Vec2[] {
+export function reverseDots(dots: readonly Dot[]): Dot[] {
   return [dots[0], ...dots.slice(1).reverse()].map((p) => ({ ...p }));
 }
 
 /** Moves the start line to dot `k`. */
-export function rotateDots(dots: readonly Vec2[], k: number): Vec2[] {
+export function rotateDots(dots: readonly Dot[], k: number): Dot[] {
   const n = dots.length;
   const i = ((k % n) + n) % n;
   return [...dots.slice(i), ...dots.slice(0, i)].map((p) => ({ ...p }));

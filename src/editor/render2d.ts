@@ -1,7 +1,8 @@
 import { TRACK, WORLD } from '../config/track.ts';
-import type { Vec2 } from '../core/math.ts';
+import { wrap, type Dot, type Vec2 } from '../core/math.ts';
 import { leftOf } from '../track/spline.ts';
 import type { Track } from '../track/track.ts';
+import { crossingKind, crossingsOf } from './validation.ts';
 
 /** World (metres, origin at the centre of the drawable area) -> CSS pixels. */
 export interface View {
@@ -37,17 +38,6 @@ export function fitView(w: number, h: number, top: number, bottom: number): View
 
 export const toScreen = (v: View, p: Vec2): Vec2 => ({ x: v.ox + p.x * v.scale, y: v.oy + p.y * v.scale });
 export const toWorld = (v: View, x: number, y: number): Vec2 => ({ x: (x - v.ox) / v.scale, y: (y - v.oy) / v.scale });
-
-function pathLoop(ctx: CanvasRenderingContext2D, v: View, pts: readonly Vec2[], closed: boolean): void {
-  ctx.beginPath();
-  for (let i = 0; i < pts.length; i++) {
-    const x = v.ox + pts[i].x * v.scale;
-    const y = v.oy + pts[i].y * v.scale;
-    if (i === 0) ctx.moveTo(x, y);
-    else ctx.lineTo(x, y);
-  }
-  if (closed) ctx.closePath();
-}
 
 /** Paper background, grid, and the dashed border of the drawable area. */
 export function drawPaper(ctx: CanvasRenderingContext2D, v: View, w: number, h: number): void {
@@ -92,12 +82,31 @@ export function drawPaper(ctx: CanvasRenderingContext2D, v: View, w: number, h: 
   ctx.setLineDash([]);
 }
 
-/** The raw stroke while drawing: a wash as wide as the road, plus the ink line. */
+/** Smooth open path through the points (quadratic curves through the midpoints). */
+function smoothPath(ctx: CanvasRenderingContext2D, v: View, pts: readonly Vec2[]): void {
+  const X = (p: Vec2) => v.ox + p.x * v.scale;
+  const Y = (p: Vec2) => v.oy + p.y * v.scale;
+  ctx.beginPath();
+  ctx.moveTo(X(pts[0]), Y(pts[0]));
+  if (pts.length === 2) {
+    ctx.lineTo(X(pts[1]), Y(pts[1]));
+    return;
+  }
+  for (let i = 1; i < pts.length - 1; i++) {
+    const a = pts[i];
+    const b = pts[i + 1];
+    ctx.quadraticCurveTo(X(a), Y(a), (X(a) + X(b)) / 2, (Y(a) + Y(b)) / 2);
+  }
+  const last = pts[pts.length - 1];
+  ctx.lineTo(X(last), Y(last));
+}
+
+/** The stroke while drawing: a wash as wide as the road, plus the ink line. */
 export function drawStroke(ctx: CanvasRenderingContext2D, v: View, pts: readonly Vec2[], failed = false): void {
   if (pts.length < 2) return;
   ctx.lineJoin = 'round';
   ctx.lineCap = 'round';
-  pathLoop(ctx, v, pts, false);
+  smoothPath(ctx, v, pts);
   ctx.strokeStyle = failed ? PAPER.errorWash : PAPER.inkWash;
   ctx.lineWidth = TRACK.roadWidth * v.scale;
   ctx.stroke();
@@ -112,29 +121,131 @@ export interface RoadStyle {
   asphalt: string;
   edge: string;
   arrows: boolean;
+  /** Colour the road by its height (the editor's Height mode). */
+  heights: boolean;
+  /** Barrier lines along the edges. */
+  walls: boolean;
 }
 
-/** Road ribbon with edge lines, kerbs, direction arrows and the start/finish line. */
-export function drawTrack(ctx: CanvasRenderingContext2D, v: View, track: Track, style?: Partial<RoadStyle>): void {
-  const s: RoadStyle = { asphalt: PAPER.asphalt, edge: PAPER.edge, arrows: true, ...style };
+/** Road colour for a height: slate blue at ground level through green to orange at the top. */
+export function heightColor(h: number): string {
+  const t = Math.max(0, Math.min(1, h / TRACK.maxHeight));
+  const hue = 210 - 190 * t;
+  return `hsl(${hue.toFixed(0)}, ${(22 + 60 * Math.min(1, t * 2.5)).toFixed(0)}%, ${(42 + 8 * t).toFixed(0)}%)`;
+}
+
+/** Stretches of road that pass over another (sample ranges, drawn last with a shadow). */
+const overpassCache = new WeakMap<Track, { from: number; count: number }[]>();
+export function overpasses(track: Track): { from: number; count: number }[] {
+  let o = overpassCache.get(track);
+  if (o) return o;
   const c = track.center;
+  o = [];
+  for (const x of crossingsOf(c)) {
+    if (crossingKind(x.dh) !== 'bridge') continue;
+    const upper = x.dh > 0 ? x.j : x.i;
+    const half = Math.ceil((TRACK.roadWidth / Math.max(0.3, Math.sin(x.angle)) + 10) / c.spacing);
+    o.push({ from: upper - half, count: half * 2 + 1 });
+  }
+  overpassCache.set(track, o);
+  return o;
+}
+
+function strokeRun(ctx: CanvasRenderingContext2D, v: View, pts: readonly Vec2[], from: number, count: number): void {
+  const n = pts.length;
+  ctx.beginPath();
+  for (let k = 0; k <= count; k++) {
+    const p = pts[wrap(from + k, n)];
+    const x = v.ox + p.x * v.scale;
+    const y = v.oy + p.y * v.scale;
+    if (k === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+}
+
+/** The asphalt of samples [from, from + count], coloured by height if asked. */
+function paintRoad(ctx: CanvasRenderingContext2D, v: View, track: Track, s: RoadStyle, from: number, count: number): void {
+  const c = track.center;
+  const w = TRACK.roadWidth * v.scale;
+  ctx.strokeStyle = s.edge;
+  ctx.lineWidth = w;
+  strokeRun(ctx, v, c.points, from, count);
+  ctx.lineWidth = Math.max(w - Math.max(1.5, 0.12 * w), w * 0.75);
+  if (!s.heights) {
+    ctx.strokeStyle = s.asphalt;
+    strokeRun(ctx, v, c.points, from, count);
+    return;
+  }
+  const n = c.points.length;
+  const run = 3;
+  for (let k = 0; k < count; k += run) {
+    ctx.strokeStyle = heightColor(c.height[wrap(from + k + 1, n)]);
+    strokeRun(ctx, v, c.points, from + k, Math.min(run, count - k));
+  }
+}
+
+/** Thin barrier lines just outside the kerbs. */
+function drawWallLines(ctx: CanvasRenderingContext2D, v: View, track: Track): void {
+  const c = track.center;
+  const off = TRACK.wallOffset;
+  ctx.strokeStyle = 'rgba(40, 44, 52, 0.55)';
+  ctx.lineWidth = Math.max(1, 0.5 * v.scale);
+  for (const side of [1, -1]) {
+    ctx.beginPath();
+    c.points.forEach((p, i) => {
+      const l = leftOf(c.tangents[i]);
+      const x = v.ox + (p.x + l.x * off * side) * v.scale;
+      const y = v.oy + (p.y + l.y * off * side) * v.scale;
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    });
+    ctx.closePath();
+    ctx.stroke();
+  }
+}
+
+/** Road ribbon with edge lines, kerbs, direction arrows and the start/finish line; bridges on top. */
+export function drawTrack(ctx: CanvasRenderingContext2D, v: View, track: Track, style?: Partial<RoadStyle>): void {
+  const s: RoadStyle = { asphalt: PAPER.asphalt, edge: PAPER.edge, arrows: true, heights: false, walls: false, ...style };
+  const c = track.center;
+  const n = c.points.length;
   const w = TRACK.roadWidth * v.scale;
   ctx.lineJoin = 'round';
   ctx.lineCap = 'round';
 
+  if (s.walls) drawWallLines(ctx, v, track);
   // Kerbs first, so the road covers their inner half.
   drawKerbs(ctx, v, track);
-
-  pathLoop(ctx, v, c.points, true);
-  ctx.strokeStyle = s.edge;
-  ctx.lineWidth = w;
-  ctx.stroke();
-  ctx.strokeStyle = s.asphalt;
-  ctx.lineWidth = Math.max(w - Math.max(1.5, 0.12 * w), w * 0.75);
-  ctx.stroke();
-
+  paintRoad(ctx, v, track, s, 0, n);
   if (s.arrows) drawArrows(ctx, v, track);
   drawStartLine(ctx, v, c.points[0], c.tangents[0]);
+
+  // Bridges: a soft shadow, then the upper road again over the one below.
+  ctx.lineCap = 'butt';
+  for (const o of overpasses(track)) {
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.28)';
+    ctx.lineWidth = w * 1.45;
+    strokeRun(ctx, v, c.points, o.from, o.count);
+    paintRoad(ctx, v, track, s, o.from, o.count);
+    // Rails.
+    ctx.strokeStyle = '#d9dce2';
+    ctx.lineWidth = Math.max(1, 0.6 * v.scale);
+    for (const side of [1, -1]) {
+      ctx.beginPath();
+      for (let k = 0; k <= o.count; k++) {
+        const i = wrap(o.from + k, n);
+        const l = leftOf(c.tangents[i]);
+        const off = (TRACK.roadWidth / 2 + 1.2) * side;
+        const x = v.ox + (c.points[i].x + l.x * off) * v.scale;
+        const y = v.oy + (c.points[i].y + l.y * off) * v.scale;
+        if (k === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+    }
+  }
+  ctx.lineCap = 'round';
 }
 
 function drawKerbs(ctx: CanvasRenderingContext2D, v: View, track: Track): void {
@@ -323,5 +434,71 @@ export function drawChain(ctx: CanvasRenderingContext2D, v: View, line: readonly
     ctx.lineTo(b.x, b.y);
     ctx.stroke();
     ctx.setLineDash([]);
+  }
+}
+
+/** The pen's string while drawing: from the ink tip to the pointer. */
+export function drawPenString(ctx: CanvasRenderingContext2D, v: View, tip: Vec2, pointer: Vec2): void {
+  const a = toScreen(v, tip);
+  const b = toScreen(v, pointer);
+  ctx.strokeStyle = 'rgba(27, 58, 138, 0.45)';
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([3, 3]);
+  ctx.beginPath();
+  ctx.moveTo(a.x, a.y);
+  ctx.lineTo(b.x, b.y);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.beginPath();
+  ctx.arc(b.x, b.y, 4, 0, Math.PI * 2);
+  ctx.strokeStyle = PAPER.ink;
+  ctx.stroke();
+}
+
+/** Red wash over the stretch of road a section redraw is about to replace. */
+export function drawReplaced(ctx: CanvasRenderingContext2D, v: View, track: Track, from: number, to: number): void {
+  const c = track.center;
+  const n = c.points.length;
+  const count = wrap(to - from, n);
+  if (count < 1) return;
+  ctx.lineCap = 'round';
+  ctx.strokeStyle = 'rgba(214, 58, 58, 0.35)';
+  ctx.lineWidth = TRACK.roadWidth * v.scale * 1.3;
+  strokeRun(ctx, v, c.points, from, count);
+}
+
+/** A ring marking a spot on the road (where a section redraw will join, the profile cursor). */
+export function drawMarker(ctx: CanvasRenderingContext2D, v: View, p: Vec2, color: string = PAPER.close): void {
+  const s = toScreen(v, p);
+  ctx.beginPath();
+  ctx.arc(s.x, s.y, Math.max(7, (TRACK.roadWidth / 2) * v.scale + 3), 0, Math.PI * 2);
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 3;
+  ctx.stroke();
+}
+
+/** Small height tags ("12 m") beside the given dots. */
+export function drawHeightTags(ctx: CanvasRenderingContext2D, v: View, dots: readonly Dot[], which: readonly number[]): void {
+  ctx.font = '700 11px system-ui, sans-serif';
+  ctx.textBaseline = 'middle';
+  const placed: { x: number; y: number; w: number }[] = [];
+  for (const i of which) {
+    const d = dots[i];
+    if (!d) continue;
+    const s = toScreen(v, d);
+    const text = `${(d.h ?? 0).toFixed((d.h ?? 0) % 1 ? 1 : 0)} m`;
+    const tw = ctx.measureText(text).width;
+    const x = s.x + 9;
+    const y = s.y - 12;
+    // Skip tags that would sit on top of one already drawn (the first ones are the important ones).
+    if (placed.some((p) => Math.abs(p.y - y) < 17 && x < p.x + p.w + 4 && p.x < x + tw + 10)) continue;
+    placed.push({ x: x - 3, y, w: tw + 6 });
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+    ctx.fillRect(x - 3, y - 8, tw + 6, 16);
+    ctx.strokeStyle = heightColor(d.h ?? 0);
+    ctx.lineWidth = 2;
+    ctx.strokeRect(x - 3, y - 8, tw + 6, 16);
+    ctx.fillStyle = '#1b1b1b';
+    ctx.fillText(text, x, y);
   }
 }

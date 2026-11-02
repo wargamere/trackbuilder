@@ -1,9 +1,14 @@
 import { HANDLING } from '../config/handling.ts';
 import { clamp } from '../core/math.ts';
+import { TRACK } from '../config/track.ts';
 import { locatorFor, type TrackLocator } from '../track/locator.ts';
-import { placeTrees, TREE_TRUNK_RADIUS } from '../track/placement.ts';
-import { sampleAt } from '../track/spline.ts';
+import { placeTrees } from '../track/placement.ts';
+import { leftOf, sampleAt } from '../track/spline.ts';
+import { groundPose } from '../track/ground.ts';
+import { surfaceFor, terrainHeight, type TrackSurface } from '../track/surface.ts';
 import type { Track } from '../track/track.ts';
+
+const G = 9.81;
 
 /** Driver input for one physics tick. */
 export interface DriveInput {
@@ -45,6 +50,12 @@ export class CarState {
   trackIndex = -1;
   s = 0;
   lateral = 0;
+  /** Height of the ground under the car, and its nose-up pitch / left-up roll (rad), for rendering. */
+  y = 0;
+  pitch = 0;
+  roll = 0;
+  /** Speed into the barrier on the last tick it was hit (0 = no hit), for sound and camera shake. */
+  wallHit = 0;
 
   copyFrom(o: CarState): this {
     Object.assign(this, o);
@@ -69,6 +80,9 @@ export function lerpState(a: CarState, b: CarState, t: number, out: CarState): C
   out.steer = a.steer + (b.steer - a.steer) * t;
   out.spin = a.spin + (b.spin - a.spin) * t;
   out.speed = a.speed + (b.speed - a.speed) * t;
+  out.y = a.y + (b.y - a.y) * t;
+  out.pitch = a.pitch + (b.pitch - a.pitch) * t;
+  out.roll = a.roll + (b.roll - a.roll) * t;
   return out;
 }
 
@@ -122,11 +136,13 @@ export class CarPhysics {
   private readonly track: Track;
   private readonly locator: TrackLocator;
   private readonly obstacles: ObstacleGrid;
+  private readonly surf: TrackSurface;
 
   constructor(track: Track) {
     this.track = track;
     this.locator = locatorFor(track);
-    this.obstacles = new ObstacleGrid(placeTrees(track).map((t) => ({ x: t.x, z: t.z, r: TREE_TRUNK_RADIUS * t.scale })));
+    this.surf = surfaceFor(track);
+    this.obstacles = new ObstacleGrid(placeTrees(track).map((t) => ({ x: t.x, z: t.z, r: t.radius })));
     this.placeAt(-8);
   }
 
@@ -142,6 +158,7 @@ export class CarPhysics {
     st.trackIndex = pos.index;
     st.s = pos.s;
     st.lateral = pos.lateral;
+    this.updateGround();
     this.prev.copyFrom(st);
   }
 
@@ -198,12 +215,21 @@ export class CarPhysics {
     }
     if (throttle === 0 && brake === 0) resist += H.engineBraking;
     if (inp.handbrake) resist += H.handbrakeDecel;
+    // Gravity along the slope: uphill slows the car, downhill speeds it up.
+    drive -= G * H.slopeFactor * this.slopeAhead(cos, sin, pos.index, pos.lateral);
     vf += drive * dt;
     const r = resist * dt;
     vf = Math.abs(vf) <= r ? 0 : vf - Math.sign(vf) * r;
 
-    // --- yaw: follow the bicycle-model turn rate, limited by what the tyres can hold
-    const latMax = H.maxLateralAccel * grip;
+    // --- yaw: follow the bicycle-model turn rate, limited by what the tyres can hold.
+    // Turning into a banked corner adds grip; turning against the bank takes some away.
+    const c = this.track.center;
+    const t = c.tangents[pos.index];
+    const along = Math.sign(cos * t.x + sin * t.y) || 1;
+    const onRoad = Math.abs(pos.lateral) <= TRACK.wallOffset;
+    const bank = onRoad ? c.bank[pos.index] * along : 0;
+    const bankAssist = G * Math.sin(Math.abs(bank)) * (Math.sign(bank) === Math.sign(st.yawRate) ? 1 : -0.5);
+    const latMax = Math.max(H.maxLateralAccel * grip * 0.5, H.maxLateralAccel * grip + bankAssist * H.bankGripFactor);
     let yawTarget = (vf * Math.tan(st.steer)) / H.wheelBase;
     if (inp.handbrake) yawTarget *= H.handbrakeYawBoost;
     const yawLimit = (latMax * H.yawOvershoot * (inp.handbrake ? 1.8 : 1)) / Math.max(Math.abs(vf), 2);
@@ -225,6 +251,8 @@ export class CarPhysics {
     st.z += st.vz * dt;
 
     this.collide();
+    this.collideWalls();
+    this.updateGround();
 
     st.speed = vf;
     st.slip = Math.abs(vr);
@@ -232,6 +260,57 @@ export class CarPhysics {
     st.longAccel = (vf - vf0) / dt;
     st.latAccel = vf * st.yawRate;
     st.spin = (st.spin + (vf / H.wheelRadius) * dt) % (Math.PI * 2);
+  }
+
+  /** Slope along the car's heading at its position (road grade on the road, terrain elsewhere). */
+  private slopeAhead(cos: number, sin: number, i: number, lateral: number): number {
+    const c = this.track.center;
+    if (Math.abs(lateral) <= TRACK.wallOffset) {
+      const t = c.tangents[i];
+      return c.grade[i] * (cos * t.x + sin * t.y);
+    }
+    const st = this.state;
+    const tr = this.surf.terrain;
+    return (terrainHeight(tr, st.x + cos, st.z + sin) - terrainHeight(tr, st.x - cos, st.z - sin)) / 2;
+  }
+
+  /** Ground height under the car and the car's pitch and roll (for rendering and the camera). */
+  private updateGround(): void {
+    const st = this.state;
+    groundPose(this.track, this.surf, st.x, st.z, st.heading, { index: Math.max(0, st.trackIndex), s: st.s, lateral: st.lateral }, st);
+  }
+
+  /**
+   * Barriers: if the car's side passes the barrier line where there is one,
+   * push it back, bounce a little off it and scrub some speed.
+   */
+  private collideWalls(): void {
+    const H = HANDLING;
+    const st = this.state;
+    st.wallHit = 0;
+    const pos = this.locator.locate({ x: st.x, y: st.z }, st.trackIndex, 6);
+    const side = pos.lateral >= 0 ? 1 : -1;
+    const flags = side > 0 ? this.surf.wallL : this.surf.wallR;
+    const limit = TRACK.wallOffset - H.halfWidth;
+    const excess = Math.abs(pos.lateral) - limit;
+    // Only within a sensible band: a car that is already far outside (through a gap) isn't pulled back.
+    if (excess <= 0 || excess > 2.5 || !flags[pos.index]) return;
+    const l = leftOf(this.track.center.tangents[pos.index]);
+    const nx = l.x * side; // outward normal
+    const nz = l.y * side;
+    st.x -= nx * excess;
+    st.z -= nz * excess;
+    const vn = st.vx * nx + st.vz * nz;
+    if (vn > 0) {
+      st.vx -= nx * vn * (1 + H.wallBounce);
+      st.vz -= nz * vn * (1 + H.wallBounce);
+      const scrub = Math.max(H.wallMinKeep, 1 - H.wallScrub * vn);
+      st.vx *= scrub;
+      st.vz *= scrub;
+      st.yawRate *= 0.6;
+      st.wallHit = vn;
+    }
+    st.lateral = pos.lateral - side * excess;
   }
 
   /** Tree trunks and the edge of the world. */

@@ -1,19 +1,21 @@
-import { INK, TRACK } from '../config/track.ts';
-import type { Vec2 } from '../core/math.ts';
+import { DEFAULT_OPTIONS, INK, TRACK, type TrackOptions } from '../config/track.ts';
+import type { Dot } from '../core/math.ts';
 import { hashString } from '../core/random.ts';
 import { findCorners, type Corner } from './corners.ts';
 import { inkStats, type InkStats } from './ink.ts';
 import { buildCenterline, type Centerline } from './spline.ts';
 
 /**
- * The canonical, storable description of a track: a closed loop of smoothed,
- * quantised control points. Everything else is rebuilt from it deterministically,
- * so this is what the library saves and what a share code encodes.
+ * The canonical, storable description of a track: a closed loop of dots
+ * (position + height) and a few options. Everything else is rebuilt from it
+ * deterministically, so this is what the library saves and a share code encodes.
  */
 export interface TrackDef {
   id: string;
   name: string;
-  control: Vec2[];
+  control: Dot[];
+  /** Missing fields use DEFAULT_OPTIONS. */
+  options?: Partial<TrackOptions>;
   /** True for the built-in sample tracks. */
   builtIn?: boolean;
 }
@@ -21,6 +23,7 @@ export interface TrackDef {
 /** A track ready to race: definition plus all derived geometry. */
 export interface Track {
   def: TrackDef;
+  options: TrackOptions;
   center: Centerline;
   /** Corners tight enough to count for the ink bonus. */
   tightCorners: Corner[];
@@ -29,11 +32,14 @@ export interface Track {
   ink: InkStats;
 }
 
+export const trackOptions = (def: Pick<TrackDef, 'options'>): TrackOptions => ({ ...DEFAULT_OPTIONS, ...def.options });
+
 export function buildTrack(def: TrackDef): Track {
-  const center = buildCenterline(def.control);
+  const options = trackOptions(def);
+  const center = buildCenterline(def.control, options.banking);
   const tightCorners = findCorners(center, INK.cornerRadius, INK.cornerMinTurn);
   const kerbs = findCorners(center, TRACK.kerbRadius, TRACK.kerbMinTurn);
-  return { def, center, tightCorners, kerbs, ink: inkStats(center.length, tightCorners) };
+  return { def, options, center, tightCorners, kerbs, ink: inkStats(center.length, tightCorners) };
 }
 
 /** Short random id for user-drawn tracks. */
@@ -42,9 +48,17 @@ export function newTrackId(): string {
 }
 
 /**
- * Id derived from the shape itself, so the same layout always gets the same id
- * (best laps and ghosts follow the shape, and editing a track gives a new id).
+ * Id derived from the track itself, so the same layout always gets the same id
+ * (best laps and ghosts follow the track, and editing it gives a new id).
+ * Heights and options are only part of the hash when they differ from the
+ * defaults, so flat default tracks keep the ids they had before elevation existed.
  */
-export function contentId(control: readonly Vec2[]): string {
-  return 't' + hashString(control.map((p) => `${p.x},${p.y}`).join(';')).toString(36);
+export function contentId(control: readonly Dot[], options?: Partial<TrackOptions>): string {
+  const dots = control.map((p) => (p.h ? `${p.x},${p.y},${p.h}` : `${p.x},${p.y}`)).join(';');
+  const o = { ...DEFAULT_OPTIONS, ...options };
+  const extra = (Object.keys(DEFAULT_OPTIONS) as (keyof TrackOptions)[])
+    .filter((k) => o[k] !== DEFAULT_OPTIONS[k])
+    .map((k) => `${k}=${o[k]}`)
+    .join('&');
+  return 't' + hashString(extra ? `${dots}|${extra}` : dots).toString(36);
 }
