@@ -97,7 +97,8 @@ export function validateCenterline(c: Centerline): Validation {
     if (Math.abs(c.curvature[i]) > maxCurv) return { ok: false, issue: 'too-tight', at: pts[i] };
   }
   for (let i = 0; i < n; i++) {
-    if (Math.abs(c.grade[i]) > TRACK.maxGrade) return { ok: false, issue: 'too-steep', at: pts[i] };
+    // Slopes are eased to the limit when the centre line is built, so this only catches bugs.
+    if (Math.abs(c.grade[i]) > TRACK.maxGrade * 1.02) return { ok: false, issue: 'too-steep', at: pts[i] };
   }
 
   const all = crossingsOf(c);

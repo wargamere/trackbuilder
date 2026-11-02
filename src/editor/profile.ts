@@ -20,6 +20,9 @@ function plot(r: Rect): Rect {
   return { x: r.x + left, y: r.y + pad + 4, w: r.w - left - pad, h: r.h - pad * 2 - 4 };
 }
 
+/** Colour of stretches at the steepest allowed slope. */
+const STEEPEST = '#e8901a';
+
 /** Height range shown: always 0..max height, so handles don't jump while dragging. */
 const TOP = TRACK.maxHeight;
 
@@ -67,7 +70,7 @@ export interface ProfileState {
 }
 
 /**
- * The track's height along its length: the road profile (red where too steep),
+ * The track's height along its length: the road profile (amber at the steepest allowed slope),
  * markers where the track crosses itself (grey level crossing, blue bridge, red
  * neither), the start line, and a draggable handle for every dot.
  */
@@ -127,12 +130,12 @@ export function drawProfile(ctx: CanvasRenderingContext2D, r: Rect, track: Track
   ctx.closePath();
   ctx.fillStyle = 'rgba(27, 58, 138, 0.10)';
   ctx.fill();
-  // Profile line, coloured by height; red where it is too steep.
+  // Profile line, coloured by height; amber where it is as steep as allowed (steeper dots get eased to this).
   ctx.lineWidth = 3;
   ctx.lineCap = 'round';
   for (let i = 0; i < n; i++) {
     const j = i + 1;
-    ctx.strokeStyle = Math.abs(c.grade[i]) > TRACK.maxGrade ? PAPER.error : heightColor(c.height[i]);
+    ctx.strokeStyle = Math.abs(c.grade[i]) >= TRACK.maxGrade * 0.97 ? STEEPEST : heightColor(c.height[i]);
     ctx.beginPath();
     ctx.moveTo(profileX(r, i * c.spacing, L), profileY(r, c.height[i]));
     ctx.lineTo(profileX(r, Math.min(L, j * c.spacing), L), profileY(r, c.height[j % n]));

@@ -93,13 +93,36 @@ test('roads crossing level, as a bridge, or neither', () => {
   if (!bad.ok) assert.equal(bad.issue, 'crossing-height');
 });
 
-test('a climb steeper than the limit is rejected', () => {
+test('a climb steeper than the limit is eased out instead of rejected', () => {
   const base = getSampleTrack(0);
   const control = base.def.control.map((d, i) => (i === 5 ? { ...d, h: 30 } : { ...d }));
   const res = trackFromControl({ id: 'steep', name: 'steep', control });
-  assert.equal(res.ok, false);
-  if (!res.ok) assert.equal(res.issue, 'too-steep');
+  assert.ok(res.ok, !res.ok ? res.issue : '');
+  const c = res.track!.center;
+  const steepest = Math.max(...Array.from(c.grade, Math.abs));
+  assert.ok(steepest <= TRACK.maxGrade + 1e-6, `grade ${steepest}`);
+  assert.ok(c.eased > 1, 'the spike was eased');
+  // Still a real hill where the dot is, just not a wall.
+  const top = c.height[nearestIndex(c.points, control[5])];
+  assert.ok(top > 12 && top < 30, `top ${top.toFixed(1)} m`);
+  // A gentle profile is left exactly as drawn.
+  const gentle = trackFromControl({ id: 'gentle', name: 'g', control: base.def.control.map((d, i) => ({ ...d, h: i % 10 === 0 ? 2 : 0 })) });
+  assert.ok(gentle.ok);
+  assert.equal(gentle.track!.center.eased, 0);
 });
+
+const nearestIndex = (pts: readonly Vec2[], p: Vec2): number => {
+  let best = 0;
+  let bestD = Infinity;
+  pts.forEach((q, i) => {
+    const d = dist(p, q);
+    if (d < bestD) {
+      bestD = d;
+      best = i;
+    }
+  });
+  return best;
+};
 
 test('the ground never pokes through the road, on any sample with random hills', () => {
   for (let si = 0; si < SAMPLE_COUNT; si++) {

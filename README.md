@@ -90,7 +90,7 @@ A track is a closed loop of **dots** with a smooth spline through them (`TrackDe
   - Smoothing (in Options) sets how much wobble is removed and how tight a drawn corner may stay: Sharp 6 m, Normal 10 m, Smooth 22 m.
 - **Dots mode:** click to place dots, then click the first dot (or press Enter) to close the loop. Click the road to insert a dot.
 - **Height mode:**
-  - drag dots up and down on the map, or by their handles in the height profile along the bottom (red where it is too steep; crossings marked grey for level, blue for bridges);
+  - drag dots up and down on the map, or by their handles in the height profile along the bottom (amber where the road is as steep as allowed; crossings marked grey for level, blue for bridges);
   - click the road to add a dot at the road's height there;
   - Random hills (H) makes rolling hills that keep every crossing level or a proper bridge; there are also Smooth and Flatten;
   - the road is coloured by height.
@@ -104,10 +104,11 @@ A track is a closed loop of **dots** with a smooth spline through them (`TrackDe
 - **Validation runs live** and marks the problem spot:
   - too short or too long (out of ink);
   - corner tighter than 4.5 m;
-  - a slope steeper than 30%;
   - two stretches too close together (unless one passes 6 m over the other);
   - where the road crosses itself, the two roads must be level (within 1 m), or one at least 6 m higher for a bridge;
   - a level crossing must not be too shallow or on the start line.
+
+  Slopes never block a track: anything steeper than 45% is eased out when the road is built (the top of the climb comes down a little and the bottom up, as little as possible), and the editor says so.
 
   Level crossings work because the ground-level road is drawn without writing depth, so a flat crossroads doesn't flicker, and the car tracker searches near its last position, so it stays on its own stretch.
 

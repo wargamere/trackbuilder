@@ -15,8 +15,10 @@ export interface Centerline {
   curvature: Float32Array;
   /** Road height (m) at each point. */
   height: Float32Array;
-  /** Slope along the direction of travel (dh/ds); 0.1 = 10 % uphill. */
+  /** Slope along the direction of travel (dh/ds); 0.1 = 10 % uphill. Never steeper than TRACK.maxGrade. */
   grade: Float32Array;
+  /** Largest change (m) made to the dots' heights to keep slopes drivable (0 = none). */
+  eased: number;
   /** Banking angle (rad). Positive raises the left side, i.e. leans into a right-hander. */
   bank: Float32Array;
   /** Distance from the start line to each point. */
@@ -121,6 +123,36 @@ function smoothLoop(src: Float32Array, r: number): Float32Array {
   return out;
 }
 
+/**
+ * Limits the slope of a closed height profile to `maxStep` metres per sample,
+ * changing it as little as possible: the average of the profile with its peaks
+ * cut down and with its valleys filled in (both are exactly slope-limited, so
+ * their average is too). Where the profile is already gentle it is unchanged.
+ */
+export function limitSlope(h: Float32Array, maxStep: number): Float32Array {
+  const n = h.length;
+  const lo = Float32Array.from(h); // peaks cut
+  const hi = Float32Array.from(h); // valleys filled
+  // Two laps each way are enough for any limit to travel all the way round.
+  for (let lap = 0; lap < 2; lap++) {
+    for (let k = 0; k < n; k++) {
+      const i = k;
+      const p = wrap(k - 1, n);
+      lo[i] = Math.min(lo[i], lo[p] + maxStep);
+      hi[i] = Math.max(hi[i], hi[p] - maxStep);
+    }
+    for (let k = n - 1; k >= 0; k--) {
+      const i = k;
+      const q = wrap(k + 1, n);
+      lo[i] = Math.min(lo[i], lo[q] + maxStep);
+      hi[i] = Math.max(hi[i], hi[q] - maxStep);
+    }
+  }
+  const out = new Float32Array(n);
+  for (let i = 0; i < n; i++) out[i] = (lo[i] + hi[i]) / 2;
+  return out;
+}
+
 /** Banking levels: maximum bank angle (reached at radius ≤ TRACK.bankRadius). */
 export const BANK_LEVELS = [0, (7 * Math.PI) / 180, (15 * Math.PI) / 180] as const;
 
@@ -133,13 +165,18 @@ export function buildCenterline(ctrl: readonly Dot[], banking = 0, spacing: numb
   const points: Vec2[] = new Array(n);
   const tangents: Vec2[] = new Array(n);
   const curvature = new Float32Array(n);
-  const height = new Float32Array(n);
+  const raw = new Float32Array(n);
   const grade = new Float32Array(n);
   const distArr = new Float32Array(n);
   for (let i = 0; i < n; i++) {
     points[i] = { x: pts[i].x, y: pts[i].y };
-    height[i] = Math.max(0, pts[i].h ?? 0);
+    raw[i] = Math.max(0, pts[i].h ?? 0);
   }
+  // Climbs steeper than the limit are eased out (a little lower at the top, a
+  // little higher at the bottom) instead of making the track unusable.
+  const height = limitSlope(raw, TRACK.maxGrade * realSpacing * 0.999);
+  let eased = 0;
+  for (let i = 0; i < n; i++) eased = Math.max(eased, Math.abs(height[i] - raw[i]));
   const k = 2; // curvature window, in samples on each side
   for (let i = 0; i < n; i++) {
     const prev = points[wrap(i - 1, n)];
@@ -153,13 +190,13 @@ export function buildCenterline(ctrl: readonly Dot[], banking = 0, spacing: numb
   }
   // Banking: leans into corners in proportion to curvature, smoothed so it rolls in and out.
   const maxBank = BANK_LEVELS[Math.max(0, Math.min(2, banking))];
-  const raw = new Float32Array(n);
+  const rawBank = new Float32Array(n);
   if (maxBank > 0) {
-    for (let i = 0; i < n; i++) raw[i] = Math.sign(curvature[i]) * maxBank * Math.min(1, Math.abs(curvature[i]) * TRACK.bankRadius);
+    for (let i = 0; i < n; i++) rawBank[i] = Math.sign(curvature[i]) * maxBank * Math.min(1, Math.abs(curvature[i]) * TRACK.bankRadius);
   }
   const r = Math.max(1, Math.round(12 / realSpacing));
-  const bank = maxBank > 0 ? smoothLoop(smoothLoop(raw, r), r) : raw;
-  return { points, tangents, curvature, height, grade, bank, dist: distArr, length, spacing: realSpacing };
+  const bank = maxBank > 0 ? smoothLoop(smoothLoop(rawBank, r), r) : rawBank;
+  return { points, tangents, curvature, height, grade, eased, bank, dist: distArr, length, spacing: realSpacing };
 }
 
 /** Position and direction at distance `s` along the loop (wraps; linearly interpolated). */

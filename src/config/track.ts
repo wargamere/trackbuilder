@@ -39,8 +39,8 @@ export const TRACK = {
   /** Dot heights are limited to this range (m) and rounded to `heightStep`. */
   maxHeight: 40,
   heightStep: 0.5,
-  /** Steepest allowed slope (rise / run). */
-  maxGrade: 0.3,
+  /** Steepest slope (rise / run); anything steeper is eased out when the track is built. */
+  maxGrade: 0.45,
   /** Roads crossing at different heights need this much clearance to be a bridge; closer heights must be level. */
   bridgeClearance: 6,
   levelCrossingTolerance: 1,

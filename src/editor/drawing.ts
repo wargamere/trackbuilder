@@ -1081,12 +1081,16 @@ export class EditorScreen implements Screen {
       ui.setMultiplier(null);
     }
 
-    if (this.note) ui.setMessage(this.note.text, this.note.kind);
+    // A problem with the track beats a tip or an "Undone." note.
+    const problem = !!this.failed || (!!this.built && !this.built.ok);
+    if (this.note && (this.note.kind !== 'info' || !problem)) ui.setMessage(this.note.text, this.note.kind);
     else if (this.failed) ui.setMessage(STR.editor.errors[this.failed.issue], 'error');
     else if (this.built && !this.built.ok) ui.setMessage(STR.editor.errors[this.built.issue], 'error');
     else if (this.built?.ok && t) {
       const crossings =
-        (this.crossings ? fmt(STR.editor.readyCrossings, { n: this.crossings }) : '') + (this.bridges ? (this.bridges === 1 ? STR.editor.readyBridge : fmt(STR.editor.readyBridges, { n: this.bridges })) : '');
+        (this.crossings ? fmt(STR.editor.readyCrossings, { n: this.crossings }) : '') +
+        (this.bridges ? (this.bridges === 1 ? STR.editor.readyBridge : fmt(STR.editor.readyBridges, { n: this.bridges })) : '') +
+        (t.center.eased > 0.25 ? STR.editor.readyEased : '');
       ui.setMessage(fmt(STR.editor.ready, { len: Math.round(t.center.length), corners: t.ink.tightCorners, crossings }), 'ok');
     } else if (this.dots.length) ui.setMessage(fmt(STR.editor.openPath, { n: this.dots.length }), 'info');
     else ui.setMessage(`${this.mode === 'draw' ? STR.editor.hintDraw : STR.editor.hintDots} ${STR.editor.hintInk}`, 'info');

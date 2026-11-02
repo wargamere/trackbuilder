@@ -79,6 +79,7 @@ export const STR = {
     ready: '{len} m · {corners} tight corners{crossings} — ready to race!',
     readyCrossings: ' · {n} crossroads',
     readyBridge: ' · 1 bridge',
+    readyEased: ' · steepest slopes eased',
     readyBridges: ' · {n} bridges',
     sampleLoaded: 'Sample track: {name}',
     cleared: 'Fresh page. Draw a loop!',
