@@ -46,8 +46,13 @@ export const STR = {
   },
 
   race: {
-    previewNote: 'Phase 1 preview — the 3D race arrives in Phase 2–4.',
+    previewNote: 'Phase 2 preview — the car arrives in Phase 3.',
+    gantry: 'START · FINISH',
     trackInfo: '{name} · {len} m · ×{mult}',
+  },
+
+  errors: {
+    webgl: 'This game needs WebGL. Try updating your browser or enabling hardware acceleration.',
   },
 
   samples: ['Sunday Loop', 'Paperclip', 'Knot Garden'],

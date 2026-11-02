@@ -1,3 +1,4 @@
+import type { View3D } from '../render/view3d.ts';
 import type { Track } from '../track/track.ts';
 import type { Surface2D } from './surface2d.ts';
 
@@ -5,6 +6,8 @@ import type { Surface2D } from './surface2d.ts';
 export type ScreenId = 'race' | 'editor' | 'results' | 'library';
 
 export interface Screen {
+  /** Which canvas the screen draws on; main.ts shows that one and hides the other. */
+  readonly layer: '2d' | '3d';
   enter(): void;
   exit(): void;
   /** Called once per animation frame while the screen is active. */
@@ -18,6 +21,8 @@ export interface GameContext {
   readonly track: Track;
   setTrack(track: Track): void;
   readonly surface: Surface2D;
+  /** The 3D view, or null if WebGL is unavailable. */
+  readonly view3d: View3D | null;
   /** Overlay element that screens put their DOM UI into. */
   readonly ui: HTMLElement;
   go(id: ScreenId): void;

@@ -105,3 +105,20 @@ export function buildCenterline(ctrl: readonly Vec2[], spacing: number = TRACK.c
   }
   return { points, tangents, curvature, dist: distArr, length, spacing: realSpacing };
 }
+
+/** Position and direction at distance `s` along the loop (wraps; linearly interpolated). */
+export function sampleAt(c: Centerline, s: number): { p: Vec2; t: Vec2 } {
+  const n = c.points.length;
+  const u = (((s % c.length) + c.length) % c.length) / c.spacing;
+  const i = Math.floor(u) % n;
+  const j = (i + 1) % n;
+  const f = u - Math.floor(u);
+  const a = c.points[i];
+  const b = c.points[j];
+  const ta = c.tangents[i];
+  const tb = c.tangents[j];
+  return {
+    p: { x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f },
+    t: normalize({ x: ta.x + (tb.x - ta.x) * f, y: ta.y + (tb.y - ta.y) * f }),
+  };
+}

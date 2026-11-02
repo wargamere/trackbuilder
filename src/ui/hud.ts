@@ -11,6 +11,7 @@ export class Hud {
   private readonly top: HTMLElement;
   private readonly info: HTMLElement;
   private readonly note: HTMLElement;
+  private readonly debug: HTMLElement;
 
   constructor(actions: HudActions) {
     this.info = h('div', { class: 'hud-info' });
@@ -21,7 +22,8 @@ export class Hud {
       button(STR.buttons.drawTrack, actions.drawTrack, { icon: '✎', class: 'draw' }),
       this.info,
     );
-    this.root = h('div', { class: 'screen hud' }, this.top, this.note);
+    this.debug = h('div', { class: 'hud-debug' });
+    this.root = h('div', { class: 'screen hud' }, this.top, this.note, this.debug);
   }
 
   insets(): { top: number; bottom: number } {
@@ -30,6 +32,11 @@ export class Hud {
 
   setTrackInfo(text: string): void {
     this.info.textContent = text;
+  }
+
+  /** Dev-build performance line (fps, draw calls). */
+  setDebug(text: string): void {
+    this.debug.textContent = text;
   }
 
   setNote(text: string): void {

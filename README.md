@@ -26,12 +26,19 @@ src/
   editor/     drawing.ts (editor screen + input), smoothing.ts, validation.ts,
               pipeline.ts (stroke -> track), render2d.ts
   track/      spline.ts (centripetal Catmull-Rom -> evenly spaced centre line),
-              corners.ts, ink.ts, track.ts (TrackDef/Track), samples.ts
-  race/       previewScreen.ts (Phase 1 placeholder for the 3D race)
+              corners.ts, ink.ts, track.ts (TrackDef/Track), samples.ts,
+              mesh.ts (road ribbon + kerbs), scenery.ts (trees, cones, gantry)
+  render/     view3d.ts (renderer, sky, ground, hills, lights), textures.ts
+              (procedural canvas textures), geom.ts (merge/tint helpers)
+  race/       raceScreen.ts (3D track with a fly-through camera until the car lands)
   ui/         dom helpers, editor overlay, HUD, style.css
   platform/   platform.ts (build-time PLATFORM flag)
   main.ts     state machine: RACE (boot) ⇄ EDITOR ⇄ RESULTS ⇄ LIBRARY
 ```
+
+### 3D scene
+
+Everything static is merged or instanced, which comes to about 10 draw calls for a whole track: sky, ground, hills, road, kerbs, the gantry frame, one atlas mesh for the banner and start line, two instanced tree meshes and instanced cones. All textures are drawn on small canvases at startup. Lambert materials, no shadows. In dev builds (`npm run dev`) the race HUD shows fps, draw calls and triangles.
 
 ### Track pipeline
 
@@ -40,7 +47,7 @@ Raw pointer stroke (world metres) → merge points closer than 2 m → find wher
 ## Status
 
 - [x] Phase 1: track drawing (2D editor)
-- [ ] Phase 2: 3D track
+- [x] Phase 2: 3D track
 - [ ] Phase 3: car and driving
 - [ ] Phase 4: race / time trial
 - [ ] Phase 5: track library, sharing, audio

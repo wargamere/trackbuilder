@@ -33,6 +33,7 @@ const MAX_HISTORY = 50;
  * into a closed loop and validated on release. Every stroke spends ink.
  */
 export class EditorScreen implements Screen {
+  readonly layer = '2d';
   private readonly game: GameContext;
   private readonly ui: EditorUI;
   private abort: AbortController | null = null;

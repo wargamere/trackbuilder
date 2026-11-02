@@ -16,7 +16,8 @@ export class Surface2D {
   }
 
   resize(): void {
-    const r = this.canvas.getBoundingClientRect();
+    // Measure the container: the canvas itself reads 0x0 while its layer is hidden.
+    const r = (this.canvas.parentElement ?? this.canvas).getBoundingClientRect();
     this.w = Math.max(1, r.width);
     this.h = Math.max(1, r.height);
     this.dpr = Math.min(2, window.devicePixelRatio || 1);

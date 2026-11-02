@@ -1,34 +1,45 @@
 import css from './ui/style.css?inline';
+import { STR } from './config/strings.ts';
 import type { GameContext, Screen, ScreenId } from './core/screen.ts';
 import { Surface2D } from './core/surface2d.ts';
 import { EditorScreen } from './editor/drawing.ts';
 import { getSampleTrack } from './editor/pipeline.ts';
 import { PLATFORM } from './platform/platform.ts';
-import { PreviewRaceScreen } from './race/previewScreen.ts';
+import { RaceScreen } from './race/raceScreen.ts';
+import { View3D } from './render/view3d.ts';
 import type { Track } from './track/track.ts';
 
 /**
  * Main state machine:  RACE (boot) ⇄ EDITOR ⇄ RESULTS ⇄ LIBRARY
- * Phase 1 implements RACE (as a 2D placeholder) and EDITOR.
+ * Implemented so far: RACE (3D track, preview camera) and EDITOR.
  */
 
 const style = document.createElement('style');
 style.textContent = css;
 document.head.append(style);
 document.documentElement.dataset.platform = PLATFORM;
+document.title = STR.gameName;
 
 const app = document.getElementById('app') ?? document.body;
+const canvas3d = document.createElement('canvas');
 const canvas2d = document.createElement('canvas');
 const ui = document.createElement('div');
 ui.id = 'ui';
-app.append(canvas2d, ui);
-canvas2d.addEventListener('contextmenu', (e) => e.preventDefault());
+app.append(canvas3d, canvas2d, ui);
+for (const c of [canvas3d, canvas2d]) c.addEventListener('contextmenu', (e) => e.preventDefault());
 
 const surface = new Surface2D(canvas2d);
+let view3d: View3D | null = null;
+try {
+  view3d = new View3D(canvas3d);
+} catch (err) {
+  console.error('WebGL unavailable', err);
+}
 
 class Game implements GameContext {
   track: Track;
   readonly surface = surface;
+  readonly view3d = view3d;
   readonly ui = ui;
   private readonly screens: Partial<Record<ScreenId, Screen>> = {};
   private current: Screen | null = null;
@@ -36,7 +47,7 @@ class Game implements GameContext {
 
   constructor(bootTrack: Track) {
     this.track = bootTrack;
-    this.screens.race = new PreviewRaceScreen(this);
+    this.screens.race = new RaceScreen(this);
     this.screens.editor = new EditorScreen(this);
   }
 
@@ -48,9 +59,13 @@ class Game implements GameContext {
     const next = this.screens[id];
     if (!next || id === this.currentId) return;
     this.current?.exit();
+    canvas3d.classList.toggle('layer-hidden', next.layer !== '3d');
+    canvas2d.classList.toggle('layer-hidden', next.layer !== '2d');
+    surface.resize();
     this.current = next;
     this.currentId = id;
     next.enter();
+    next.resize();
   }
 
   frame(dt: number, time: number): void {
@@ -66,6 +81,8 @@ class Game implements GameContext {
 // Boot straight into the race on the first sample track.
 const game = new Game(getSampleTrack(0));
 game.go('race');
+// Handle for automated browser checks in dev builds; stripped from production.
+if (import.meta.env.DEV) Object.assign(window, { __game: game });
 
 window.addEventListener('resize', () => game.resize());
 
