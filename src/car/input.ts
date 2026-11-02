@@ -2,7 +2,7 @@ import { INPUT } from '../config/handling.ts';
 import { clamp } from '../core/math.ts';
 import type { DriveInput } from './physics.ts';
 
-export type InputAction = 'pause' | 'reset' | 'camera';
+export type InputAction = 'pause' | 'reset' | 'camera' | 'mute';
 export type InputDevice = 'keyboard' | 'gamepad' | 'touch';
 
 /** Written by the on-screen touch controls. */
@@ -26,6 +26,7 @@ const ACTION_KEYS: Record<string, InputAction> = {
   KeyP: 'pause',
   KeyR: 'reset',
   KeyC: 'camera',
+  KeyM: 'mute',
 };
 
 /** Standard-mapping gamepad buttons. */

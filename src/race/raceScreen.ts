@@ -1,3 +1,4 @@
+import { audio } from '../audio/audio.ts';
 import { CameraRig } from '../car/camera.ts';
 import { InputManager, type InputAction } from '../car/input.ts';
 import { CarModel, DEFAULT_PAINT } from '../car/model.ts';
@@ -7,7 +8,9 @@ import { RACE } from '../config/race.ts';
 import { STR, fmt } from '../config/strings.ts';
 import { FixedStep } from '../core/fixedStep.ts';
 import type { GameContext, Screen } from '../core/screen.ts';
-import { prefersTouchControls } from '../platform/platform.ts';
+import { CAPS, prefersTouchControls } from '../platform/platform.ts';
+import { writeHashCode } from '../platform/web.ts';
+import { encodeTrack } from '../track/code.ts';
 import type { Track } from '../track/track.ts';
 import { Hud } from '../ui/hud.ts';
 import { PauseMenu } from '../ui/pauseMenu.ts';
@@ -61,6 +64,8 @@ export class RaceScreen implements Screen {
       },
       restart: () => this.startRun(),
       drawTrack: () => this.game.go('editor'),
+      myTracks: () => this.game.go('library'),
+      toggleSound: () => this.toggleSound(),
     });
     this.touch = new TouchControls(this.input.touch);
     this.input.onAction = (a) => this.onAction(a);
@@ -113,6 +118,7 @@ export class RaceScreen implements Screen {
     this.touch.root.remove();
     this.hud.clearFlash();
     if (this.ghostModel) this.ghostModel.root.visible = false;
+    audio.setEngine(false);
   }
 
   resize(): void {
@@ -124,6 +130,9 @@ export class RaceScreen implements Screen {
   private startRun(): void {
     const car = this.car;
     if (!car) return;
+    const def = this.game.track.def;
+    this.game.library.save(def); // built-in samples are skipped
+    if (CAPS.links) writeHashCode(encodeTrack(def.name, def.control));
     car.placeAt(-8);
     const rec = this.game.records.get(this.game.track.def.id);
     this.session = new RaceSession(this.game.track.center.length, rec.best);
@@ -137,6 +146,12 @@ export class RaceScreen implements Screen {
     this.rig.snap(car.state);
     this.hud.clearFlash();
     if (this.ghostModel) this.ghostModel.root.visible = false;
+    audio.setEngine(true);
+  }
+
+  private toggleSound(): void {
+    audio.toggleMute();
+    this.pauseMenu.setSound(!audio.isMuted);
   }
 
   private controlsText(): string {
@@ -146,9 +161,11 @@ export class RaceScreen implements Screen {
 
   private onAction(a: InputAction): void {
     if (a === 'pause') this.setPaused(!this.paused);
+    else if (a === 'mute') this.toggleSound();
     else if (this.paused) return;
     else if (a === 'reset') this.resetCar();
     else if (a === 'camera') this.rig.toggle();
+    else if (a === 'mute') this.toggleSound();
   }
 
   private resetCar(): void {
@@ -162,6 +179,8 @@ export class RaceScreen implements Screen {
     this.paused = p;
     this.input.clear();
     this.touch.release();
+    audio.setEngine(!p);
+    this.pauseMenu.setSound(!audio.isMuted);
     if (p) this.pauseMenu.show(this.controlsText());
     else {
       this.pauseMenu.hide();
@@ -200,9 +219,11 @@ export class RaceScreen implements Screen {
     switch (e.type) {
       case 'count':
         this.hud.flash(String(e.n), 'big', 1.2);
+        audio.beep(520);
         break;
       case 'go':
         this.hud.flash(STR.race.go, 'big', 0.8);
+        audio.beep(1040, 0.45, 0.28);
         break;
       case 'lapStart':
         lapStarted();
@@ -215,7 +236,10 @@ export class RaceScreen implements Screen {
         if (e.best) {
           rec.best = s.best;
           rec.ghost = this.recorder.take();
+          this.game.records.save(this.game.track.def.id);
         }
+        if (e.best) [880, 1110, 1320].forEach((f, i) => audio.beep(f, 0.16, 0.2, i * 0.11));
+        else audio.beep(880, 0.18);
         if (s.phase === 'finished') this.hud.flash(STR.race.finished, 'big', 0);
         else if (e.best) this.hud.flash(STR.race.newBest, 'good');
         else this.hud.flash(fmt(STR.race.lapTime, { n: e.lap, time: formatTime(e.time) }), 'info');
@@ -225,6 +249,7 @@ export class RaceScreen implements Screen {
       }
       case 'lapInvalid':
         this.hud.flash(STR.race.lapInvalid, 'bad', 2.2);
+        audio.beep(180, 0.35, 0.25);
         lapStarted();
         break;
       case 'finished':
@@ -245,7 +270,10 @@ export class RaceScreen implements Screen {
     const bestOfRun = Math.min(...s.laps);
     const { avg, score } = scoreFor(t.center.length, bestOfRun, t.ink.multiplier);
     const newBestScore = score > rec.bestScore;
-    if (newBestScore) rec.bestScore = score;
+    if (newBestScore) {
+      rec.bestScore = score;
+      this.game.records.save(t.def.id);
+    }
     this.game.lastResult = {
       trackId: t.def.id,
       trackName: t.def.name,
@@ -282,11 +310,16 @@ export class RaceScreen implements Screen {
     const session = this.session;
     if (!v || !car || !session || !this.model || !this.ghostModel) return;
 
+    if (this.game.interrupted && !this.paused) this.setPaused(true);
     this.input.pollGamepad();
     let alpha = 1;
     if (!this.paused) alpha = this.fixed.advance(dt, () => this.tick());
     lerpState(car.prev, car.state, alpha, this.view);
     this.model.update(this.view, dt);
+    if (!this.paused) {
+      const st = car.state;
+      audio.update({ speed: this.view.speed, throttle: session.phase === 'racing' ? this.tickInput.throttle : 0, slip: st.slip, grass: st.grass });
+    }
 
     // Ghost: where the best lap was at this point of the current lap.
     const lapTime = session.phase === 'racing' ? session.lapTime(alpha) : null;

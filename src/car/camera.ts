@@ -1,5 +1,6 @@
 import type { PerspectiveCamera } from 'three';
 import { CAMERA } from '../config/handling.ts';
+import { settings, updateSettings } from '../core/settings.ts';
 import { angleDelta, type CarState } from './physics.ts';
 
 export type CameraMode = 'chase' | 'bonnet';
@@ -10,13 +11,14 @@ export type CameraMode = 'chase' | 'bonnet';
  * same at any frame rate (it's visual only and never feeds back into physics).
  */
 export class CameraRig {
-  mode: CameraMode = 'chase';
+  mode: CameraMode = settings().camera;
   private yaw = 0;
   private fov: number = CAMERA.chase.fov;
   private shakeTime = 0;
 
   toggle(): void {
     this.mode = this.mode === 'chase' ? 'bonnet' : 'chase';
+    updateSettings({ camera: this.mode });
   }
 
   /** Jumps straight behind the car (after a reset or on entering the race). */

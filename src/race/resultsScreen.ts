@@ -1,6 +1,7 @@
 import { STR, fmt } from '../config/strings.ts';
 import type { GameContext, Screen } from '../core/screen.ts';
 import { button, h } from '../ui/dom.ts';
+import { ShareDialog } from '../ui/shareDialog.ts';
 import { formatTime } from './session.ts';
 
 /**
@@ -15,6 +16,7 @@ export class ResultsScreen implements Screen {
   private readonly body: HTMLElement;
   private angle = 0;
   private abort: AbortController | null = null;
+  private readonly share = new ShareDialog();
 
   constructor(game: GameContext) {
     this.game = game;
@@ -32,6 +34,12 @@ export class ResultsScreen implements Screen {
           { class: 'menu row' },
           button(STR.buttons.raceAgain, () => this.game.go('race'), { icon: '⟲', class: 'primary', key: 'Enter' }),
           button(STR.buttons.newTrack, () => this.game.go('editor'), { icon: '✎', key: 'E' }),
+        ),
+        h(
+          'div',
+          { class: 'menu row secondary' },
+          button(STR.buttons.shareTrack, () => this.share.open(this.game.track.def, this.game.ui), { icon: '⧉' }),
+          button(STR.buttons.myTracks, () => this.game.go('library'), { icon: '☰' }),
         ),
       ),
     );
@@ -71,7 +79,7 @@ export class ResultsScreen implements Screen {
     window.addEventListener(
       'keydown',
       (e) => {
-        if (e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;
+        if (e.ctrlKey || e.metaKey || e.altKey || e.repeat || this.share.isOpen) return;
         if (e.code === 'Enter' || e.code === 'NumpadEnter' || e.code === 'Space') {
           e.preventDefault();
           this.game.go('race');
@@ -87,6 +95,7 @@ export class ResultsScreen implements Screen {
   exit(): void {
     this.abort?.abort();
     this.abort = null;
+    this.share.close();
     this.root.remove();
   }
 

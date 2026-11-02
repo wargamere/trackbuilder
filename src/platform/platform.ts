@@ -4,8 +4,17 @@
  */
 export type Platform = 'crazygames' | 'web';
 
-export const PLATFORM: Platform = __PLATFORM__;
+// (Outside a Vite build, e.g. in unit tests, the define is missing: treat that as web.)
+export const PLATFORM: Platform = typeof __PLATFORM__ !== 'undefined' ? __PLATFORM__ : 'web';
 export const IS_CRAZYGAMES = PLATFORM === 'crazygames';
+
+/** What each build may do. The CrazyGames build never shows URLs or links. */
+export const CAPS = {
+  /** Share links / track code in the URL hash. */
+  links: PLATFORM === 'web',
+  /** "Rotate your phone" prompt (CrazyGames handles orientation itself). */
+  orientationPrompt: PLATFORM === 'web',
+} as const;
 
 /**
  * Whether to show the on-screen touch controls. Web: a coarse pointer with no

@@ -18,6 +18,8 @@ export interface EditorActions {
   reverse(): void;
   sample(i: number): void;
   rename(name: string): void;
+  myTracks(): void;
+  share(): void;
 }
 
 /** A row of buttons where exactly one is "on". */
@@ -132,7 +134,8 @@ export class EditorUI {
       h('label', { class: 'field' }, h('span', { class: 'label', text: STR.editor.optName }), this.name),
       h('div', { class: 'field' }, h('span', { class: 'label', text: STR.editor.optSmoothing }), this.smoothing.el),
       h('label', { class: 'field check' }, this.snap, h('span', { text: STR.editor.optSnap })),
-      h('div', { class: 'row' }, button(STR.buttons.reverse, actions.reverse, { icon: '⇄', key: 'R' })),
+      h('div', { class: 'row wrap' }, button(STR.buttons.reverse, actions.reverse, { icon: '⇄', key: 'R' }), button(STR.buttons.shareTrack, actions.share, { icon: '⧉' })),
+      h('div', { class: 'row' }, button(STR.buttons.myTracks, actions.myTracks, { icon: '☰' })),
       h('div', { class: 'field' }, h('span', { class: 'label', text: STR.editor.optSamples }), samples),
       h('div', { class: 'field' }, h('span', { class: 'label', text: STR.editor.optHelpTitle }), h('p', { class: 'help', text: STR.editor.optHelp })),
     );

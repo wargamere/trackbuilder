@@ -1,4 +1,5 @@
-import type { GhostLap } from './ghost.ts';
+import { loadJSON, saveJSON, storage } from '../platform/storage.ts';
+import { decodeGhost, encodeGhost, type GhostLap } from './ghost.ts';
 import type { BestLap } from './session.ts';
 
 /** Personal bests for one track. */
@@ -37,19 +38,72 @@ export function scoreFor(trackLength: number, bestLap: number, multiplier: numbe
   return { avg, score: Math.round(avg * multiplier * 10) };
 }
 
+interface StoredRecord {
+  best: BestLap | null;
+  bestScore: number;
+  ghost: string | null;
+}
+
+/** Records for this many tracks are kept; the least recently raced are dropped. */
+const MAX_TRACKS = 40;
+const INDEX_KEY = 'records.index';
+const key = (id: string) => `records.${id}`;
+
 /**
- * Personal bests per track id, kept for the session. (Phase 5 persists them
- * through the platform storage.)
+ * Personal bests and ghosts per track id, saved through the platform storage
+ * (localStorage on the web, the SDK data module on CrazyGames).
  */
 export class RecordBook {
-  private readonly map = new Map<string, TrackRecord>();
+  private readonly cache = new Map<string, TrackRecord>();
 
   get(id: string): TrackRecord {
-    let r = this.map.get(id);
-    if (!r) {
-      r = { best: null, ghost: null, bestScore: 0 };
-      this.map.set(id, r);
-    }
+    let r = this.cache.get(id);
+    if (r) return r;
+    const s = loadJSON<StoredRecord | null>(key(id), null);
+    r = {
+      best: s?.best && typeof s.best.time === 'number' ? s.best : null,
+      bestScore: typeof s?.bestScore === 'number' ? s.bestScore : 0,
+      ghost: s?.ghost ? decodeGhost(s.ghost) : null,
+    };
+    this.cache.set(id, r);
     return r;
+  }
+
+  /** Best lap and score without decoding the ghost (for lists). */
+  summary(id: string): { best: BestLap | null; bestScore: number } {
+    const r = this.cache.get(id);
+    if (r) return { best: r.best, bestScore: r.bestScore };
+    const s = loadJSON<StoredRecord | null>(key(id), null);
+    return {
+      best: s?.best && typeof s.best.time === 'number' ? s.best : null,
+      bestScore: typeof s?.bestScore === 'number' ? s.bestScore : 0,
+    };
+  }
+
+  /** Writes a track's record after it changed. */
+  save(id: string): void {
+    const r = this.get(id);
+    const stored: StoredRecord = { best: r.best, bestScore: r.bestScore, ghost: r.ghost ? encodeGhost(r.ghost) : null };
+    saveJSON(key(id), stored);
+    const index = loadJSON<string[]>(INDEX_KEY, []).filter((x) => x !== id);
+    index.push(id);
+    while (index.length > MAX_TRACKS) {
+      const old = index.shift();
+      if (old !== undefined) {
+        storage.removeItem(key(old));
+        this.cache.delete(old);
+      }
+    }
+    saveJSON(INDEX_KEY, index);
+  }
+
+  /** Forgets everything about a track (when it is deleted from the library). */
+  forget(id: string): void {
+    this.cache.delete(id);
+    storage.removeItem(key(id));
+    saveJSON(
+      INDEX_KEY,
+      loadJSON<string[]>(INDEX_KEY, []).filter((x) => x !== id),
+    );
   }
 }

@@ -32,7 +32,8 @@ src/
               pipeline.ts (stroke -> track), render2d.ts
   track/      spline.ts (centripetal Catmull-Rom -> evenly spaced centre line),
               corners.ts, ink.ts, track.ts (TrackDef/Track), samples.ts,
-              mesh.ts (road ribbon + kerbs), scenery.ts (trees, cones, gantry)
+              mesh.ts (road ribbon + kerbs), scenery.ts (trees, cones, gantry),
+              code.ts (track codes), library.ts (saved tracks)
   render/     view3d.ts (renderer, sky, ground, hills, lights), textures.ts
               (procedural canvas textures), geom.ts (merge/tint helpers)
   car/        physics.ts (fixed-step arcade physics), input.ts (keyboard, gamepad,
@@ -40,8 +41,11 @@ src/
   race/       raceScreen.ts (fixed-step loop, interpolation, pause), session.ts
               (countdown, checkpoints, lap timing, splits), ghost.ts, records.ts,
               resultsScreen.ts
-  ui/         dom helpers, editor overlay, HUD, style.css
-  platform/   platform.ts (build-time PLATFORM flag)
+  ui/         dom helpers, editor overlay, HUD, pause menu, touch controls,
+              libraryScreen.ts (My tracks), shareDialog.ts, style.css
+  audio/      audio.ts (synthesised engine, tyre squeal, grass rumble, beeps)
+  platform/   platform.ts (PLATFORM flag + CAPS), storage.ts (key-value store),
+              crazygames.ts (SDK wrapper), web.ts (share links, rotate prompt)
   main.ts     state machine: RACE (boot) ⇄ EDITOR ⇄ RESULTS ⇄ LIBRARY
 ```
 
@@ -91,11 +95,36 @@ Freehand pipeline: raw stroke → merge points closer than 2 m → trim any over
 
 Your best lap is recorded tick by tick and replayed as a translucent ghost. The results screen shows the total time, each lap, the best lap and a score: average speed on your best lap × ink multiplier × 10. Bests and ghosts are kept for the session; Phase 5 will save them.
 
+### Saving, sharing and sound
+
+- **Storage** (`platform/storage.ts`) is a small synchronous get/set store:
+  - web build: localStorage;
+  - CrazyGames build: the SDK `data` module, with every write mirrored to localStorage. An SDK read is used only if it returns a string, so the game also works when the SDK is missing or blocked.
+
+  If storage itself is blocked (private mode, sandboxed iframe), values live in memory for the session.
+
+  What's saved: your tracks, best lap and splits, best score and the best-lap ghost per track (40 most recent tracks), and settings (sound, camera, editor mode, smoothing, snap). Ghosts are stored at 30 samples/s as int16 (5 cm), about 11 KB per 45 s lap.
+- **Track codes** (`track/code.ts`): `IC1.` + base64url of the dots, delta-encoded as zig-zag varints in 0.5 m steps, plus the name and a checksum. That's about 100–200 characters. Pasting a damaged code gives a clear error.
+  - The web build also puts the current track's code in the URL hash (`#track=…`), so the address bar is a share link, and has a "Copy link" button.
+  - The CrazyGames build never touches the URL or shows links.
+- **My tracks** (Pause → My tracks, Results, editor Options):
+  - every track you race is saved automatically;
+  - thumbnails, length, multiplier, best lap and score;
+  - Race / Edit / Share / Delete (tap Delete twice to confirm);
+  - a box to paste a friend's code.
+- **Sound:**
+  - one AudioContext, created on the first tap/click/key and resumed on every later touchend/click while it is suspended (iOS);
+  - engine: two oscillators and a filter, pitch through five gears;
+  - tyre squeal: band-passed noise when sliding on tarmac;
+  - grass rumble, plus countdown and lap beeps;
+  - M toggles sound (also in the pause menu).
+- **Web build only:** on a phone held upright, a "turn your phone sideways" screen covers the game and pauses the race.
+
 ## Status
 
 - [x] Phase 1: track drawing (2D editor)
 - [x] Phase 2: 3D track
 - [x] Phase 3: car and driving
 - [x] Phase 4: race / time trial (plus a bigger editor upgrade: dots mode, crossings, tighter corners)
-- [ ] Phase 5: track library, sharing, audio
+- [x] Phase 5: track library, sharing, audio
 - [ ] Phase 6: CrazyGames SDK

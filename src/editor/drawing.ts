@@ -2,10 +2,12 @@ import { STR, fmt } from '../config/strings.ts';
 import { DOTS, INK, TRACK, WORLD, type SmoothingLevel } from '../config/track.ts';
 import { clamp, dist, dist2, polylineLength, type Vec2 } from '../core/math.ts';
 import type { GameContext, Screen } from '../core/screen.ts';
+import { settings, updateSettings } from '../core/settings.ts';
 import { inkLeftWhileDrawing, inkMultiplier } from '../track/ink.ts';
 import { sampleOpenCatmullRom } from '../track/spline.ts';
 import { buildTrack, contentId, type TrackDef } from '../track/track.ts';
 import { EditorUI, type EditorMode, type MessageKind } from '../ui/editorUI.ts';
+import { ShareDialog } from '../ui/shareDialog.ts';
 import { dotsFromStroke, getSampleTrack, SAMPLE_COUNT, trackFromControl, type BuildResult } from './pipeline.ts';
 import {
   drawChain,
@@ -53,13 +55,14 @@ export class EditorScreen implements Screen {
   readonly layer = '2d';
   private readonly game: GameContext;
   private readonly ui: EditorUI;
+  private readonly share = new ShareDialog();
   private abort: AbortController | null = null;
   private view: View = { scale: 1, ox: 0, oy: 0 };
 
   // Settings (kept between visits).
-  private mode: EditorMode = 'draw';
-  private smoothing: SmoothingLevel = 'normal';
-  private snapOn = false;
+  private mode: EditorMode = settings().editorMode;
+  private smoothing: SmoothingLevel = settings().smoothing;
+  private snapOn = settings().snap;
   private sampleIndex = 0;
 
   // The track being edited.
@@ -101,11 +104,16 @@ export class EditorScreen implements Screen {
         clear: () => this.clear(),
         race: () => this.race(),
         setMode: (m) => this.setMode(m),
-        setSmoothing: (s) => (this.smoothing = s),
-        setSnap: (on) => (this.snapOn = on),
+        setSmoothing: (s) => {
+          this.smoothing = s;
+          updateSettings({ smoothing: s });
+        },
+        setSnap: (on) => this.setSnap(on),
         reverse: () => this.reverse(),
         sample: (i) => this.loadSample(i),
         rename: (n) => (this.name = n.trim() || STR.editor.customName),
+        myTracks: () => this.game.go('library'),
+        share: () => this.shareTrack(),
       },
       Array.from({ length: SAMPLE_COUNT }, (_, i) => getSampleTrack(i).def.name),
     );
@@ -145,6 +153,7 @@ export class EditorScreen implements Screen {
   exit(): void {
     this.abort?.abort();
     this.abort = null;
+    this.share.close();
     this.cancelPointer();
     this.ui.root.remove();
     this.game.surface.canvas.classList.remove('drawing');
@@ -207,6 +216,12 @@ export class EditorScreen implements Screen {
   private setMode(m: EditorMode): void {
     this.mode = m;
     this.note = null;
+    updateSettings({ editorMode: m });
+  }
+
+  private setSnap(on: boolean): void {
+    this.snapOn = on;
+    updateSettings({ snap: on });
   }
 
   private clear(): void {
@@ -259,6 +274,14 @@ export class EditorScreen implements Screen {
     const before = this.snapshot();
     this.closed = true;
     this.commit(before);
+  }
+
+  /** Opens the share dialog for the track as it is now (only when it's raceable). */
+  private shareTrack(): void {
+    this.rebuild();
+    if (!this.built?.ok || !this.closed) return;
+    this.ui.toggleOptions(false);
+    this.share.open({ id: contentId(this.dots), name: this.name, control: this.dots }, this.game.ui);
   }
 
   private race(): void {
@@ -593,7 +616,7 @@ export class EditorScreen implements Screen {
   // ------------------------------------------------------------- keyboard
 
   private onKey(e: KeyboardEvent): void {
-    if (e.target instanceof HTMLInputElement) return;
+    if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || this.share.isOpen) return;
     if (e.altKey) return;
     const mod = e.ctrlKey || e.metaKey;
     // With Ctrl/Cmd only undo/redo are ours; everything else belongs to the browser.
@@ -606,7 +629,7 @@ export class EditorScreen implements Screen {
       KeyM: () => this.setMode(this.mode === 'draw' ? 'dots' : 'draw'),
       KeyO: () => this.ui.toggleOptions(),
       KeyR: () => this.reverse(),
-      KeyG: () => (this.snapOn = !this.snapOn),
+      KeyG: () => this.setSnap(!this.snapOn),
       KeyS: () => this.loadSample(this.sampleIndex),
       Delete: () => this.deleteDot(this.selected),
       Backspace: () => this.deleteDot(this.selected),

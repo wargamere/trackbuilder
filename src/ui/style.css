@@ -17,6 +17,11 @@
   box-sizing: border-box;
 }
 
+/* `hidden` must win over component display rules (e.g. .btn's inline-flex). */
+[hidden] {
+  display: none !important;
+}
+
 html,
 body {
   margin: 0;
@@ -40,7 +45,7 @@ body {
   inset: 0;
 }
 
-canvas {
+#app > canvas {
   position: absolute;
   inset: 0;
   width: 100%;
@@ -50,7 +55,7 @@ canvas {
   outline: none;
 }
 
-canvas.drawing {
+#app > canvas.drawing {
   cursor: crosshair;
 }
 
@@ -865,4 +870,255 @@ canvas.drawing {
   justify-content: center;
   flex-wrap: wrap;
   margin-bottom: 0;
+}
+
+/* -------------------------------------------------------------- library */
+
+.library {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 0.7rem max(0.8rem, env(safe-area-inset-left));
+  pointer-events: auto;
+}
+
+.library-head {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+}
+
+.library-head h2 {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 900;
+  color: var(--ink);
+}
+
+.library-head .spacer {
+  flex: 1;
+}
+
+.library .label {
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.library-import {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 0.6rem 0.7rem;
+  border: 2px solid rgba(27, 58, 138, 0.25);
+  border-radius: 0.8rem;
+  background: var(--panel);
+}
+
+.library-import .row {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.library-import .text-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.library-message {
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.library-message:empty {
+  display: none;
+}
+
+.library-message.ok {
+  color: var(--ok);
+}
+
+.library-message.error {
+  color: var(--error);
+}
+
+.library-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  touch-action: pan-y;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding-bottom: 1rem;
+}
+
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(11.5rem, 1fr));
+  gap: 0.6rem;
+}
+
+.track-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.5rem;
+  border: 2px solid var(--ink);
+  border-radius: 0.8rem;
+  background: #fff;
+  box-shadow: 0 2px 0 var(--ink);
+}
+
+.track-card .thumb {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 9;
+  border-radius: 0.5rem;
+}
+
+.card-name {
+  font-weight: 900;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.card-stats,
+.card-best {
+  font-size: 0.78rem;
+  color: #4a5270;
+  font-variant-numeric: tabular-nums;
+}
+
+.card-best {
+  font-weight: 700;
+  color: var(--ok);
+}
+
+.card-best.none {
+  font-weight: 500;
+  color: #8a90a8;
+}
+
+.card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin-top: 0.2rem;
+}
+
+.card-actions .btn {
+  min-height: 2.1rem;
+  padding: 0.25em 0.6em;
+  font-size: 0.85rem;
+}
+
+/* Cards are narrow: icons only for the secondary actions. */
+.card-actions .btn.compact .btn-label {
+  display: none;
+}
+
+.btn.danger {
+  background: var(--error);
+  border-color: #6b1111;
+  color: #fff;
+}
+
+.card-actions .btn.danger .btn-label {
+  display: inline;
+}
+
+/* ---------------------------------------------------------------- share */
+
+.share-overlay {
+  z-index: 5;
+}
+
+.panel.share {
+  width: min(28rem, 92vw);
+}
+
+.panel.share .help {
+  margin: 0 0 0.6rem;
+  font-size: 0.85rem;
+  color: #4a5270;
+}
+
+.code-box {
+  width: 100%;
+  resize: none;
+  padding: 0.5em;
+  border: 2px solid var(--ink);
+  border-radius: 0.5em;
+  font: 600 0.8rem ui-monospace, Menlo, Consolas, monospace;
+  color: var(--ink);
+  background: #fff;
+  word-break: break-all;
+  -webkit-user-select: text;
+  -moz-user-select: text;
+  -ms-user-select: text;
+  user-select: text;
+}
+
+.share-status {
+  min-height: 1.2em;
+  margin: 0.3rem 0;
+  font-weight: 700;
+  font-size: 0.85rem;
+}
+
+.share-status.ok {
+  color: var(--ok);
+}
+
+.share-status.warn {
+  color: var(--warn);
+}
+
+.overlay .menu.row.secondary {
+  margin-top: 0.5rem;
+}
+
+/* ------------------------------------------------------- rotate prompt */
+
+.rotate-prompt {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  padding: 2rem;
+  background: #0e121c;
+  color: #fff;
+  font-size: 1.2rem;
+  font-weight: 800;
+  text-align: center;
+}
+
+.rotate-prompt[hidden] {
+  display: none;
+}
+
+.rotate-icon {
+  font-size: 4rem;
+  animation: rotate-hint 2s ease-in-out infinite;
+}
+
+@keyframes rotate-hint {
+  0%,
+  30% {
+    transform: rotate(0deg);
+  }
+  60%,
+  100% {
+    transform: rotate(-90deg);
+  }
 }

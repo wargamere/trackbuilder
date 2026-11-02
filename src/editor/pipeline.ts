@@ -1,7 +1,8 @@
 import { INK, type SmoothingLevel } from '../config/track.ts';
 import type { Vec2 } from '../core/math.ts';
 import { SAMPLE_TRACKS } from '../track/samples.ts';
-import { buildTrack, newTrackId, type Track, type TrackDef } from '../track/track.ts';
+import { decodeTrack } from '../track/code.ts';
+import { buildTrack, contentId, newTrackId, type Track, type TrackDef } from '../track/track.ts';
 import { dedupe, denseToDots, evenControl, strokeToControl } from './smoothing.ts';
 import { validateCenterline, type TrackIssue } from './validation.ts';
 
@@ -46,4 +47,19 @@ export function getSampleTrack(i: number): Track {
     sampleCache.set(idx, t);
   }
   return t;
+}
+
+export type CodeResult = { ok: true; track: Track } | { ok: false; error: 'format' | 'checksum' | TrackIssue };
+
+/** Track code (or a pasted link containing one) -> validated track. Built-in samples keep their identity. */
+export function trackFromCode(text: string): CodeResult {
+  const d = decodeTrack(text);
+  if (!d.ok) return d;
+  const id = contentId(d.dots);
+  for (let i = 0; i < SAMPLE_COUNT; i++) {
+    const s = getSampleTrack(i);
+    if (contentId(s.def.control) === id) return { ok: true, track: s };
+  }
+  const res = trackFromControl({ id, name: d.name.trim() || 'Shared track', control: d.dots });
+  return res.ok ? res : { ok: false, error: res.issue };
 }

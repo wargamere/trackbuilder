@@ -1,5 +1,6 @@
 import type { RecordBook, RunResult } from '../race/records.ts';
 import type { View3D } from '../render/view3d.ts';
+import type { TrackLibrary } from '../track/library.ts';
 import type { Track } from '../track/track.ts';
 import type { Surface2D } from './surface2d.ts';
 
@@ -29,6 +30,10 @@ export interface GameContext {
   go(id: ScreenId): void;
   /** Personal bests and ghosts per track. */
   readonly records: RecordBook;
+  /** Saved tracks ("My tracks"). */
+  readonly library: TrackLibrary;
   /** The run the results screen shows. */
   lastResult: RunResult | null;
+  /** True while something outside the game needs it paused (portrait prompt; ads in Phase 6). */
+  interrupted: boolean;
 }

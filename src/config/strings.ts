@@ -23,6 +23,19 @@ export const STR = {
     raceAgain: 'Race again',
     newTrack: 'Draw new track',
     reverse: 'Reverse direction',
+    myTracks: 'My tracks',
+    share: 'Share',
+    shareTrack: 'Share track',
+    race: 'Race',
+    edit: 'Edit',
+    delete: 'Delete',
+    confirmDelete: 'Delete?',
+    load: 'Load',
+    copy: 'Copy code',
+    copyLink: 'Copy link',
+    close: 'Close',
+    soundOn: 'Sound: on',
+    soundOff: 'Sound: off',
   },
 
   editor: {
@@ -79,7 +92,7 @@ export const STR = {
     trackInfo: '{name} · {len} m · ×{mult}',
     speedUnit: 'km/h',
     paused: 'Paused',
-    hintKeyboard: 'W/↑ drive · S/↓ brake & reverse · A D/← → steer · Space handbrake · R reset · C camera · Esc pause',
+    hintKeyboard: 'W/↑ drive · S/↓ brake & reverse · A D/← → steer · Space handbrake · R reset · C camera · M sound · Esc pause',
     hintGamepad: 'RT drive · LT brake & reverse · stick steer · B handbrake · Back reset · Y camera · Start pause',
     hintTouch: 'Hold ◀ ▶ to steer, GAS and BRAKE on the right. Hold BRAKE to reverse.',
     controlsTitle: 'Controls',
@@ -113,6 +126,34 @@ export const STR = {
     scoreHint: 'Score = average speed × ink multiplier × 10. Short, twisty tracks multiply more.',
     kmh: '{v} km/h',
   },
+
+  library: {
+    title: 'My tracks',
+    importLabel: 'Got a track code from a friend?',
+    importPlaceholder: 'Paste a track code here',
+    yours: 'Your tracks',
+    builtIn: 'Built-in tracks',
+    empty: 'Tracks you race are saved here automatically. Draw one!',
+    stats: '{len} m · ×{mult}',
+    best: 'Best {time} · Score {score}',
+    notRaced: 'Not raced yet',
+    loaded: 'Track loaded!',
+    deleted: 'Track deleted.',
+    codeErrors: {
+      format: 'That doesn’t look like a track code. Codes start with IC1.',
+      checksum: 'That code is damaged (a character is missing or changed). Copy it again.',
+    },
+    invalidTrack: 'That track can’t be raced: {reason}',
+  },
+
+  share: {
+    title: 'Share this track',
+    text: 'Send this code to a friend. They paste it into My tracks to race your track.',
+    copied: 'Copied!',
+    copyFailed: 'Select the code and copy it (Ctrl+C / long-press).',
+  },
+
+  rotate: 'Turn your phone sideways to race.',
 
   errors: {
     webgl: 'This game needs WebGL. Try updating your browser or enabling hardware acceleration.',

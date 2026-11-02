@@ -1,19 +1,23 @@
 import css from './ui/style.css?inline';
+import { audio } from './audio/audio.ts';
 import { STR } from './config/strings.ts';
 import type { GameContext, Screen, ScreenId } from './core/screen.ts';
 import { Surface2D } from './core/surface2d.ts';
 import { EditorScreen } from './editor/drawing.ts';
-import { getSampleTrack } from './editor/pipeline.ts';
-import { PLATFORM } from './platform/platform.ts';
+import { getSampleTrack, trackFromCode } from './editor/pipeline.ts';
+import { CAPS, PLATFORM } from './platform/platform.ts';
+import { installOrientationPrompt, readHashCode } from './platform/web.ts';
 import { RaceScreen } from './race/raceScreen.ts';
 import { RecordBook, type RunResult } from './race/records.ts';
 import { ResultsScreen } from './race/resultsScreen.ts';
 import { View3D } from './render/view3d.ts';
+import { TrackLibrary } from './track/library.ts';
 import type { Track } from './track/track.ts';
+import { h } from './ui/dom.ts';
+import { LibraryScreen } from './ui/libraryScreen.ts';
 
 /**
  * Main state machine:  RACE (boot) ⇄ EDITOR ⇄ RESULTS ⇄ LIBRARY
- * Implemented so far: RACE (time trial), EDITOR and RESULTS.
  */
 
 const style = document.createElement('style');
@@ -44,7 +48,9 @@ class Game implements GameContext {
   readonly view3d = view3d;
   readonly ui = ui;
   readonly records = new RecordBook();
+  readonly library = new TrackLibrary();
   lastResult: RunResult | null = null;
+  interrupted = false;
   private readonly screens: Partial<Record<ScreenId, Screen>> = {};
   private current: Screen | null = null;
   private currentId: ScreenId | null = null;
@@ -54,6 +60,7 @@ class Game implements GameContext {
     this.screens.race = new RaceScreen(this);
     this.screens.editor = new EditorScreen(this);
     this.screens.results = new ResultsScreen(this);
+    this.screens.library = new LibraryScreen(this);
   }
 
   setTrack(track: Track): void {
@@ -83,11 +90,29 @@ class Game implements GameContext {
   }
 }
 
-// Boot straight into the race on the first sample track.
-const game = new Game(getSampleTrack(0));
+/** Web build: a share link (#track=…) boots straight into that track. */
+function bootTrack(): Track {
+  const code = CAPS.links ? readHashCode() : null;
+  if (code) {
+    const res = trackFromCode(code);
+    if (res.ok) return res.track;
+  }
+  return getSampleTrack(0);
+}
+
+audio.installUnlock();
+
+// Boot straight into the race: no clicks needed.
+const game = new Game(bootTrack());
 game.go('race');
+
+if (CAPS.orientationPrompt) {
+  const prompt = h('div', { class: 'rotate-prompt' }, h('div', { class: 'rotate-icon', text: '📱' }), h('p', { text: STR.rotate }));
+  app.append(prompt);
+  installOrientationPrompt(prompt, (portrait) => (game.interrupted = portrait));
+}
 // Handle for automated browser checks in dev builds; stripped from production.
-if (import.meta.env.DEV) Object.assign(window, { __game: game });
+if (import.meta.env.DEV) Object.assign(window, { __game: game, __audio: audio });
 
 window.addEventListener('resize', () => game.resize());
 
