@@ -13,23 +13,51 @@ export const TRACK = {
   roadWidth: 12,
   /** Spacing of the final evenly sampled centreline. */
   centerSpacing: 2.5,
-  /** Spacing of the smoothed control points the spline runs through. */
-  controlSpacing: 10,
-  /** Control points are rounded to this grid so a track rebuilds identically everywhere. */
+  /** A freehand stroke is resampled to this spacing before smoothing. */
+  controlSpacing: 6,
+  /** Dots are rounded to this grid so a track rebuilds identically everywhere. */
   quantize: 0.5,
-  /** Tighter corners than this are relaxed automatically (inner road edge would fold). */
-  minRadius: 10,
+  /** Corners tighter than this radius are rejected (the car can't get round). */
+  minRadius: 4.5,
   /** Centres of two unrelated parts of the track must be at least this far apart. */
-  minSeparation: 14,
+  minSeparation: 13,
+  /** The track may cross itself (a flat crossroads) if the roads meet at least this steeply. */
+  minCrossingAngle: (35 * Math.PI) / 180,
+  /** ...and the start line must be at least this far (along the track) from any crossing. */
+  crossingStartClearance: 30,
   /** Release this close to the start and the loop closes itself. */
   closeRadius: 42,
   /** Smallest track you may race. */
-  minLength: 400,
+  minLength: 300,
   /** Kerbs go on the outside of corners tighter than this radius ... */
   kerbRadius: 45,
   /** ... that turn at least this much (radians). */
   kerbMinTurn: (25 * Math.PI) / 180,
   kerbWidth: 1.6,
+} as const;
+
+/**
+ * Freehand smoothing levels: how much hand jitter is filtered out (Taubin
+ * iterations) and how tight a drawn corner may stay (corners tighter than
+ * `radius` are opened up automatically).
+ */
+export const SMOOTHING = {
+  sharp: { jitter: 1, radius: 6 },
+  normal: { jitter: 2, radius: 10 },
+  smooth: { jitter: 4, radius: 22 },
+} as const;
+export type SmoothingLevel = keyof typeof SMOOTHING;
+
+/** Turning a smoothed stroke into editable dots. */
+export const DOTS = {
+  /** Max distance the dot outline may stray from the smoothed stroke. */
+  tolerance: 1.6,
+  /** Long straights still get a dot at least this often, so they stay easy to edit. */
+  maxSpacing: 70,
+  /** Dots-mode grid snap step. */
+  snap: 10,
+  /** How close (in screen pixels) a pointer must be to grab a dot. */
+  grabPx: 14,
 } as const;
 
 /**
@@ -40,7 +68,7 @@ export const TRACK = {
  */
 export const INK = {
   /** Total ink, in metres of road. */
-  max: 1600,
+  max: 2400,
   /** Raw stroke points closer than this are merged (keeps hand jitter from eating ink). */
   minStep: 2,
   /** Multiplier gained per fraction of unused ink: 1 + leftWeight * (inkLeft / max). */

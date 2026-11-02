@@ -1,9 +1,9 @@
-import { TRACK } from '../config/track.ts';
+import { DOTS, SMOOTHING, TRACK, type SmoothingLevel } from '../config/track.ts';
 import { dist, polylineLength, wrap, type Vec2 } from '../core/math.ts';
 import { buildCenterline, resampleClosed, sampleClosedCatmullRom } from '../track/spline.ts';
 
 export type StrokeResult =
-  | { ok: true; control: Vec2[] }
+  | { ok: true; control: Vec2[]; autoClosed?: boolean }
   | { ok: false; issue: 'too-short' | 'not-closed'; at?: Vec2 };
 
 /** Drops points closer than `minStep` to the previously kept point. */
@@ -16,13 +16,13 @@ export function dedupe(raw: readonly Vec2[], minStep: number): Vec2[] {
 }
 
 /**
- * Turns a raw hand-drawn stroke into a closed loop of smooth control points:
+ * Turns a raw hand-drawn stroke into a closed loop of smooth, dense points:
  *  1. find where the stroke comes back to its start and trim any overshoot,
  *  2. resample evenly every `TRACK.controlSpacing` metres,
  *  3. Taubin-smooth away hand jitter (unlike plain averaging, it doesn't shrink the loop).
  * Direction of travel follows the drawing direction; the start line is where the pen went down.
  */
-export function strokeToControl(raw: readonly Vec2[]): StrokeResult {
+export function strokeToControl(raw: readonly Vec2[], level: SmoothingLevel = 'normal'): StrokeResult {
   const pts = dedupe(raw, 1);
   const total = polylineLength(pts);
   if (pts.length < 3 || total < TRACK.minLength * 0.5) return { ok: false, issue: 'too-short', at: pts[0] };
@@ -47,7 +47,13 @@ export function strokeToControl(raw: readonly Vec2[]): StrokeResult {
     }
     if (closeAt < 0 && total - cum[i] > maxOvershoot) break;
   }
-  if (closeAt < 0) return { ok: false, issue: 'not-closed', at: pts[pts.length - 1] };
+  let autoClosed = false;
+  if (closeAt < 0) {
+    // Didn't come back to the start: close the gap ourselves unless it's huge.
+    if (dist(pts[pts.length - 1], start) > total * 0.35) return { ok: false, issue: 'not-closed', at: pts[pts.length - 1] };
+    closeAt = pts.length - 1;
+    autoClosed = true;
+  }
 
   // Drop tail points that sit on top of the start; the loop closes back to pts[0].
   let end = closeAt;
@@ -58,7 +64,7 @@ export function strokeToControl(raw: readonly Vec2[]): StrokeResult {
   }
 
   const { points } = resampleClosed(loop, TRACK.controlSpacing);
-  return { ok: true, control: taubin(points, 4) };
+  return { ok: true, control: taubin(points, SMOOTHING[level].jitter), autoClosed };
 }
 
 /** Taubin λ|μ smoothing on a closed polygon: removes noise with almost no shrinkage. */
@@ -76,14 +82,13 @@ export function taubin(pts: readonly Vec2[], iterations: number, lambda = 0.5, m
 }
 
 /**
- * Opens up corners tighter than `TRACK.minRadius` by locally smoothing the control
- * points around them until they are drivable (or until it gives up, in which case
- * validation reports the corner).
+ * Opens up corners tighter than `radius` by locally smoothing the dense points
+ * around them (or until it gives up, in which case validation reports the corner).
  */
-export function relaxTightCorners(control: readonly Vec2[], maxIterations = 40): Vec2[] {
+export function relaxTightCorners(control: readonly Vec2[], radius: number, maxIterations = 60): Vec2[] {
   let cur = control.map((p) => ({ x: p.x, y: p.y }));
   const n = cur.length;
-  const limit = 1 / TRACK.minRadius;
+  const limit = 1 / radius;
   for (let iter = 0; iter < maxIterations; iter++) {
     const c = buildCenterline(cur);
     const marked = new Uint8Array(n);
@@ -126,10 +131,84 @@ export function quantizeControl(control: readonly Vec2[]): Vec2[] {
   return out;
 }
 
-/** Re-spaces a hand-authored control loop evenly along its spline (for sample tracks). */
+/**
+ * Douglas-Peucker on a closed loop: keeps the fewest points that stay within
+ * `tolerance` of the original, so corners keep several dots and straights few.
+ * Long gaps get extra dots (at most `maxSpacing` apart along the loop) so every
+ * stretch stays easy to grab and edit. Point 0 (the start) is always kept.
+ */
+export function simplifyLoop(pts: readonly Vec2[], tolerance: number = DOTS.tolerance, maxSpacing: number = DOTS.maxSpacing): Vec2[] {
+  const n = pts.length;
+  if (n < 4) return pts.map((p) => ({ ...p }));
+  const keep = new Uint8Array(n);
+  keep[0] = 1;
+  let far = 0;
+  for (let i = 1; i < n; i++) if (dist(pts[i], pts[0]) > dist(pts[far], pts[0])) far = i;
+  keep[far] = 1;
+  const at = (i: number) => pts[i % n];
+  const dp = (a: number, b: number) => {
+    let best = -1;
+    let bestD = tolerance;
+    const p = at(a);
+    const q = at(b);
+    const dx = q.x - p.x;
+    const dy = q.y - p.y;
+    const len = Math.hypot(dx, dy) || 1;
+    for (let i = a + 1; i < b; i++) {
+      const r = at(i);
+      const d = Math.abs((r.x - p.x) * dy - (r.y - p.y) * dx) / len;
+      if (d > bestD) {
+        bestD = d;
+        best = i;
+      }
+    }
+    if (best >= 0) {
+      keep[best % n] = 1;
+      dp(a, best);
+      dp(best, b);
+    }
+  };
+  dp(0, far);
+  dp(far, n);
+  // Cap the spacing between kept points.
+  const idx: number[] = [];
+  for (let i = 0; i < n; i++) if (keep[i]) idx.push(i);
+  const out: Vec2[] = [];
+  for (let k = 0; k < idx.length; k++) {
+    const a = idx[k];
+    const b = k + 1 < idx.length ? idx[k + 1] : idx[0] + n;
+    let arc = 0;
+    for (let i = a; i < b; i++) arc += dist(at(i), at(i + 1));
+    const extra = Math.max(0, Math.ceil(arc / maxSpacing) - 1);
+    out.push({ ...at(a) });
+    for (let e = 1; e <= extra; e++) out.push({ ...at(a + Math.round(((b - a) * e) / (extra + 1))) });
+  }
+  return out;
+}
+
+/** Re-spaces a hand-authored control loop evenly along its spline. */
 export function evenControl(control: readonly Vec2[]): Vec2[] {
   return resampleClosed(sampleClosedCatmullRom(control, 1), TRACK.controlSpacing).points;
 }
 
-/** Final clean-up of a control loop before it becomes a TrackDef. */
-export const prepareControl = (control: readonly Vec2[]): Vec2[] => quantizeControl(relaxTightCorners(control));
+/** Dense smoothed loop -> drivable, editable, quantised dots. */
+export const denseToDots = (dense: readonly Vec2[], level: SmoothingLevel = 'normal'): Vec2[] =>
+  quantizeControl(simplifyLoop(relaxTightCorners(dense, SMOOTHING[level].radius)));
+
+/** Snaps a dot to the quantisation grid (and optionally the coarse editing grid). */
+export function snapDot(p: Vec2, grid = 0): Vec2 {
+  const q = grid > 0 ? grid : TRACK.quantize;
+  return { x: Math.round(p.x / q) * q, y: Math.round(p.y / q) * q };
+}
+
+/** Same loop and start line, driven the other way round. */
+export function reverseDots(dots: readonly Vec2[]): Vec2[] {
+  return [dots[0], ...dots.slice(1).reverse()].map((p) => ({ ...p }));
+}
+
+/** Moves the start line to dot `k`. */
+export function rotateDots(dots: readonly Vec2[], k: number): Vec2[] {
+  const n = dots.length;
+  const i = ((k % n) + n) % n;
+  return [...dots.slice(i), ...dots.slice(0, i)].map((p) => ({ ...p }));
+}

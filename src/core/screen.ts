@@ -1,3 +1,4 @@
+import type { RecordBook, RunResult } from '../race/records.ts';
 import type { View3D } from '../render/view3d.ts';
 import type { Track } from '../track/track.ts';
 import type { Surface2D } from './surface2d.ts';
@@ -26,4 +27,8 @@ export interface GameContext {
   /** Overlay element that screens put their DOM UI into. */
   readonly ui: HTMLElement;
   go(id: ScreenId): void;
+  /** Personal bests and ghosts per track. */
+  readonly records: RecordBook;
+  /** The run the results screen shows. */
+  lastResult: RunResult | null;
 }

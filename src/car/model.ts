@@ -130,19 +130,33 @@ export class CarModel {
   private readonly axisX = new Vector3(1, 0, 0);
   private readonly axisY = new Vector3(0, 1, 0);
 
-  constructor(paint = DEFAULT_PAINT) {
-    this.paint = new MeshLambertMaterial({ color: paint, flatShading: true });
-    const trimMat = new MeshLambertMaterial({ vertexColors: true, flatShading: true });
+  /** `ghostOpacity` > 0 makes a see-through ghost car (no shadow). */
+  constructor(paint = DEFAULT_PAINT, ghostOpacity = 0) {
+    const ghost = ghostOpacity > 0;
+    const see = ghost ? { transparent: true, opacity: ghostOpacity, depthWrite: false } : {};
+    this.paint = new MeshLambertMaterial({ color: paint, flatShading: true, ...see });
+    const trimMat = new MeshLambertMaterial({ vertexColors: true, flatShading: true, ...see });
     this.body.add(new Mesh(paintGeometry(), this.paint), new Mesh(trimGeometry(), trimMat));
     this.wheels = new InstancedMesh(wheelGeometry(), trimMat, 4);
     this.wheels.frustumCulled = false;
-    const shadow = new Mesh(
-      new PlaneGeometry(2.4, 4.8).rotateX(-Math.PI / 2),
-      new MeshBasicMaterial({ map: shadowTexture(), transparent: true, depthWrite: false, opacity: 0.6 }),
-    );
-    shadow.position.y = 0.04;
-    shadow.renderOrder = 1;
-    this.root.add(shadow, this.body, this.wheels);
+    if (!ghost) {
+      const shadow = new Mesh(
+        new PlaneGeometry(2.4, 4.8).rotateX(-Math.PI / 2),
+        new MeshBasicMaterial({ map: shadowTexture(), transparent: true, depthWrite: false, opacity: 0.6 }),
+      );
+      shadow.position.y = 0.04;
+      shadow.renderOrder = 1;
+      this.root.add(shadow);
+    }
+    this.root.add(this.body, this.wheels);
+    if (ghost) this.root.traverse((o) => (o.renderOrder = 2));
+    this.placeWheels(0, 0);
+  }
+
+  /** Places a ghost from a recorded pose (no suspension or wheel animation needed). */
+  setPose(x: number, z: number, heading: number): void {
+    this.root.position.set(x, 0, z);
+    this.root.rotation.set(0, Math.PI / 2 - heading, 0);
   }
 
   setPaint(hex: number): void {
@@ -163,9 +177,13 @@ export class CarModel {
     this.pitch += (targetPitch - this.pitch) * k;
     this.body.rotation.set(this.pitch, 0, this.roll);
 
+    this.placeWheels(st.steer, st.spin);
+  }
+
+  private placeWheels(steerAngle: number, spin: number): void {
     WHEELS.forEach(([x, y, z], i) => {
-      const steer = i < 2 ? -st.steer : 0; // + steer = right = towards local -X
-      this.q.setFromAxisAngle(this.axisY, steer).multiply(this.qs.setFromAxisAngle(this.axisX, st.spin));
+      const steer = i < 2 ? -steerAngle : 0; // + steer = right = towards local -X
+      this.q.setFromAxisAngle(this.axisY, steer).multiply(this.qs.setFromAxisAngle(this.axisX, spin));
       this.m.compose(this.v.set(x, y, z), this.q, this.one);
       this.wheels.setMatrixAt(i, this.m);
     });

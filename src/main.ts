@@ -6,12 +6,14 @@ import { EditorScreen } from './editor/drawing.ts';
 import { getSampleTrack } from './editor/pipeline.ts';
 import { PLATFORM } from './platform/platform.ts';
 import { RaceScreen } from './race/raceScreen.ts';
+import { RecordBook, type RunResult } from './race/records.ts';
+import { ResultsScreen } from './race/resultsScreen.ts';
 import { View3D } from './render/view3d.ts';
 import type { Track } from './track/track.ts';
 
 /**
  * Main state machine:  RACE (boot) ⇄ EDITOR ⇄ RESULTS ⇄ LIBRARY
- * Implemented so far: RACE (3D track, preview camera) and EDITOR.
+ * Implemented so far: RACE (time trial), EDITOR and RESULTS.
  */
 
 const style = document.createElement('style');
@@ -41,6 +43,8 @@ class Game implements GameContext {
   readonly surface = surface;
   readonly view3d = view3d;
   readonly ui = ui;
+  readonly records = new RecordBook();
+  lastResult: RunResult | null = null;
   private readonly screens: Partial<Record<ScreenId, Screen>> = {};
   private current: Screen | null = null;
   private currentId: ScreenId | null = null;
@@ -49,6 +53,7 @@ class Game implements GameContext {
     this.track = bootTrack;
     this.screens.race = new RaceScreen(this);
     this.screens.editor = new EditorScreen(this);
+    this.screens.results = new ResultsScreen(this);
   }
 
   setTrack(track: Track): void {

@@ -1,5 +1,6 @@
 import { INK, TRACK } from '../config/track.ts';
 import type { Vec2 } from '../core/math.ts';
+import { hashString } from '../core/random.ts';
 import { findCorners, type Corner } from './corners.ts';
 import { inkStats, type InkStats } from './ink.ts';
 import { buildCenterline, type Centerline } from './spline.ts';
@@ -38,4 +39,12 @@ export function buildTrack(def: TrackDef): Track {
 /** Short random id for user-drawn tracks. */
 export function newTrackId(): string {
   return Math.random().toString(36).slice(2, 10);
+}
+
+/**
+ * Id derived from the shape itself, so the same layout always gets the same id
+ * (best laps and ghosts follow the shape, and editing a track gives a new id).
+ */
+export function contentId(control: readonly Vec2[]): string {
+  return 't' + hashString(control.map((p) => `${p.x},${p.y}`).join(';')).toString(36);
 }

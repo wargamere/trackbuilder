@@ -267,3 +267,61 @@ export function drawProblem(ctx: CanvasRenderingContext2D, v: View, p: Vec2, tim
   ctx.fillStyle = `rgba(214, 58, 58, ${0.12 + 0.12 * pulse})`;
   ctx.fill();
 }
+
+/** Screen-space box of the flag drawn by drawFlag() at `p`, for hit testing. */
+export function flagRect(v: View, p: Vec2): { x: number; y: number; w: number; h: number } {
+  const s = toScreen(v, p);
+  const h = Math.max(18, 26 * v.scale);
+  return { x: s.x - 6, y: s.y - h - 4, w: h * 0.6 + 12, h: h * 0.55 + 8 };
+}
+
+export interface DotStyle {
+  /** Radius in CSS pixels. */
+  r: number;
+  hover: number;
+  selected: number;
+  /** Index whose dot gets a "close the loop here" ring (open paths). */
+  closeTarget: number;
+  /** Index the start flag would move to (while dragging the flag). */
+  startPreview: number;
+}
+
+/** Editable dots: white with an ink outline; the start dot is filled with ink. */
+export function drawDots(ctx: CanvasRenderingContext2D, v: View, dots: readonly Vec2[], st: Partial<DotStyle> = {}): void {
+  const r = st.r ?? 5;
+  dots.forEach((p, i) => {
+    const s = toScreen(v, p);
+    const big = i === st.hover || i === st.selected;
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, big ? r + 2.5 : r, 0, Math.PI * 2);
+    ctx.fillStyle = i === 0 ? PAPER.ink : i === st.selected ? PAPER.close : '#ffffff';
+    ctx.fill();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = i === st.selected ? '#1b1b1b' : PAPER.ink;
+    ctx.stroke();
+    if (i === st.closeTarget || i === st.startPreview) {
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, r + 8, 0, Math.PI * 2);
+      ctx.strokeStyle = PAPER.close;
+      ctx.lineWidth = 3;
+      ctx.stroke();
+    }
+  });
+}
+
+/** Preview of an unfinished dots path: road-width wash, ink line, dashed closing hint. */
+export function drawChain(ctx: CanvasRenderingContext2D, v: View, line: readonly Vec2[], dots: readonly Vec2[]): void {
+  drawStroke(ctx, v, line);
+  if (dots.length >= 3) {
+    const a = toScreen(v, dots[dots.length - 1]);
+    const b = toScreen(v, dots[0]);
+    ctx.setLineDash([5, 6]);
+    ctx.strokeStyle = PAPER.border;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+}

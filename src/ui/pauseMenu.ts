@@ -4,10 +4,11 @@ import { button, h } from './dom.ts';
 export interface PauseActions {
   resume(): void;
   resetCar(): void;
+  restart(): void;
   drawTrack(): void;
 }
 
-/** Pause overlay: Resume, Reset car, Draw your track, plus a controls reminder. */
+/** Pause overlay: Resume, Reset car, Restart race, Draw your track, plus a controls reminder. */
 export class PauseMenu {
   readonly root: HTMLElement;
   private readonly controls: HTMLElement;
@@ -26,6 +27,7 @@ export class PauseMenu {
           { class: 'menu' },
           button(STR.buttons.resume, actions.resume, { icon: '▶', class: 'primary', key: 'Esc' }),
           button(STR.buttons.resetCar, actions.resetCar, { icon: '↺', key: 'R' }),
+          button(STR.buttons.restart, actions.restart, { icon: '⟲' }),
           button(STR.buttons.drawTrack, actions.drawTrack, { icon: '✎' }),
         ),
         h('div', { class: 'label', text: STR.race.controlsTitle }),

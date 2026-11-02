@@ -122,3 +122,27 @@ export function sampleAt(c: Centerline, s: number): { p: Vec2; t: Vec2 } {
     t: normalize({ x: ta.x + (tb.x - ta.x) * f, y: ta.y + (tb.y - ta.y) * f }),
   };
 }
+
+/** Smooth preview of an open chain of dots (ends padded by reflection). */
+export function sampleOpenCatmullRom(dots: readonly Vec2[], step = 2): Vec2[] {
+  if (dots.length < 3) return dots.map((p) => ({ ...p }));
+  const a = dots[0];
+  const b = dots[dots.length - 1];
+  const padStart = { x: 2 * a.x - dots[1].x, y: 2 * a.y - dots[1].y };
+  const padEnd = { x: 2 * b.x - dots[dots.length - 2].x, y: 2 * b.y - dots[dots.length - 2].y };
+  // Sample the padded chain as a loop and drop the segments that wrap around.
+  const ring = [padStart, ...dots, padEnd];
+  const all = sampleClosedCatmullRom(ring, step);
+  const out: Vec2[] = [];
+  let k = 0;
+  for (let i = 0; i < ring.length; i++) {
+    const p1 = ring[i];
+    const p2 = ring[(i + 1) % ring.length];
+    // Same step count as sampleClosedCatmullRom uses for this segment.
+    const steps = Math.max(4, Math.ceil(Math.hypot(p2.x - p1.x, p2.y - p1.y) / step));
+    if (i >= 1 && i < ring.length - 2) for (let s = 0; s < steps; s++) out.push(all[k + s]);
+    k += steps;
+  }
+  out.push({ ...b });
+  return out;
+}

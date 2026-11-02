@@ -9,6 +9,32 @@ import type { Track } from './track.ts';
 export const ROAD_Y = 0.02;
 
 /**
+ * Half-widths of the road on each side. On the inside of a hairpin tighter than
+ * half the road width the inner edge would fold back on itself, so it is pulled
+ * in to just inside the corner's radius (the road narrows slightly there).
+ */
+export function edgeOffsets(c: Centerline): { left: Float32Array; right: Float32Array } {
+  const n = c.points.length;
+  const hw = TRACK.roadWidth / 2;
+  const left = new Float32Array(n).fill(hw);
+  const right = new Float32Array(n).fill(hw);
+  const win = 3;
+  for (let i = 0; i < n; i++) {
+    let kMax = 0; // tightest signed curvature nearby
+    for (let o = -win; o <= win; o++) {
+      const k = c.curvature[wrap(i + o, n)];
+      if (Math.abs(k) > Math.abs(kMax)) kMax = k;
+    }
+    const limit = 0.9 / Math.max(Math.abs(kMax), 1e-6);
+    if (limit >= hw) continue;
+    // Positive curvature = right-hander: the inside is the right edge.
+    if (kMax > 0) right[i] = Math.max(0.5, limit);
+    else left[i] = Math.max(0.5, limit);
+  }
+  return { left, right };
+}
+
+/**
  * Extrudes the road ribbon along the closed centre line. Track coordinates
  * (x east, y south) map to world (x, z). U runs across the road (0 = left
  * edge), V along it. The loop gets one duplicated row at the end so V can run
@@ -16,19 +42,19 @@ export const ROAD_Y = 0.02;
  */
 export function buildRoadGeometry(c: Centerline): BufferGeometry {
   const n = c.points.length;
-  const hw = TRACK.roadWidth / 2;
   const tiles = Math.max(1, Math.round(c.length / TRACK.roadWidth));
   const rows = n + 1;
   const pos = new Float32Array(rows * 2 * 3);
   const nor = new Float32Array(rows * 2 * 3);
   const uv = new Float32Array(rows * 2 * 2);
+  const { left, right } = edgeOffsets(c);
   for (let r = 0; r < rows; r++) {
     const i = r % n;
     const p = c.points[i];
     const l = leftOf(c.tangents[i]);
     const v = (r / n) * tiles;
     const o = r * 6;
-    pos.set([p.x + l.x * hw, ROAD_Y, p.y + l.y * hw, p.x - l.x * hw, ROAD_Y, p.y - l.y * hw], o);
+    pos.set([p.x + l.x * left[i], ROAD_Y, p.y + l.y * left[i], p.x - l.x * right[i], ROAD_Y, p.y - l.y * right[i]], o);
     nor.set([0, 1, 0, 0, 1, 0], o);
     uv.set([0, v, 1, v], r * 4);
   }

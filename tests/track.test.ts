@@ -49,11 +49,25 @@ test('a tiny loop is rejected as too short', () => {
   if (!res.ok) assert.equal(res.issue, 'too-short');
 });
 
-test('a figure eight is rejected as crossing', () => {
-  const fig8 = curve(400, (t) => ({ x: Math.sin(t * Math.PI * 2) * 200, y: Math.sin(t * Math.PI * 4) * 90 }));
-  const res = trackFromStroke(fig8, 'fig8');
+/** Lissajous figure eight, starting `phase` of the way round (0 = on the crossing). */
+const figureEight = (w: number, h: number, phase: number) =>
+  curve(400, (t) => ({ x: Math.sin((t + phase) * Math.PI * 2) * w, y: Math.sin((t + phase) * Math.PI * 4) * h }));
+
+test('a figure eight with a steep crossing is allowed', () => {
+  const res = trackFromStroke(figureEight(220, 120, 0.25), 'fig8');
+  assert.ok(res.ok, JSON.stringify(!res.ok && res.issue));
+});
+
+test('a crossing on the start line is rejected', () => {
+  const res = trackFromStroke(figureEight(220, 120, 0), 'fig8');
   assert.equal(res.ok, false);
-  if (!res.ok) assert.equal(res.issue, 'crossing');
+  if (!res.ok) assert.equal(res.issue, 'crossing-start');
+});
+
+test('a crossing at a shallow angle is rejected', () => {
+  const res = trackFromStroke(figureEight(260, 25, 0.25), 'flat8');
+  assert.equal(res.ok, false);
+  if (!res.ok) assert.ok(res.issue === 'shallow-crossing' || res.issue === 'too-close', res.issue);
 });
 
 test('two parallel straights closer than the minimum separation are rejected', () => {
@@ -78,6 +92,30 @@ test('a sharp drawn corner is relaxed to a drivable radius', () => {
   if (!res.ok) return;
   const maxK = Math.max(...Array.from(res.track.center.curvature, Math.abs));
   assert.ok(1 / maxK >= TRACK.minRadius * 0.85, `min radius ${1 / maxK}`);
+});
+
+test('sharp smoothing keeps hand-drawn corners tight, smooth rounds them', () => {
+  const sq = [
+    ...curve(60, (t) => ({ x: -200 + 400 * t, y: -110 })),
+    ...curve(60, (t) => ({ x: 200, y: -110 + 220 * t })),
+    ...curve(60, (t) => ({ x: 200 - 400 * t, y: 110 })),
+    ...curve(60, (t) => ({ x: -200, y: 110 - 215 * t })),
+  ];
+  const radiusOf = (level: 'sharp' | 'smooth') => {
+    const res = trackFromStroke(sq, 'sq', level);
+    assert.ok(res.ok, JSON.stringify(!res.ok && res.issue));
+    if (!res.ok) return 0;
+    return 1 / Math.max(...Array.from(res.track.center.curvature, Math.abs));
+  };
+  const sharp = radiusOf('sharp');
+  assert.ok(sharp >= TRACK.minRadius && sharp < 9, `sharp corner radius ${sharp}`);
+  assert.ok(radiusOf('smooth') > sharp, 'smooth gives rounder corners');
+});
+
+test('freehand tracks become a manageable number of editable dots', () => {
+  const res = trackFromStroke(ellipse(220, 120, 1.05, 1.5), 'oval');
+  assert.ok(res.ok);
+  if (res.ok) assert.ok(res.track.def.control.length >= 6 && res.track.def.control.length <= 40, `${res.track.def.control.length} dots`);
 });
 
 test('a track rebuilds identically from its definition', () => {

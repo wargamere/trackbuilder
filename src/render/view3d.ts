@@ -63,7 +63,7 @@ export class View3D {
       this.textures.push(t);
     }
     this.mats = {
-      road: new MeshLambertMaterial({ map: asphalt }),
+      road: new MeshLambertMaterial({ map: asphalt, depthWrite: false }),
       kerb: new MeshLambertMaterial({ vertexColors: true, flatShading: true }),
       prop: new MeshLambertMaterial({ vertexColors: true, flatShading: true }),
       atlas: new MeshLambertMaterial({ map: atlas }),
@@ -169,6 +169,9 @@ export class View3D {
     const group = new Group();
     group.name = 'track';
     const road = new Mesh(buildRoadGeometry(track.center), this.mats.road);
+    // Drawn after the ground and without writing depth, so where the track crosses
+    // itself the two stretches simply overlap instead of flickering (z-fighting).
+    road.renderOrder = 1;
     group.add(road);
     const kerbGeo = buildKerbGeometry(track);
     const kerbs = kerbGeo ? new Mesh(kerbGeo, this.mats.kerb) : null;
