@@ -14,3 +14,6 @@ export const PAINTS = [
 ] as const;
 
 export type PaintId = (typeof PAINTS)[number]['id'];
+
+/** Extra colours for AI cars only (with the paints above, enough for a full grid all in different colours). */
+export const AI_PAINTS = [0xf07c1e, 0x1fa3a3, 0x9ccc2a, 0x8a5a33, 0x5cc8f0] as const;

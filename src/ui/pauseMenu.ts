@@ -7,6 +7,8 @@ export interface PauseActions {
   restart(): void;
   /** Opens the race setup (practice or race, laps, ghost, AI cars). */
   raceSettings(): void;
+  /** Qualifying: stop now and go to the grid. */
+  skipQualifying(): void;
   mainMenu(): void;
   drawTrack(): void;
   myTracks(): void;
@@ -19,11 +21,14 @@ export class PauseMenu {
   private readonly controls: HTMLElement;
   private readonly sound: HTMLButtonElement;
   private readonly restartBtn: HTMLButtonElement;
+  private readonly skipBtn: HTMLButtonElement;
 
   constructor(actions: PauseActions) {
     this.controls = h('p', { class: 'pause-controls' });
     this.sound = button(STR.buttons.soundOn, actions.toggleSound, { icon: '♪', key: 'M' });
     this.restartBtn = button(STR.buttons.restart, actions.restart, { icon: '⟲' });
+    this.skipBtn = button(STR.buttons.skipQualifying, actions.skipQualifying, { icon: '⏭' });
+    this.skipBtn.hidden = true;
     this.root = h(
       'div',
       { class: 'screen overlay pause' },
@@ -37,6 +42,7 @@ export class PauseMenu {
           button(STR.buttons.resume, actions.resume, { icon: '▶', class: 'primary', key: 'Esc' }),
           button(STR.buttons.resetCar, actions.resetCar, { icon: '↺', key: 'R' }),
           this.restartBtn,
+          this.skipBtn,
           button(STR.buttons.raceSettings, actions.raceSettings, { icon: '🏁' }),
           button(STR.buttons.drawTrack, actions.drawTrack, { icon: '✎' }),
           button(STR.buttons.myTracks, actions.myTracks, { icon: '☰' }),
@@ -50,10 +56,11 @@ export class PauseMenu {
     this.root.hidden = true;
   }
 
-  /** Restart reads "Back to the grid" in practice and "Restart race" in a race. */
-  setMode(mode: 'practice' | 'race'): void {
+  /** Restart reads "Back to the grid" in practice, "Restart qualifying" (plus Skip) in qualifying and "Restart race" in a race. */
+  setMode(mode: 'practice' | 'race' | 'qualifying'): void {
     const l = this.restartBtn.querySelector('.btn-label');
-    if (l) l.textContent = mode === 'practice' ? STR.buttons.backToGrid : STR.buttons.restart;
+    if (l) l.textContent = mode === 'practice' ? STR.buttons.backToGrid : mode === 'qualifying' ? STR.buttons.restartQualifying : STR.buttons.restart;
+    this.skipBtn.hidden = mode !== 'qualifying';
   }
 
   setSound(on: boolean): void {

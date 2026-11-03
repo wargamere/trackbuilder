@@ -17,10 +17,14 @@ export interface RaceSetup {
   laps: number;
   /** Show your best lap on the track as a see-through ghost car. */
   ghost: boolean;
-  /** AI cars in a race, 0–7 (never in practice). */
+  /** AI cars in a race, 0–11 (never in practice). */
   opponents: number;
   /** How fast the AI cars are, 1–100 (%). */
   difficulty: number;
+  /** How the grid is decided: a qualifying session, a random draw, or the slot you pick. */
+  grid: 'qualifying' | 'random' | 'pick';
+  /** Your grid slot when picking (1 = pole). */
+  startSlot: number;
 }
 
 export interface Screen {

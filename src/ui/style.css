@@ -2068,3 +2068,48 @@ body {
   font-variant-numeric: tabular-nums;
   color: #4a5270;
 }
+
+.race-setup .panel {
+  width: min(40rem, 94vw);
+}
+
+.race-setup .panel.one-col {
+  width: min(24rem, 92vw);
+}
+
+.setup-cols {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 1.3rem;
+}
+
+.race-setup .panel.one-col .setup-cols {
+  grid-template-columns: 1fr;
+}
+
+.race-setup .panel.one-col .race-col {
+  display: none;
+}
+
+@media (max-width: 560px) {
+  .setup-cols {
+    grid-template-columns: 1fr;
+  }
+}
+
+.grid-overlay .panel {
+  width: min(26rem, 92vw);
+  max-height: 94%;
+  overflow-y: auto;
+}
+
+.grid-note {
+  margin: -0.4rem 0 0.5rem;
+  font-weight: 700;
+  color: #4a5270;
+}
+
+.grid-overlay .standings {
+  margin-bottom: 0.8rem;
+  text-align: left;
+}

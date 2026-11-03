@@ -5,7 +5,8 @@ import { CarPhysics, CarState } from '../src/car/physics.ts';
 import { HANDLING } from '../src/config/handling.ts';
 import { AI, CONTACT } from '../src/config/race.ts';
 import { getSampleTrack, SAMPLE_COUNT } from '../src/editor/pipeline.ts';
-import { AiDriver, aiPace, gridSlot } from '../src/race/ai.ts';
+import { AiDriver, aiField, aiPace, gridOrder, gridPlace, qualifyingOrder, YOU } from '../src/race/ai.ts';
+import { rng } from '../src/core/random.ts';
 import { AuthorLap } from '../src/race/medals.ts';
 import { RaceSession, type Progress, type RaceEvent } from '../src/race/session.ts';
 import { edgeOffsets } from '../src/track/spline.ts';
@@ -58,7 +59,7 @@ test('grid slots are staggered two by two behind the line, on the road, and neve
     const { left, right } = edgeOffsets(t.center);
     const cars: CarState[] = [];
     for (let k = 0; k <= AI.maxOpponents; k++) {
-      const g = gridSlot(k);
+      const g = gridPlace(t, k);
       assert.ok(g.s < 0, 'behind the line');
       const car = new CarPhysics(t);
       car.placeAt(g.s, g.lateral);
@@ -139,3 +140,69 @@ test('equal AI cars starting nose to tail get past each other or follow, without
   const end = (a: AiDriver) => a.session.runEnd ?? Infinity;
   assert.ok(ais.slice(1).some((a) => end(a) < end(ais[0])), 'at least one fast car passed the slow one');
 });
+
+test('grid orders: pick puts you in your slot, random shuffles everyone, AI cars otherwise fastest first', () => {
+  assert.deepEqual(gridOrder('pick', 3, 1), [YOU, 0, 1, 2]);
+  assert.deepEqual(gridOrder('pick', 3, 3), [0, 1, YOU, 2]);
+  assert.deepEqual(gridOrder('pick', 3, 99), [0, 1, 2, YOU], 'past the back: the back');
+  assert.deepEqual(gridOrder('pick', 3, 0), [YOU, 0, 1, 2], 'before pole: pole');
+  assert.deepEqual(gridOrder('pick', 0, 5), [YOU]);
+  const r = rng(3);
+  const seen = new Set<number>();
+  for (let k = 0; k < 40; k++) {
+    const o = gridOrder('random', 5, 1, r);
+    assert.deepEqual([...o].sort((a, b) => a - b), [YOU, 0, 1, 2, 3, 4], 'everyone exactly once');
+    seen.add(o.indexOf(YOU));
+  }
+  assert.ok(seen.size >= 5, `you start in different slots (${[...seen]})`);
+});
+
+test('qualifying order: fastest first, no time at the back (you last among those)', () => {
+  const times = new Map<number, number | null>([
+    [YOU, 41.2],
+    [0, 40.1],
+    [1, null],
+    [2, 43.0],
+    [3, 41.0],
+  ]);
+  assert.deepEqual(qualifyingOrder(times), [0, 3, YOU, 2, 1]);
+  times.set(YOU, null);
+  assert.deepEqual(qualifyingOrder(times), [0, 3, 2, 1, YOU]);
+});
+
+test('the AI field: fastest first, spread just below the chosen difficulty, names and colours all different', () => {
+  const paints = Array.from({ length: 12 }, (_, i) => i);
+  const names = 'abcdefghijk'.split('');
+  const f = aiField(11, 60, paints, names);
+  assert.equal(f.length, 11);
+  assert.equal(f[0].difficulty, 0.6);
+  assert.ok(Math.abs(f[10].difficulty - (0.6 - AI.spread)) < 1e-9);
+  for (let k = 1; k < f.length; k++) assert.ok(f[k].difficulty < f[k - 1].difficulty);
+  assert.equal(new Set(f.map((x) => x.name)).size, 11);
+  assert.equal(new Set(f.map((x) => x.paint)).size, 11);
+  assert.ok(aiField(3, 1, paints, names).every((x) => x.difficulty >= 0), 'never below 0');
+});
+
+test('AI qualifying laps: a harder AI sets a faster flying lap', () => {
+  const t = getSampleTrack(0);
+  const lap = (d: number) => {
+    const p = aiPace(d);
+    return new AuthorLap(t, p.aggression, { maxSpeed: p.maxSpeed }).finish();
+  };
+  const fast = lap(0.9);
+  const slow = lap(0.3);
+  assert.ok(fast && slow && fast < slow, `${fast} < ${slow}`);
+  // The default pace is still the medal lap.
+  assert.equal(new AuthorLap(t).finish(), new AuthorLap(t, 0.8, {}).finish());
+});
+
+test('a full grid of twelve cars races two laps on every sample: everyone finishes, nobody drives through anybody', () => {
+  for (let si = 0; si < SAMPLE_COUNT; si++) {
+    const t = getSampleTrack(si);
+    const field = aiField(AI.maxOpponents + 1, 60, [0], ['x']);
+    const { ais, minGap } = race(t, field.map((f) => f.difficulty), 2, 500);
+    for (const a of ais) assert.equal(a.session.phase, 'finished', `${a.name} ${a.difficulty.toFixed(2)} finished on ${t.def.name}`);
+    assert.ok(minGap > CONTACT.radius, `closest ${minGap.toFixed(2)} m on ${t.def.name}`);
+  }
+});
+

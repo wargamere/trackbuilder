@@ -43,7 +43,7 @@ const DEFAULTS: Settings = {
   minimap: true,
   cornerLabels: true,
   sidebarSection: 0,
-  raceSetup: { mode: 'race', ghost: true, opponents: 3, difficulty: 50 },
+  raceSetup: { mode: 'race', ghost: true, opponents: 3, difficulty: 50, grid: 'pick', startSlot: 4 },
 };
 const KEY = 'settings';
 

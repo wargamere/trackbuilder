@@ -5,27 +5,38 @@ import { settings } from '../core/settings.ts';
 import { TrackOrbit } from '../render/orbit.ts';
 import { button, h, segmented, slider, type Choice, type Slider } from './dom.ts';
 
+type GridKind = RaceSetup['grid'];
+
 /**
  * SETUP state: the race setup menu, opened wherever you choose to race a
  * track (main menu, editor, 3D view, My tracks, results, pause menu). Practice
- * or race, laps (1–10), the ghost of your record on or off, and in a race how
- * many AI cars and how fast. The track circles slowly behind it.
+ * or race, laps (1–10) and the ghost of your record; in a race, how many cars
+ * (you and up to eleven AI cars), how fast the AI is, and how the grid is
+ * decided: qualifying, a random draw, or the slot you pick. The track circles
+ * slowly behind it.
  */
 export class RaceSetupScreen implements Screen {
   readonly layer = '3d';
   private readonly game: GameContext;
   private readonly root: HTMLElement;
+  private readonly panel: HTMLElement;
   private readonly trackLine: HTMLElement;
   private readonly modeChoice: Choice<DriveMode>;
   private readonly modeHint: HTMLElement;
   private readonly lapsSlider: Slider;
   private readonly ghostChoice: Choice<boolean>;
   private readonly ghostHint: HTMLElement;
-  private readonly aiSlider: Slider;
+  private readonly carsSlider: Slider;
+  private readonly carsHint: HTMLElement;
   private readonly diffSlider: Slider;
   private readonly diffHint: HTMLElement;
+  private readonly gridChoice: Choice<GridKind>;
+  private readonly gridHint: HTMLElement;
+  private readonly slotSlider: Slider;
   private readonly raceOnly: HTMLElement[];
-  private readonly diffRow: HTMLElement;
+  /** Rows only for a race with AI cars. */
+  private readonly withAi: HTMLElement[];
+  private readonly slotRow: HTMLElement;
   private readonly orbit = new TrackOrbit();
   /** The choices being made (the game's setup only changes on Start). */
   private draft: RaceSetup;
@@ -37,6 +48,7 @@ export class RaceSetupScreen implements Screen {
     this.draft = { ...game.setup };
     const S = STR.setup;
     const field = (label: string, ...children: (Node | null)[]) => h('div', { class: 'field' }, h('span', { class: 'label', text: label }), ...children);
+    const ord = (n: number) => STR.results.ordinals[n - 1] ?? String(n);
     this.trackLine = h('div', { class: 'setup-track' });
     this.modeChoice = segmented<DriveMode>(
       [
@@ -55,35 +67,51 @@ export class RaceSetupScreen implements Screen {
       (g) => this.set({ ghost: g }),
     );
     this.ghostHint = h('p', { class: 'setup-hint' });
-    this.aiSlider = slider(0, AI.maxOpponents, 1, (n) => this.set({ opponents: n }, false), () => {}, (n) => (n === 0 ? S.noOpponents : fmt(S.opponentsValue, { n })));
+    // Cars counts you too: 1 = just you, 12 = you and eleven AI cars.
+    this.carsSlider = slider(1, AI.maxOpponents + 1, 1, (n) => this.set({ opponents: n - 1 }, false), () => this.render(), (n) => (n === 1 ? S.carsSolo : fmt(S.carsValue, { n })));
+    this.carsHint = h('p', { class: 'setup-hint' });
     this.diffSlider = slider(1, 100, 1, (n) => this.set({ difficulty: n }, false), () => {}, (n) => fmt(S.difficultyValue, { n }));
     this.diffHint = h('p', { class: 'setup-hint' });
+    this.gridChoice = segmented<GridKind>(
+      [
+        ['qualifying', S.gridQualifying, '⏱'],
+        ['random', S.gridRandom, '🎲'],
+        ['pick', S.gridPick, '☝'],
+      ],
+      (g) => this.set({ grid: g }),
+    );
+    this.gridHint = h('p', { class: 'setup-hint' });
+    this.slotSlider = slider(1, 2, 1, (n) => this.set({ startSlot: n }, false), () => {}, (n) => {
+      const cars = this.draft.opponents + 1;
+      return n === 1 ? fmt(S.slotPole, { pos: ord(n) }) : n >= cars ? fmt(S.slotBack, { pos: ord(n) }) : ord(n);
+    });
     const laps = field(S.laps, this.lapsSlider.el);
-    const ai = field(S.opponents, this.aiSlider.el);
-    this.diffRow = field(S.difficulty, this.diffSlider.el, this.diffHint);
-    this.raceOnly = [laps, ai, this.diffRow];
-    this.root = h(
+    const cars = field(S.cars, this.carsSlider.el, this.carsHint);
+    const diff = field(S.difficulty, this.diffSlider.el, this.diffHint);
+    const grid = field(S.grid, this.gridChoice.el, this.gridHint);
+    this.slotRow = field(S.startSlot, this.slotSlider.el);
+    this.raceOnly = [laps, cars];
+    this.withAi = [diff, grid];
+    this.panel = h(
       'div',
-      { class: 'screen overlay main-menu race-setup' },
+      { class: 'panel' },
+      h('h2', { text: S.title }),
+      this.trackLine,
       h(
         'div',
-        { class: 'panel' },
-        h('h2', { text: S.title }),
-        this.trackLine,
-        field(S.mode, this.modeChoice.el, this.modeHint),
-        laps,
-        field(S.ghost, this.ghostChoice.el, this.ghostHint),
-        ai,
-        this.diffRow,
-        h(
-          'div',
-          { class: 'menu row setup-buttons' },
-          button(S.back, () => this.game.closeSetup(), { icon: '←', key: 'Esc' }),
-          button(S.start, () => this.start(), { icon: '▶', class: 'primary', key: 'Enter' }),
-        ),
-        h('p', { class: 'menu-keys', text: S.keys }),
+        { class: 'setup-cols' },
+        h('div', { class: 'setup-col' }, field(S.mode, this.modeChoice.el, this.modeHint), laps, field(S.ghost, this.ghostChoice.el, this.ghostHint)),
+        h('div', { class: 'setup-col race-col' }, cars, diff, grid, this.slotRow),
       ),
+      h(
+        'div',
+        { class: 'menu row setup-buttons' },
+        button(S.back, () => this.game.closeSetup(), { icon: '←', key: 'Esc' }),
+        button(S.start, () => this.start(), { icon: '▶', class: 'primary', key: 'Enter' }),
+      ),
+      h('p', { class: 'menu-keys', text: S.keys }),
     );
+    this.root = h('div', { class: 'screen overlay main-menu race-setup' }, this.panel);
   }
 
   enter(): void {
@@ -139,12 +167,22 @@ export class RaceSetupScreen implements Screen {
   }
 
   private start(): void {
+    this.clampSlot();
     this.game.start(this.draft);
+  }
+
+  /** Your slot can't be behind the last car. */
+  private clampSlot(): void {
+    this.draft.startSlot = Math.max(1, Math.min(this.draft.startSlot, this.draft.opponents + 1));
   }
 
   /** Changes the draft; `redraw` false while a slider is being dragged (it shows its own value). */
   private set(patch: Partial<RaceSetup>, redraw = true): void {
+    // Keep "the back of the grid" the back when cars are added.
+    const wasBack = this.draft.startSlot >= this.draft.opponents + 1;
     Object.assign(this.draft, patch);
+    if (patch.opponents !== undefined && wasBack) this.draft.startSlot = this.draft.opponents + 1;
+    this.clampSlot();
     if (redraw) this.render();
     else this.renderHints();
   }
@@ -154,8 +192,11 @@ export class RaceSetupScreen implements Screen {
     this.modeChoice.set(d.mode);
     this.lapsSlider.set(d.laps);
     this.ghostChoice.set(d.ghost);
-    this.aiSlider.set(d.opponents);
+    this.carsSlider.set(d.opponents + 1);
     this.diffSlider.set(d.difficulty);
+    this.gridChoice.set(d.grid);
+    this.slotSlider.setRange(1, Math.max(2, d.opponents + 1));
+    this.slotSlider.set(d.startSlot);
     this.renderHints();
   }
 
@@ -163,13 +204,21 @@ export class RaceSetupScreen implements Screen {
     const d = this.draft;
     const S = STR.setup;
     const race = d.mode === 'race';
+    const ai = race && d.opponents > 0;
     this.modeHint.textContent = race ? S.raceHint : S.practiceHint;
     for (const el of this.raceOnly) el.hidden = !race;
-    this.diffRow.classList.toggle('disabled', d.opponents === 0);
+    for (const el of this.withAi) el.hidden = !ai;
+    this.slotRow.hidden = !ai || d.grid !== 'pick';
+    this.panel.classList.toggle('one-col', !race);
+    this.carsHint.textContent = d.opponents === 0 ? S.carsSoloHint : d.opponents === 1 ? S.carsHintOne : fmt(S.carsHint, { n: d.opponents });
     const hasGhost = !!this.game.records.get(this.game.track.def.id).ghost;
     this.ghostHint.textContent = hasGhost ? S.ghostHint : S.ghostNone;
     const hints = S.difficultyHints;
     const k = d.difficulty >= 95 ? 4 : d.difficulty >= 75 ? 3 : d.difficulty >= 50 ? 2 : d.difficulty >= 25 ? 1 : 0;
     this.diffHint.textContent = hints[k];
+    this.gridHint.textContent = fmt(S.gridHints[d.grid], { n: AI.qualifyingLaps });
+    // The slot slider's labels depend on the number of cars.
+    this.slotSlider.setRange(1, Math.max(2, d.opponents + 1));
+    this.slotSlider.set(d.startSlot);
   }
 }

@@ -76,6 +76,8 @@ export interface Slider {
   el: HTMLElement;
   /** Shows a value (ignored while the slider is being dragged). */
   set(v: number): void;
+  /** Changes the range. */
+  setRange(min: number, max: number): void;
 }
 
 /** A range slider with its value beside it; `onInput` while dragging, `onDone` when let go. */
@@ -105,6 +107,10 @@ export function slider(min: number, max: number, step: number, onInput: (v: numb
       if (input.value !== String(v)) input.value = String(v);
       const t = format(v);
       if (value.textContent !== t) value.textContent = t;
+    },
+    setRange(lo: number, hi: number) {
+      input.min = String(lo);
+      input.max = String(hi);
     },
   };
 }

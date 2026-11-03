@@ -27,7 +27,12 @@ export const RACE = {
 
 /** AI opponents (race mode only). */
 export const AI = {
-  maxOpponents: 7,
+  /** Up to this many AI cars (12 cars with you). */
+  maxOpponents: 11,
+  /** Timed laps in qualifying (the best clean one sets your grid slot). */
+  qualifyingLaps: 2,
+  /** AI qualifying times vary by up to this share either way, so equal cars don't always line up the same. */
+  qualifyingNoise: 0.005,
   /**
    * How hard an AI drives at difficulty 0, 25, 50, 75 and 100 %: the share of
    * the tyres' grip it uses in corners, and its top speed as a share of the

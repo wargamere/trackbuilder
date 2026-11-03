@@ -80,6 +80,8 @@ class Game implements GameContext {
       ghost: saved?.ghost ?? true,
       opponents: clamp(Math.round(saved?.opponents ?? 3), 0, AI.maxOpponents),
       difficulty: clamp(Math.round(saved?.difficulty ?? 50), 1, 100),
+      grid: saved?.grid === 'qualifying' || saved?.grid === 'random' ? saved.grid : 'pick',
+      startSlot: clamp(Math.round(saved?.startSlot ?? 99), 1, AI.maxOpponents + 1),
     };
     wipeOldLibraryOnce(this.library, this.records);
     this.screens.menu = new MenuScreen(this);
@@ -117,8 +119,8 @@ class Game implements GameContext {
   start(patch: Partial<RaceSetup> = {}): void {
     this.syncLaps();
     Object.assign(this.setup, patch);
-    const { mode, ghost, opponents, difficulty } = this.setup;
-    updateSettings({ raceSetup: { mode, ghost, opponents, difficulty } });
+    const { mode, ghost, opponents, difficulty, grid, startSlot } = this.setup;
+    updateSettings({ raceSetup: { mode, ghost, opponents, difficulty, grid, startSlot } });
     this.setupBack = null;
     if (this.currentId === 'race') (this.screens.race as RaceScreen).startRun();
     else this.go('race');

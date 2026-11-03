@@ -2,6 +2,7 @@ import { CarPhysics, NO_INPUT, type CarState, type DriveInput } from '../car/phy
 import { HANDLING } from '../config/handling.ts';
 import { AI } from '../config/race.ts';
 import { clamp } from '../core/math.ts';
+import { edgeOffsets } from '../track/spline.ts';
 import type { Track } from '../track/track.ts';
 import { botInput } from './bot.ts';
 import { RaceSession } from './session.ts';
@@ -17,9 +18,62 @@ export function aiPace(difficulty: number): { aggression: number; maxSpeed: numb
   return { aggression: a0 + (a1 - a0) * u, maxSpeed: HANDLING.maxSpeed * (v0 + (v1 - v0) * u) };
 }
 
-/** Where car `k` of `count` starts: staggered two by two behind the line. Slot 0 is at the front. */
-export function gridSlot(k: number): { s: number; lateral: number } {
-  return { s: -AI.gridFront - k * AI.gridGap, lateral: (k % 2 === 0 ? 1 : -1) * AI.gridLateral };
+/**
+ * Where grid slot `slot` is (0 = pole): staggered two by two behind the line,
+ * pulled in towards the middle where the road is narrow (the inside of a bend).
+ */
+export function gridPlace(track: Track, slot: number): { s: number; lateral: number } {
+  const c = track.center;
+  const n = c.points.length;
+  const s = -AI.gridFront - slot * AI.gridGap;
+  const side = slot % 2 === 0 ? 1 : -1;
+  const i = ((Math.round(s / c.spacing) % n) + n) % n;
+  const { left, right } = edgeOffsets(c);
+  const room = (side > 0 ? left[i] : right[i]) - HANDLING.halfWidth - 0.4;
+  return { s, lateral: side * clamp(room, 0, AI.gridLateral) };
+}
+
+/** How the grid is decided (see RaceSetup.grid). */
+export type GridKind = 'qualifying' | 'random' | 'pick';
+
+/** The player's id in a grid order; AI cars are 0, 1, 2, … */
+export const YOU = -1;
+
+/**
+ * Grid order (car ids by slot, pole first) for `ai` AI cars. AI cars are
+ * listed fastest first and keep that order among themselves, except on a
+ * random grid where everyone is shuffled. `pick` puts you in slot
+ * `startSlot` (1-based). Qualifying order comes from qualifyingOrder().
+ */
+export function gridOrder(kind: GridKind, ai: number, startSlot: number, rand: () => number = Math.random): number[] {
+  const order = Array.from({ length: ai }, (_, k) => k);
+  if (kind === 'random') {
+    order.push(YOU);
+    for (let i = order.length - 1; i > 0; i--) {
+      const j = Math.floor(rand() * (i + 1));
+      [order[i], order[j]] = [order[j], order[i]];
+    }
+    return order;
+  }
+  order.splice(clamp(Math.round(startSlot) - 1, 0, ai), 0, YOU);
+  return order;
+}
+
+/** Grid order from qualifying times (null = no clean lap: to the back, in id order). */
+export function qualifyingOrder(times: ReadonlyMap<number, number | null>): number[] {
+  return [...times.entries()]
+    .sort(([ia, a], [ib, b]) => (a !== null && b !== null ? a - b : a !== null ? -1 : b !== null ? 1 : ia === YOU ? 1 : ib === YOU ? -1 : ia - ib))
+    .map(([id]) => id);
+}
+
+/** Name, colour and difficulty (0..1) of each AI car, fastest first: the field spreads out below `difficulty` (%). */
+export function aiField(count: number, difficulty: number, paints: readonly number[], names: readonly string[]): { name: string; paint: number; difficulty: number }[] {
+  const top = difficulty / 100;
+  return Array.from({ length: count }, (_, k) => ({
+    name: names[k % names.length],
+    paint: paints[k % paints.length],
+    difficulty: Math.max(0, top - (count > 1 ? (AI.spread * k) / (count - 1) : 0)),
+  }));
 }
 
 /** Signed distance along a loop of length `L` from `a` to `b`, in (-L/2, L/2]. */
@@ -42,6 +96,8 @@ export class AiDriver {
   readonly name: string;
   readonly paint: number;
   readonly difficulty: number;
+  /** Where it started (m along the track; negative = behind the line). */
+  readonly start: number;
   private readonly track: Track;
   private readonly pace: { aggression: number; maxSpeed: number };
   private readonly inp: DriveInput = { ...NO_INPUT };
@@ -56,7 +112,8 @@ export class AiDriver {
     this.difficulty = opts.difficulty;
     this.pace = aiPace(opts.difficulty);
     this.car = new CarPhysics(track);
-    const g = gridSlot(opts.slot);
+    const g = gridPlace(track, opts.slot);
+    this.start = g.s;
     this.car.placeAt(g.s, g.lateral);
     this.lane = g.lateral;
     this.laneTarget = g.lateral;

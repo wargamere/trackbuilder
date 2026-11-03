@@ -51,7 +51,8 @@ src/
               records.ts, resultsScreen.ts, bot.ts (driver), ai.ts (AI opponents),
               medals.ts (medal times)
   ui/         dom helpers, menuScreen.ts (main menu), raceSetupScreen.ts (race
-              setup), editor overlay, HUD, minimap, pause menu, touch controls,
+              setup), gridOverlay.ts (grid after qualifying), editor overlay, HUD,
+              minimap, pause menu, touch controls,
               libraryScreen.ts (My tracks), shareDialog.ts, style.css
   audio/      audio.ts (synthesised engine, tyre squeal, grass rumble, beeps)
   platform/   platform.ts (PLATFORM flag + CAPS), services.ts (what the game calls:
@@ -157,9 +158,14 @@ The game boots to the **main menu**, with the current track turning slowly in 3D
 - **Mode:** Practice or Race (P / R).
 - **Laps:** 1–10 (race only). Each track starts at its own "Laps per race" from the editor.
 - **Ghost car (your record):** on or off.
-- **AI cars:** 0–7, and **AI difficulty** 1–100 % (race only).
+- **Cars:** 1–12, counting you (1 = just you, a time trial; 12 = you and eleven AI cars). Race only.
+- **AI difficulty:** 1–100 % (with AI cars).
+- **Grid** (with AI cars):
+  - **Qualifying:** you first drive 2 timed laps alone (no countdown). Your best clean lap sets where you start. Meanwhile each AI car's flying lap is simulated in the background at its own pace, with ±0.5 % variation so equal cars don't always line up the same. Then the grid is shown, pole first, with everyone's time and gap, and Start race (Enter). A car with no clean lap goes to the back. The pause menu has Restart qualifying and Skip qualifying (straight to the grid with what you have).
+  - **Random:** everyone's slot, yours included, is drawn at random.
+  - **Pick:** choose **your grid slot** (1st = pole up to the back); the AI cars fill the rest, fastest at the front.
 
-Start (Enter) drives it. The mode, ghost, AI count and difficulty are remembered between visits. "Race again" on the results screen reruns the same setup.
+Start (Enter) drives it. All of it except the laps is remembered between visits. "Race again" on the results screen reruns the same setup (qualifying again, or a new random draw). Restart in the pause menu restarts the race from the same grid.
 
 **Practice** starts at once, no countdown and no AI cars, as many laps as you like. Lap times, splits, the ghost and personal bests work as in a race, but there's no lap limit and no results screen. Press **R twice quickly** (within 0.5 s, or gamepad Back twice) to restart the lap from the grid; a single R just puts the car back on the road.
 
@@ -167,7 +173,7 @@ The pause menu has Restart (Back to the grid in practice), Race settings and Mai
 
 ### AI cars
 
-Up to seven AI cars (`race/ai.ts`) line up on a staggered grid, two by two, 6.5 m apart, fastest at the front and you at the back. Each has its own car (the same physics as yours), its own lap counter and a driver built on the bot's line. It brakes for the corners it can see coming, using a share of the tyres' grip and a top speed set by its difficulty (`AI.pace`). The field spreads up to 8 points below the chosen difficulty, so the cars don't drive nose to tail.
+Up to eleven AI cars (`race/ai.ts`) line up on a staggered grid, two by two, 6.5 m apart. Slots are pulled in towards the middle where the road narrows on a bend. The order comes from the setup's grid choice. The field is listed fastest first, in 12 different colours (the paints plus five AI-only colours, never yours). Each has its own car (the same physics as yours), its own lap counter and a driver built on the bot's line. It brakes for the corners it can see coming, using a share of the tyres' grip and a top speed set by its difficulty (`AI.pace`). The field spreads up to 8 points below the chosen difficulty, so the cars don't drive nose to tail.
 
 | Difficulty | AI lap vs the medal (gold) time |
 |---|---|
@@ -259,4 +265,4 @@ Tested against the real SDK in its `local` mode (localhost): the SDK's own log s
 - [x] Phase 6: CrazyGames SDK
 - [x] Elevation, banking, barriers, bridges, scenery themes; editor zoom/pan, lazy pen, section redraw, soft editing and Height mode; minimap and medals
 - [x] Editor sidebar (7 sections), stats strip, numbered corners, road width, kerb / run-off / barrier styles, pits, sunset, laps, tree density, display settings, 3D view
-- [x] Race setup menu (practice / race, laps 1–10, ghost on / off), AI cars with difficulty 1–100 %, car-to-car contact, positions; double-tap R restarts a practice lap
+- [x] Race setup menu (practice / race, laps 1–10, ghost on / off, 1–12 cars, grid: qualifying / random / pick your slot), AI cars with difficulty 1–100 %, car-to-car contact, positions; double-tap R restarts a practice lap

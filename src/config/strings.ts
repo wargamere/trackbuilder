@@ -40,6 +40,8 @@ export const STR = {
     raceSettings: 'Race settings',
     practice: 'Practice',
     backToGrid: 'Back to the grid',
+    restartQualifying: 'Restart qualifying',
+    skipQualifying: 'Skip qualifying',
     mainMenu: 'Main menu',
     saveTrack: 'Save track',
     savedTrack: 'Saved',
@@ -243,9 +245,24 @@ export const STR = {
     ghostNone: 'No record on this track yet: drive a clean lap to make one.',
     on: 'On',
     off: 'Off',
-    opponents: 'AI cars',
-    opponentsValue: '{n}',
-    noOpponents: 'None',
+    cars: 'Cars',
+    carsValue: '{n} cars',
+    carsSolo: 'Just you',
+    carsHint: 'You and {n} AI cars.',
+    carsHintOne: 'You and 1 AI car.',
+    carsSoloHint: 'No AI cars: a time trial against the clock (and your ghost).',
+    grid: 'Grid',
+    gridQualifying: 'Qualifying',
+    gridRandom: 'Random',
+    gridPick: 'Pick',
+    gridHints: {
+      qualifying: 'Drive {n} timed laps on your own first: your best clean lap sets where you start.',
+      random: 'Everyone’s grid slot is drawn at random.',
+      pick: 'Choose your slot; the AI cars fill the rest, fastest at the front.',
+    },
+    startSlot: 'Your grid slot',
+    slotPole: '{pos} (pole)',
+    slotBack: '{pos} (back)',
     difficulty: 'AI difficulty',
     difficultyValue: '{n}%',
     /** Shown under the difficulty slider (from 1 %, 25 %, 50 %, 75 %, 95 %). */
@@ -261,9 +278,16 @@ export const STR = {
     keys: 'Enter start · Esc back · P practice · R race',
   },
 
+  grid: {
+    title: 'Qualifying',
+    youStart: 'You start {pos} of {n}.',
+    noTime: 'No time',
+    start: 'Start race',
+  },
+
   ai: {
     /** AI drivers' names, fastest grid slot first. */
-    names: ['Ada', 'Bram', 'Cleo', 'Dex', 'Esme', 'Finn', 'Gus'],
+    names: ['Ada', 'Bram', 'Cleo', 'Dex', 'Esme', 'Finn', 'Gus', 'Hana', 'Ivo', 'Juno', 'Kai'],
   },
 
   preview: {
@@ -291,6 +315,10 @@ export const STR = {
     hintRestartKeyboard: ' · R R restart lap',
     hintRestartGamepad: ' · Back Back restart lap',
     lapRestarted: 'Lap restarted',
+    qualifying: 'QUALIFYING',
+    qualifyingLap: 'QUALIFYING · LAP {n}/{total}',
+    qualifyingGo: 'Qualifying: {n} timed laps. Your best clean lap sets your grid slot.',
+    qualifyingDone: 'Qualifying done!',
     position: 'POS',
     positionValue: '{pos}/{n}',
     finishedPos: 'Finished {pos}!',

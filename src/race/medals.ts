@@ -1,7 +1,7 @@
 import { CarPhysics } from '../car/physics.ts';
 import { HANDLING } from '../config/handling.ts';
 import type { Track } from '../track/track.ts';
-import { botInput } from './bot.ts';
+import { botInput, type BotOptions } from './bot.ts';
 
 export type MedalId = 'gold' | 'silver' | 'bronze';
 
@@ -41,6 +41,7 @@ export function nextMedal(current: MedalId | null): MedalId | null {
  * Times the test bot on a flying lap: it starts behind the line, drives one
  * lap to get up to speed and is timed over the second. Runs in slices so the
  * game can spread it over a few frames. Deterministic for a given track.
+ * The default pace sets the medal times; AI cars qualify with their own.
  */
 export class AuthorLap {
   private readonly car: CarPhysics;
@@ -51,11 +52,15 @@ export class AuthorLap {
   private crossings: number[] = [];
   private travelled = 0;
   private readonly maxTicks: number;
+  private readonly aggression: number;
+  private readonly opts: BotOptions;
   /** Lap time in seconds, null if the bot could not finish, undefined while running. */
   result: number | null | undefined = undefined;
 
-  constructor(track: Track) {
+  constructor(track: Track, aggression = 0.8, opts: BotOptions = {}) {
     this.track = track;
+    this.aggression = aggression;
+    this.opts = opts;
     this.car = new CarPhysics(track);
     this.length = track.center.length;
     this.prevS = this.car.state.s;
@@ -68,7 +73,7 @@ export class AuthorLap {
     if (this.result !== undefined) return true;
     const L = this.length;
     for (let k = 0; k < budget; k++) {
-      this.car.step(botInput(this.car.state, this.track));
+      this.car.step(botInput(this.car.state, this.track, this.aggression, this.opts));
       this.tick++;
       const s = this.car.state.s;
       let ds = s - this.prevS;

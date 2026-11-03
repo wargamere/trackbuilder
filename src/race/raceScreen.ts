@@ -7,7 +7,7 @@ import { CarModel } from '../car/model.ts';
 import { currentPaintHex, recordFinishedRun } from '../car/paint.ts';
 import { CarPhysics, CarState, lerpState, NO_INPUT, type DriveInput } from '../car/physics.ts';
 import { HANDLING } from '../config/handling.ts';
-import { PAINTS } from '../config/paint.ts';
+import { AI_PAINTS, PAINTS } from '../config/paint.ts';
 import { AI, RACE } from '../config/race.ts';
 import { STR, fmt } from '../config/strings.ts';
 import { FixedStep } from '../core/fixedStep.ts';
@@ -25,7 +25,8 @@ import { h } from '../ui/dom.ts';
 import { Hud } from '../ui/hud.ts';
 import { PauseMenu } from '../ui/pauseMenu.ts';
 import { TouchControls } from '../ui/touchControls.ts';
-import { AiDriver, gridSlot } from './ai.ts';
+import { GridOverlay, type GridEntry } from '../ui/gridOverlay.ts';
+import { AiDriver, aiField, aiPace, gridOrder, gridPlace, qualifyingOrder, YOU } from './ai.ts';
 import { GhostRecorder, ghostPose, type GhostLap } from './ghost.ts';
 import { AuthorLap, medalTimes } from './medals.ts';
 import { scoreFor, type RunResult } from './records.ts';
@@ -63,7 +64,9 @@ const hexColour = (hex: number) => `#${hex.toString(16).padStart(6, '0')}`;
 
 /**
  * RACE state: the current track, driven as the race setup says: free practice
- * laps, or a race of 1–10 laps against your ghost and up to seven AI cars.
+ * laps, or a race of 1–10 laps against your ghost and up to eleven AI cars.
+ * With a qualifying grid, the race starts with a qualifying session alone on
+ * the track (the AI cars' laps are simulated meanwhile), then shows the grid.
  * Physics, lap timing and ghost recording all run on the fixed 120 Hz tick;
  * rendering interpolates between the last two ticks, so everything is identical
  * at 60, 144 or 240 Hz.
@@ -87,6 +90,15 @@ export class RaceScreen implements Screen {
   private states: CarState[] = [];
   private readonly aiEvents: RaceEvent[] = [];
   private lastResetPress = -Infinity;
+  /** What's being driven: qualifying (alone, for the grid), the grid on show after it, or the run itself. */
+  private stage: 'qualifying' | 'grid' | 'run' = 'run';
+  /** The grid this race started from (car ids by slot, pole first), reused by Restart. */
+  private grid: number[] = [YOU];
+  /** The AI cars' qualifying laps, simulated a slice at a time while you qualify. */
+  private qualSims: AuthorLap[] = [];
+  /** Where the player started (m along the track). */
+  private playerStart = -8;
+  private readonly gridOverlay: GridOverlay;
   /** 1-based race position (with AI cars), or null. */
   private position: number | null = null;
   private car: CarPhysics | null = null;
@@ -126,12 +138,17 @@ export class RaceScreen implements Screen {
         this.resetCar();
         this.setPaused(false);
       },
-      restart: () => this.startRun(),
+      restart: () => this.restart(),
       raceSettings: () => this.game.openSetup(),
+      skipQualifying: () => this.showGrid(),
       mainMenu: () => this.game.go('menu'),
       drawTrack: () => this.game.go('editor'),
       myTracks: () => this.game.go('library'),
       toggleSound: () => this.toggleSound(),
+    });
+    this.gridOverlay = new GridOverlay({
+      start: () => this.startRace(this.grid),
+      settings: () => this.game.openSetup(),
     });
     this.touch = new TouchControls(this.input.touch);
     this.input.onAction = (a) => this.onAction(a);
@@ -162,7 +179,7 @@ export class RaceScreen implements Screen {
 
   enter(): void {
     const t = this.game.track;
-    this.game.ui.append(this.hud.root, this.pauseMenu.root);
+    this.game.ui.append(this.hud.root, this.gridOverlay.root, this.pauseMenu.root);
     this.hud.showMinimap(settings().minimap);
     this.game.view3d?.setQuality(settings().graphics);
     this.hud.setTrackInfo(
@@ -202,6 +219,9 @@ export class RaceScreen implements Screen {
     this.abort = null;
     this.hud.root.remove();
     this.pauseMenu.root.remove();
+    this.gridOverlay.hide();
+    this.gridOverlay.root.remove();
+    this.qualSims = [];
     this.touch.root.remove();
     this.hud.clearFlash();
     if (this.ghostModel) this.ghostModel.root.visible = false;
@@ -216,35 +236,33 @@ export class RaceScreen implements Screen {
   }
 
   /**
-   * New run: car on the grid and a fresh session (bests carry over). A race has
-   * a countdown, the setup's number of laps and its AI cars (the player starts
-   * at the back of the grid); practice starts at once, alone, and never ends.
+   * New run as the setup says. Practice starts at once, alone, and never ends.
+   * A race has a countdown, the setup's laps and AI cars, on a grid that is
+   * picked, drawn at random, or set by a qualifying session first.
    */
   startRun(): void {
-    const car = this.car;
-    if (!car) return;
-    const def = this.game.track.def;
     const setup = this.game.setup;
+    const ai = setup.mode === 'race' ? Math.min(setup.opponents, this.aiModels.length) : 0;
+    if (ai > 0 && setup.grid === 'qualifying') this.startQualifying();
+    else this.startRace(ai > 0 ? gridOrder(setup.grid, ai, setup.startSlot) : [YOU]);
+  }
+
+  /** Restart from the pause menu: qualifying again, or the same race from the same grid. */
+  private restart(): void {
+    if (this.stage === 'qualifying') this.startQualifying();
+    else if (this.game.mode === 'race' && this.grid.length > 1) this.startRace(this.grid);
+    else this.startRun();
+  }
+
+  /** What every new run (or qualifying session) resets. */
+  private resetRun(): void {
+    const def = this.game.track.def;
     this.applyPaint();
     if (CAPS.links) writeHashCode(encodeTrack(def.name, def.control, def.options));
-    const rec = this.game.records.get(this.game.track.def.id);
-    const t = this.game.track;
-    const practice = setup.mode === 'practice';
-    this.session = practice
-      ? new RaceSession(t.center.length, rec.best, Infinity, t.center.width, 0)
-      : new RaceSession(t.center.length, rec.best, setup.laps, t.center.width);
-    this.startOpponents(practice ? 0 : setup.opponents);
-    if (this.opponents.length) {
-      const g = gridSlot(this.opponents.length);
-      car.placeAt(g.s, g.lateral);
-    } else car.placeAt(-8);
-    this.states = [car.state, ...this.opponents.map((o) => o.ai.car.state)];
-    this.position = null;
-    this.hud.setPosition(null);
-    this.hud.setMode(setup.mode);
-    this.pauseMenu.setMode(setup.mode);
-    this.ghost = setup.ghost ? rec.ghost : null;
+    const rec = this.game.records.get(def.id);
+    this.ghost = this.game.setup.ghost ? rec.ghost : null;
     if (rec.author === undefined && this.author?.id !== def.id) this.author = { id: def.id, lap: new AuthorLap(this.game.track) };
+    this.gridOverlay.hide();
     this.ghostIndex = -1;
     this.hit = 0;
     this.finishedFor = -1;
@@ -253,37 +271,129 @@ export class RaceScreen implements Screen {
     this.pauseMenu.hide();
     this.input.clear();
     this.touch.release();
-    this.rig.snap(car.state);
     this.hud.clearFlash();
-    if (practice) this.hud.flash(STR.race.practiceGo, 'info', 1.8);
+    this.hud.setPosition(null);
+    this.position = null;
     if (this.ghostModel) this.ghostModel.root.visible = false;
     audio.setEngine(true);
   }
 
+  /** The race (or practice) itself, from grid order `order` (car ids by slot; YOU is the player). */
+  private startRace(order: number[]): void {
+    const car = this.car;
+    if (!car) return;
+    this.stage = 'run';
+    this.grid = order;
+    this.resetRun();
+    const setup = this.game.setup;
+    const t = this.game.track;
+    const rec = this.game.records.get(t.def.id);
+    const practice = setup.mode === 'practice';
+    this.session = practice
+      ? new RaceSession(t.center.length, rec.best, Infinity, t.center.width, 0)
+      : new RaceSession(t.center.length, rec.best, setup.laps, t.center.width);
+    this.startOpponents(practice ? [YOU] : order);
+    if (this.opponents.length) {
+      const g = gridPlace(t, order.indexOf(YOU));
+      car.placeAt(g.s, g.lateral);
+      this.playerStart = g.s;
+    } else {
+      car.placeAt(-8);
+      this.playerStart = -8;
+    }
+    this.states = [car.state, ...this.opponents.map((o) => o.ai.car.state)];
+    this.hud.setMode(setup.mode);
+    this.pauseMenu.setMode(setup.mode);
+    this.rig.snap(car.state);
+    if (practice) this.hud.flash(STR.race.practiceGo, 'info', 1.8);
+  }
+
   /**
-   * AI cars for a race, fastest at the front of the grid. The field spreads a
-   * little below the chosen difficulty, so they don't drive nose to tail.
+   * Qualifying: you alone on the track for a few timed laps, no countdown.
+   * The AI cars' flying laps are simulated in the background at their own pace.
    */
-  private startOpponents(count: number): void {
+  private startQualifying(): void {
+    const car = this.car;
+    if (!car) return;
+    this.stage = 'qualifying';
+    this.resetRun();
+    this.clearOpponents();
+    const setup = this.game.setup;
+    const t = this.game.track;
+    const rec = this.game.records.get(t.def.id);
+    this.session = new RaceSession(t.center.length, rec.best, AI.qualifyingLaps, t.center.width, 0);
+    car.placeAt(-8);
+    this.playerStart = -8;
+    this.states = [car.state];
+    this.qualSims = this.field(setup.opponents).map((f) => {
+      const p = aiPace(f.difficulty);
+      return new AuthorLap(t, p.aggression, { maxSpeed: p.maxSpeed });
+    });
+    this.hud.setMode('race');
+    this.pauseMenu.setMode('qualifying');
+    this.rig.snap(car.state);
+    this.hud.flash(fmt(STR.race.qualifyingGo, { n: AI.qualifyingLaps }), 'info', 3);
+  }
+
+  /** Qualifying is over (or skipped): the grid from everyone's best lap, and Start race. */
+  private showGrid(): void {
+    if (this.stage !== 'qualifying') return;
+    for (const sim of this.qualSims) sim.finish();
+    const field = this.field(this.qualSims.length);
+    const times = new Map<number, number | null>([[YOU, this.session?.bestOfRun() ?? null]]);
+    this.qualSims.forEach((sim, k) => {
+      const lap = sim.result ?? null;
+      times.set(k, lap === null ? null : lap * (1 + (Math.random() * 2 - 1) * AI.qualifyingNoise));
+    });
+    const order = qualifyingOrder(times);
+    this.grid = order;
+    this.stage = 'grid';
+    this.qualSims = [];
+    this.finishedFor = -1;
+    this.paused = false;
+    this.pauseMenu.hide();
+    this.hud.clearFlash();
+    audio.setEngine(false);
+    const entries: GridEntry[] = order.map((id) =>
+      id === YOU
+        ? { name: STR.results.you, paint: currentPaintHex(), time: times.get(YOU) ?? null, you: true }
+        : { name: field[id].name, paint: field[id].paint, time: times.get(id) ?? null, you: false },
+    );
+    this.gridOverlay.show(entries);
+  }
+
+  /** Simulates a slice of the AI cars' qualifying laps (a few thousand physics ticks a frame). */
+  private runQualifyingSims(): void {
+    let budget = 3000;
+    for (const sim of this.qualSims) {
+      if (budget <= 0) break;
+      if (sim.result !== undefined) continue;
+      sim.run(Math.min(budget, 1500));
+      budget -= 1500;
+    }
+  }
+
+  /** The AI cars' names, colours and difficulties, fastest first (never your colour). */
+  private field(count: number): { name: string; paint: number; difficulty: number }[] {
+    const mine = currentPaintHex();
+    const paints = [...PAINTS.map((p) => p.hex), ...AI_PAINTS].filter((hex) => hex !== mine);
+    return aiField(Math.min(count, this.aiModels.length), this.game.setup.difficulty, paints, STR.ai.names);
+  }
+
+  /** AI cars in their grid slots (from `order`; the field is listed fastest first). */
+  private startOpponents(order: number[]): void {
     this.clearOpponents();
     const t = this.game.track;
-    const setup = this.game.setup;
-    const n = Math.min(count, this.aiModels.length);
-    const mine = currentPaintHex();
-    const paints = PAINTS.map((p) => p.hex).filter((hex) => hex !== mine);
-    const top = setup.difficulty / 100;
-    for (let k = 0; k < n; k++) {
-      const difficulty = Math.max(0, top - (n > 1 ? (AI.spread * k) / (n - 1) : 0));
-      const paint = paints[k % paints.length];
-      const name = STR.ai.names[k % STR.ai.names.length];
-      const ai = new AiDriver(t, { name, paint, difficulty, laps: setup.laps, slot: k });
+    const field = this.field(order.length - 1);
+    field.forEach((f, k) => {
+      const ai = new AiDriver(t, { ...f, laps: this.game.setup.laps, slot: order.indexOf(k) });
       const model = this.aiModels[k];
-      model.setPaint(paint);
+      model.setPaint(f.paint);
       model.root.visible = true;
       const label = this.aiLabels[k];
-      label.textContent = name;
+      label.textContent = f.name;
       this.opponents.push({ ai, model, view: new CarState(), label, prev: { s: 0, lateral: 0, along: 0 } });
-    }
+    });
   }
 
   private clearOpponents(): void {
@@ -313,6 +423,10 @@ export class RaceScreen implements Screen {
   }
 
   private onAction(a: InputAction): void {
+    if (this.stage === 'grid') {
+      if (a === 'mute') this.toggleSound();
+      return; // the grid overlay has its own buttons
+    }
     if (a === 'pause') this.setPaused(!this.paused);
     else if (a === 'mute') this.toggleSound();
     else if (this.paused) return;
@@ -429,7 +543,8 @@ export class RaceScreen implements Screen {
         else audio.beep(e.valid ? 880 : 300, 0.18);
         if (s.phase === 'finished') {
           const pos = this.opponents.length ? this.standings().findIndex((x) => x.you) : -1;
-          this.hud.flash(pos >= 0 ? fmt(STR.race.finishedPos, { pos: STR.results.ordinals[pos] }) : STR.race.finished, 'big', 0);
+          if (this.stage === 'qualifying') this.hud.flash(STR.race.qualifyingDone, 'big', 0);
+          else this.hud.flash(pos >= 0 ? fmt(STR.race.finishedPos, { pos: STR.results.ordinals[pos] }) : STR.race.finished, 'big', 0);
         }
         else if (e.best) this.hud.flash(STR.race.newBest, 'good');
         else if (!e.valid) this.hud.flash(fmt(STR.race.lapCut, { n: e.lap, time: formatTime(e.time) }), 'bad', 2.2);
@@ -502,22 +617,21 @@ export class RaceScreen implements Screen {
    * line, then the rest by how far round the race they are.
    */
   private standings(): Entry[] {
-    const n = this.opponents.length;
     const you: Entry = {
       name: STR.results.you,
       you: true,
       paint: currentPaintHex(),
       session: this.session!,
-      start: n ? gridSlot(n).s : -8,
+      start: this.playerStart,
       end: this.session!.runEnd,
       dist: this.session!.raceDistance(this.car!.state.s),
     };
-    const ai = this.opponents.map((o, k): Entry => ({
+    const ai = this.opponents.map((o): Entry => ({
       name: o.ai.name,
       you: false,
       paint: o.ai.paint,
       session: o.ai.session,
-      start: gridSlot(k).s,
+      start: o.ai.start,
       end: o.ai.session.runEnd,
       dist: o.ai.session.raceDistance(o.ai.car.state.s),
     }));
@@ -584,7 +698,9 @@ export class RaceScreen implements Screen {
     const s = this.session!;
     const rec = this.game.records.get(this.game.track.def.id);
     this.hud.setMedals(rec.author ? medalTimes(rec.author) : null, rec.best?.time ?? null);
-    if (this.game.mode === 'practice') {
+    if (this.stage !== 'run') {
+      this.hud.setLap(s.lapStart === null ? STR.race.qualifying : fmt(STR.race.qualifyingLap, { n: Math.min(s.laps.length + 1, s.lapsToRun), total: s.lapsToRun }));
+    } else if (this.game.mode === 'practice') {
       this.hud.setLap(s.lapStart === null ? STR.race.practice : fmt(STR.race.practiceLap, { n: s.laps.length + 1 }));
     } else if (s.lapStart === null && !this.opponents.length) this.hud.setLap(s.phase === 'countdown' ? '' : STR.race.warmup);
     else this.hud.setLap(fmt(STR.race.lap, { n: Math.min(s.laps.length + 1, s.lapsToRun), total: s.lapsToRun }));
@@ -604,10 +720,11 @@ export class RaceScreen implements Screen {
 
     if (this.game.interrupted && !this.paused) this.setPaused(true);
     // Gameplay is "on" only while actually driving: not in the countdown, paused or finished.
-    platform.setGameplay(session.phase === 'racing' && !this.paused && !this.game.interrupted);
+    platform.setGameplay(session.phase === 'racing' && this.stage !== 'grid' && !this.paused && !this.game.interrupted);
     this.input.pollGamepad();
     let alpha = 1;
-    if (!this.paused) alpha = this.fixed.advance(dt, () => this.tick());
+    // Nothing moves while the qualifying grid is on show.
+    if (!this.paused && this.stage !== 'grid') alpha = this.fixed.advance(dt, () => this.tick());
     lerpState(car.prev, car.state, alpha, this.view);
     this.model.update(this.view, dt);
     for (const o of this.opponents) {
@@ -652,6 +769,7 @@ export class RaceScreen implements Screen {
       this.hud.minimap.draw(this.game.track, this.view, pose, others);
     }
     this.measureAuthor();
+    if (this.stage === 'qualifying') this.runQualifyingSims();
     v.render();
     this.hud.setSpeed(this.view.speed);
     this.updateHud(alpha);
@@ -661,8 +779,11 @@ export class RaceScreen implements Screen {
       this.finishedFor += dt;
       if (this.finishedFor >= RACE.resultsDelay) {
         this.finishedFor = -1;
-        this.showResults();
-        return;
+        if (this.stage === 'qualifying') this.showGrid();
+        else {
+          this.showResults();
+          return;
+        }
       }
     }
 
