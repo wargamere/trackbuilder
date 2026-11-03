@@ -1,6 +1,7 @@
 import { TRACK, WORLD } from '../config/track.ts';
 import { wrap } from '../core/math.ts';
-import { leftOf, surfaceY, type Centerline } from './spline.ts';
+import { pitLayout, type PitLayout } from './pits.ts';
+import { leftOf, sampleAt, surfaceY, type Centerline } from './spline.ts';
 import type { Track } from './track.ts';
 
 /**
@@ -134,7 +135,7 @@ function passHeight(c: Centerline, i: number, x: number, z: number): number {
   // Along the road the height follows the grade from the nearest sample (samples are 2.5 m apart).
   const along = (x - p.x) * t.x + (z - p.y) * t.y;
   // The shoulder out to the barrier line follows the road's bank; beyond it the ground blends away.
-  const band = TRACK.wallOffset + 0.5;
+  const band = c.wallOffset + 0.5;
   const edge = Math.max(-band, Math.min(band, lateral));
   const roadH = surfaceY(c, i, edge) + c.grade[i] * along - 0.1;
   const away = Math.max(0, Math.abs(lateral) - band);
@@ -147,7 +148,7 @@ function buildTerrain(c: Centerline, grid: SampleGrid): Terrain {
   const nx = Math.round((TERRAIN_RECT.x1 - x0) / step) + 1;
   const nz = Math.round((TERRAIN_RECT.z1 - z0) / step) + 1;
   const h = new Float32Array(nx * nz);
-  const reach = TRACK.wallOffset + BLEND + 2;
+  const reach = c.wallOffset + BLEND + 2;
   const tmp: number[] = [];
   for (let j = 0; j < nz; j++) {
     for (let i = 0; i < nx; i++) {
@@ -171,7 +172,7 @@ function buildTerrain(c: Centerline, grid: SampleGrid): Terrain {
  */
 function pressUnderRoad(t: Terrain, c: Centerline): void {
   const n = c.points.length;
-  const hw = TRACK.roadWidth / 2 + TRACK.kerbWidth;
+  const hw = c.width / 2 + TRACK.kerbWidth;
   const margin = 0.04;
   for (let pass = 0; pass < 3; pass++) {
     let changed = false;
@@ -201,6 +202,25 @@ function pressUnderRoad(t: Terrain, c: Centerline): void {
   }
 }
 
+/** A level pad under the pit lane and garages, at the height of the road edge beside it. */
+function padForPits(t: Terrain, c: Centerline, pits: PitLayout): void {
+  const n = c.points.length;
+  for (let s = pits.from - 10; s <= pits.to + 10; s += 2.5) {
+    const { p, t: tan } = sampleAt(c, s);
+    const i = ((Math.round(s / c.spacing) % n) + n) % n;
+    const y = surfaceY(c, i, c.wallOffset * pits.side) - 0.1;
+    const l = leftOf(tan);
+    for (let lat = c.wallOffset + 0.5; lat <= pits.building[1] + 5; lat += 2.5) {
+      const x = p.x + l.x * lat * pits.side;
+      const z = p.y + l.y * lat * pits.side;
+      const gi = Math.round((x - t.x0) / t.step);
+      const gj = Math.round((z - t.z0) / t.step);
+      if (gi < 0 || gj < 0 || gi >= t.nx || gj >= t.nz) continue;
+      t.h[gj * t.nx + gi] = y;
+    }
+  }
+}
+
 /** Bilinear terrain height at (x, z); flat (0) outside the grid. */
 export function terrainHeight(t: Terrain, x: number, z: number): number {
   const fx = (x - t.x0) / t.step;
@@ -225,6 +245,8 @@ export function surfaceFor(track: Track): TrackSurface {
   const n = c.points.length;
   const grid = new SampleGrid(c, 20);
   const terrain = buildTerrain(c, grid);
+  const pits = pitLayout(track);
+  if (pits) padForPits(terrain, c, pits);
   pressUnderRoad(terrain, c);
 
   // Raised decks: road well above the ground below it.
@@ -241,14 +263,14 @@ export function surfaceFor(track: Track): TrackSurface {
   // where the barrier would stand on another stretch of road at a similar height.
   const wallL = new Uint8Array(n);
   const wallR = new Uint8Array(n);
-  const hw = TRACK.roadWidth / 2;
+  const hw = c.width / 2;
   const tmp: number[] = [];
   const blocked = (i: number, side: 1 | -1): boolean => {
     const p = c.points[i];
     const l = leftOf(c.tangents[i]);
-    const wx = p.x + l.x * TRACK.wallOffset * side;
-    const wz = p.y + l.y * TRACK.wallOffset * side;
-    const y = surfaceY(c, i, TRACK.wallOffset * side);
+    const wx = p.x + l.x * c.wallOffset * side;
+    const wz = p.y + l.y * c.wallOffset * side;
+    const y = surfaceY(c, i, c.wallOffset * side);
     const clear = hw + 2.5;
     for (const j of grid.near(wx, wz, clear + 20, tmp)) {
       const ring = Math.min(Math.abs(j - i), n - Math.abs(j - i));

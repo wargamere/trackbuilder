@@ -55,7 +55,15 @@ export const HANDLING = {
     drag: 3.5,
     /** Grip and lateral acceleration are multiplied by this. */
     gripFactor: 0.45,
+    /** How rough it feels (rumble sound and camera shake). */
+    rough: 1,
   },
+  /** Gravel traps beside the road (TrackOptions.runoff): slower than grass. */
+  gravel: { speedFactor: 0.3, accelFactor: 0.45, drag: 6.5, gripFactor: 0.4, rough: 1.4 },
+  /** Tarmac run-off: drives like the road, just without the kerbs. */
+  tarmac: { speedFactor: 1, accelFactor: 1, drag: 0, gripFactor: 1, rough: 0 },
+  /** The road itself. */
+  road: { speedFactor: 1, accelFactor: 1, drag: 0, gripFactor: 1, rough: 0 },
 
   // ------------------------------------------------------- slopes and banking
   /** Share of gravity along a slope that acts on the car (1 = full physics, lower = more arcade). */

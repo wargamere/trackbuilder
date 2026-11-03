@@ -7,7 +7,10 @@ import { settings, updateSettings } from '../core/settings.ts';
 import { inkLeftWhileDrawing, inkMultiplier } from '../track/ink.ts';
 import { sampleAt, sampleOpenCatmullRom } from '../track/spline.ts';
 import { buildTrack, contentId, trackOptions, type TrackDef } from '../track/track.ts';
-import { EditorUI, type EditorMode, type MessageKind } from '../ui/editorUI.ts';
+import { EditorUI, type CornerInfo, type DisplaySettings, type EditorMode, type MessageKind, type Terrain } from '../ui/editorUI.ts';
+import { pitLayout } from '../track/pits.ts';
+import { trackStats } from '../track/stats.ts';
+import { transformDots, type Transform } from './transform.ts';
 import { ShareDialog } from '../ui/shareDialog.ts';
 import { clampHeight, fitCrossings, pathPositions, rollingHeights, smoothHeights, softWeights, withHeights } from './heights.ts';
 import { LazyPen } from './pen.ts';
@@ -15,6 +18,7 @@ import { dotsFromStroke, getSampleTrack, SAMPLE_COUNT, trackFromControl, type Bu
 import { drawProfile, inRect, profileDotAt, profileMetresPerPx, profileS, type Rect } from './profile.ts';
 import {
   drawChain,
+  drawCornerLabels,
   drawCloseZone,
   drawDots,
   drawFlag,
@@ -140,6 +144,8 @@ export class EditorScreen implements Screen {
   private closing = false;
   private spaceDown = false;
   private pointerType = 'mouse';
+  /** Set when leaving for the 3D view, so coming back keeps the edit. */
+  private keepState = false;
   /** Track position highlighted by the profile cursor (Height mode). */
   private cursor: number | null = null;
 
@@ -172,28 +178,41 @@ export class EditorScreen implements Screen {
         flatten: () => this.setAllHeights(() => 0, STR.editor.flattened),
         smoothHeights: () => this.smoothAllHeights(),
         zoom: (how) => this.zoom(how),
+        preview: () => this.preview(),
+        save: () => this.saveTrack(),
+        terrain: (t) => this.terrainPreset(t),
+        transform: (how) => this.transform(how),
+        focusCorner: (i) => this.focusCorner(i),
+        setDisplay: (d) => this.setDisplay(d),
       },
       Array.from({ length: SAMPLE_COUNT }, (_, i) => getSampleTrack(i).def.name),
+      settings().sidebarSection,
     );
   }
 
   enter(): void {
-    // Open with the track you were racing, ready to tweak. Clear gives a blank page.
-    const t = this.game.track;
-    this.base = t.def;
-    this.dots = t.def.control.map((p) => ({ ...p }));
-    this.closed = true;
-    this.failed = null;
-    this.name = t.def.name;
-    this.options = { ...t.options };
-    this.history = [];
-    this.future = [];
-    this.note = this.modeTip();
-    this.selected = this.hover = -1;
-    this.cursor = null;
-    this.dirty = true;
+    if (this.keepState) {
+      // Back from the 3D view: carry on exactly where we were.
+      this.keepState = false;
+    } else {
+      // Open with the track you were racing, ready to tweak. Clear gives a blank page.
+      const t = this.game.track;
+      this.base = t.def;
+      this.dots = t.def.control.map((p) => ({ ...p }));
+      this.closed = true;
+      this.failed = null;
+      this.name = t.def.name;
+      this.options = { ...t.options };
+      this.history = [];
+      this.future = [];
+      this.note = this.modeTip();
+      this.selected = this.hover = -1;
+      this.cursor = null;
+      this.dirty = true;
+      this.vp.reset();
+    }
     this.cancelPointer();
-    this.ui.toggleOptions(false);
+    this.ui.closeOverlay();
     this.game.ui.append(this.ui.root);
     this.game.surface.canvas.classList.add('drawing');
 
@@ -216,11 +235,11 @@ export class EditorScreen implements Screen {
       if (e.code === 'Space') this.spaceDown = false;
     }, opts);
     window.addEventListener('blur', () => (this.spaceDown = false), opts);
-    this.vp.reset();
     this.resize();
   }
 
   exit(): void {
+    updateSettings({ sidebarSection: this.ui.openSection });
     this.abort?.abort();
     this.abort = null;
     this.share.close();
@@ -233,12 +252,13 @@ export class EditorScreen implements Screen {
   resize(): void {
     const s = this.game.surface;
     const heights = this.mode === 'height';
-    this.ui.showTools(heights);
+    this.ui.setLayout(s.w);
     const inset = this.ui.insets();
     const profH = heights ? clamp(Math.round(s.h * 0.2), 72, 150) : 0;
     const gap = profH ? 8 : 0;
-    this.profile = heights ? { x: 8, y: s.h - inset.bottom - profH - 2, w: s.w - 16, h: profH } : null;
-    this.vp.setScreen(s.w, s.h, inset.top, inset.bottom + profH + gap);
+    this.profile = heights ? { x: inset.left + 8, y: s.h - inset.bottom - profH - 2, w: s.w - inset.left - 16, h: profH } : null;
+    // Leave room on the right for the zoom buttons.
+    this.vp.setScreen(s.w, s.h, inset.top, inset.bottom + profH + gap, inset.left, 44);
     this.ui.placeZoom(inset.top + 8, inset.bottom + profH + gap + 8);
   }
 
@@ -320,7 +340,7 @@ export class EditorScreen implements Screen {
 
   private setOptions(o: Partial<TrackOptions>): void {
     const next = { ...this.options, ...o };
-    if (next.banking === this.options.banking && next.walls === this.options.walls && next.theme === this.options.theme) return;
+    if ((Object.keys(next) as (keyof TrackOptions)[]).every((k) => next[k] === this.options[k])) return;
     const before = this.snapshot();
     this.options = next;
     this.commit(before);
@@ -394,7 +414,7 @@ export class EditorScreen implements Screen {
   private shareTrack(): void {
     this.rebuild();
     if (!this.built?.ok || !this.closed) return;
-    this.ui.toggleOptions(false);
+    this.ui.closeOverlay();
     this.share.open(this.currentDef(contentId(this.dots, this.options)), this.game.ui);
   }
 
@@ -436,7 +456,7 @@ export class EditorScreen implements Screen {
   }
 
   /** Rolling hills that keep every crossing either level or a proper bridge. */
-  private randomHills(): void {
+  private randomHills(peakRange?: [number, number]): void {
     if (this.mode !== 'height') this.setMode('height');
     this.rebuild();
     const t = this.built?.track;
@@ -450,7 +470,7 @@ export class EditorScreen implements Screen {
     const seed = (Math.random() * 2 ** 31) | 0;
     for (let attempt = 0; attempt < 12; attempt++) {
       const rand = rng(seed + attempt * 7919);
-      let hs = rollingHeights(pos, L, rand);
+      let hs = rollingHeights(pos, L, rand, peakRange);
       for (let fix = 0; fix < 5; fix++) {
         const dots = withHeights(this.dots, hs);
         const res = trackFromControl({ id: 'hills', name: this.name, control: dots, options: this.options });
@@ -467,6 +487,83 @@ export class EditorScreen implements Screen {
       }
     }
     this.note = { text: STR.editor.hillsFailed, kind: 'warn' };
+  }
+
+  /** Terrain presets from the sidebar: flat, or new random hills of a size. */
+  private terrainPreset(t: Terrain): void {
+    if (t === 'flat') this.setAllHeights(() => 0, STR.editor.flattened);
+    else this.randomHills(t === 'rolling' ? [4, 10] : [14, 28]);
+  }
+
+  /** Resize, rotate or mirror the whole track (undoable). */
+  private transform(how: Transform): void {
+    if (this.dots.length < 2) return;
+    const before = this.snapshot();
+    this.dots = transformDots(this.dots, how);
+    this.selected = -1;
+    this.commit(before);
+  }
+
+  /** Zooms the map in on numbered corner `i`. */
+  private focusCorner(i: number): void {
+    const t = this.built?.track;
+    const k = t?.kerbs[i];
+    if (!t || !k) return;
+    this.vp.centerOn(t.center.points[k.apex], 3);
+    this.ui.closeOverlay();
+  }
+
+  private setDisplay(d: Partial<DisplaySettings>): void {
+    updateSettings(d);
+    if (d.graphics) this.game.view3d?.setQuality(d.graphics);
+  }
+
+  /** Saves the track to My tracks without racing it. */
+  private saveTrack(): void {
+    this.rebuild();
+    if (!this.built?.ok || !this.closed) {
+      this.note = { text: STR.editor.needLoop, kind: 'warn' };
+      return;
+    }
+    this.game.library.save(this.currentDef(contentId(this.dots, this.options)));
+    this.note = { text: STR.sidebar.saved, kind: 'ok' };
+  }
+
+  /** Shows the track being edited in 3D (orbit camera), keeping the edit for when we come back. */
+  private preview(): void {
+    this.rebuild();
+    if (!this.closed || !this.built?.track) {
+      this.note = { text: STR.editor.needLoop, kind: 'warn' };
+      return;
+    }
+    if (!this.game.view3d) return;
+    const track = buildTrack(this.currentDef(contentId(this.dots, this.options)));
+    this.game.preview = {
+      track,
+      race: () => {
+        this.keepState = true;
+        this.game.go('editor');
+        this.race();
+      },
+      back: () => {
+        this.keepState = true;
+        this.game.go('editor');
+      },
+    };
+    this.keepState = true;
+    this.game.go('preview');
+  }
+
+  /** The numbered corners, for the sidebar list. */
+  private cornerInfo(): CornerInfo[] {
+    const t = this.built?.track;
+    if (!t) return [];
+    const c = t.center;
+    return t.kerbs.map((k) => ({
+      dir: k.sign > 0 ? 'R' : 'L',
+      radius: 1 / Math.max(1e-6, Math.abs(c.curvature[k.apex])),
+      bank: (Math.abs(c.bank[k.apex]) * 180) / Math.PI,
+    }));
   }
 
   // ------------------------------------------------------------- derived
@@ -540,7 +637,7 @@ export class EditorScreen implements Screen {
 
   /** How close to the road centre a point must be to count as "on the road" (m). */
   private roadReach(px = 8): number {
-    return TRACK.roadWidth / 2 + px / this.view.scale;
+    return (this.built?.track?.center.width ?? TRACK.roadWidth) / 2 + px / this.view.scale;
   }
 
   /** Nearest centre-line sample if the screen point is on the road, else -1. */
@@ -632,8 +729,8 @@ export class EditorScreen implements Screen {
     const { x, y } = this.screenPos(e);
     this.pointers.set(e.pointerId, { x, y });
     this.pointerType = e.pointerType;
-    if (this.ui.optionsOpen) {
-      this.ui.toggleOptions(false);
+    if (this.ui.overlayOpen) {
+      this.ui.closeOverlay();
       return;
     }
     // A second finger turns whatever the first one started into a pinch (zoom and pan).
@@ -1011,7 +1108,8 @@ export class EditorScreen implements Screen {
       KeyY: () => this.redo(),
       KeyC: () => this.clear(),
       KeyM: () => this.setMode(nextMode[this.mode]),
-      KeyO: () => this.ui.toggleOptions(),
+      KeyO: () => this.ui.toggleSidebar(),
+      KeyV: () => this.preview(),
       KeyR: () => this.reverse(),
       KeyG: () => this.setSnap(!this.snapOn),
       KeyS: () => this.loadSample(this.sampleIndex),
@@ -1026,7 +1124,7 @@ export class EditorScreen implements Screen {
       Enter: () => (this.closed ? this.race() : this.closeLoop()),
       NumpadEnter: () => (this.closed ? this.race() : this.closeLoop()),
       Escape: () => {
-        if (this.ui.optionsOpen) this.ui.toggleOptions(false);
+        if (this.ui.overlayOpen) this.ui.closeOverlay();
         else if (this.selected >= 0) this.selected = -1;
         else this.game.go('race');
       },
@@ -1051,7 +1149,11 @@ export class EditorScreen implements Screen {
       snap: this.snapOn,
       soft: this.soft,
       options: this.options,
+      display: { graphics: settings().graphics, units: settings().units, minimap: settings().minimap, cornerLabels: settings().cornerLabels },
       name: this.name,
+      stats: this.closed && t ? trackStats(t) : null,
+      corners: this.closed && t ? this.cornerInfo() : [],
+      pitsNoRoom: !!t && this.closed && this.options.pits && !pitLayout(t),
     });
 
     if (this.stroke && !this.section) {
@@ -1148,6 +1250,7 @@ export class EditorScreen implements Screen {
     const dotR = this.mode === 'draw' ? 3.5 : 5;
     if (this.closed && t) {
       drawTrack(ctx, v, t, { heights, walls: this.options.walls });
+      if (settings().cornerLabels && !heights) drawCornerLabels(ctx, v, t);
       if (this.built && !this.built.ok && this.built.at) drawProblem(ctx, v, this.built.at, time);
       const d = this.drag;
       const startPreview = d?.kind === 'flag' ? d.target : -1;

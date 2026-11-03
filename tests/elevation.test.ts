@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { CarPhysics } from '../src/car/physics.ts';
 import { HANDLING } from '../src/config/handling.ts';
-import { DEFAULT_OPTIONS, TRACK } from '../src/config/track.ts';
+import { DEFAULT_OPTIONS, OPTION_CHOICES, TRACK, type TrackOptions } from '../src/config/track.ts';
 import { dist, type Dot, type Vec2 } from '../src/core/math.ts';
 import { rng } from '../src/core/random.ts';
 import { rollingHeights, withHeights } from '../src/editor/heights.ts';
@@ -50,14 +50,41 @@ function hillyEight(f: (u: number) => number) {
 /** Height difference `a` between the two roads at the crossing (low at the start, high half a lap later). */
 const rise = (a: number) => (u: number) => (a * (1 - Math.cos((u - 0.25) * Math.PI * 2))) / 2;
 
-test('track codes keep heights and options; old v1 codes still load', () => {
+test('track codes keep heights and every option; old v1 and v2 codes still load', () => {
   const dots: Dot[] = [{ x: -100, y: -50, h: 2.5 }, { x: 0, y: -80, h: 12 }, { x: 100, y: -50, h: 40 }, { x: 120, y: 40 }, { x: 0, y: 70, h: 0.5 }, { x: -120, y: 40 }];
-  const options = { banking: 2 as const, walls: false, theme: 'snow' as const };
+  const options: TrackOptions = {
+    banking: 2,
+    walls: false,
+    theme: 'snow',
+    width: 15,
+    kerbs: 'flat',
+    runoff: 'gravel',
+    barrier: 'tyres',
+    pits: false,
+    time: 'sunset',
+    laps: 5,
+    trees: 'dense',
+  };
   const d = decodeTrack(encodeTrack('Hills', dots, options));
   assert.ok(d.ok);
   if (d.ok) {
     assert.deepEqual(d.dots, dots);
     assert.deepEqual(d.options, options);
+  }
+  // Every choice of every option survives on its own too.
+  for (const [k, choices] of Object.entries(OPTION_CHOICES)) {
+    for (const v of choices) {
+      const e = decodeTrack(encodeTrack('o', dots, { [k]: v }));
+      assert.ok(e.ok && (e.options as unknown as Record<string, unknown>)[k] === v, `${k}=${v}`);
+    }
+  }
+  // Written by the version with heights but only three options.
+  const v2 = decodeTrack('IC1.AgdWMiBjb2RlCgY4_5z_CJADdw-QA3gqUOgCKd8DeADfA3cAeA');
+  assert.ok(v2.ok);
+  if (v2.ok) {
+    assert.deepEqual(v2.options, { ...DEFAULT_OPTIONS, banking: 2, walls: false, theme: 'desert' });
+    assert.deepEqual(v2.dots[0], { x: -100, y: -50, h: 4 });
+    assert.deepEqual(v2.dots[2], { x: 100, y: -50, h: 10.5 });
   }
   // Written by the version before heights existed.
   const old = decodeTrack('IC1.AQhPbGQgY29kZQY4_5z_kAN3kAN4UOgC3wN43wN3_w');
@@ -250,9 +277,9 @@ test('a barrier stops the car leaving the road; a glancing hit keeps most of the
   };
   const glance = hit(12);
   assert.ok(glance.knocked > 0, 'hit the barrier');
-  assert.ok(glance.maxLat <= TRACK.wallOffset, `went through: lateral ${glance.maxLat.toFixed(2)}`);
+  assert.ok(glance.maxLat <= walled.center.wallOffset, `went through: lateral ${glance.maxLat.toFixed(2)}`);
   assert.ok(glance.speed > 30 * 0.6, `glancing hit kept ${glance.speed.toFixed(1)} m/s`);
   const square = hit(60);
-  assert.ok(square.maxLat <= TRACK.wallOffset);
+  assert.ok(square.maxLat <= walled.center.wallOffset);
   assert.ok(square.speed < glance.speed, 'a square hit costs more speed');
 });

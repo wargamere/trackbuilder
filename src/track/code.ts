@@ -1,4 +1,4 @@
-import { DEFAULT_OPTIONS, TRACK, type ThemeId, type TrackOptions } from '../config/track.ts';
+import { DEFAULT_OPTIONS, OPTION_CHOICES, TRACK, type ThemeId, type TrackOptions } from '../config/track.ts';
 import { fromBase64Url, toBase64Url } from '../core/base64.ts';
 import type { Dot } from '../core/math.ts';
 
@@ -9,15 +9,20 @@ import type { Dot } from '../core/math.ts';
  * centre-line spline runs through) and options, so the code stores just those
  * plus the name:
  *   "IC1." + base64url(
- *     version (2), name length, name (UTF-8), options byte, dot count (varint),
+ *     version (3), name length, name (UTF-8), options (varint), dot count (varint),
  *     first dot (2 × int16 + uint8 height), then each next dot as zig-zag
  *     varint deltas of x, y and height, checksum byte)
  * Positions and heights are in 0.5 m steps, so most deltas fit in a byte or
  * two. A 30-dot track is about 100-200 characters. Version 1 codes (no
- * heights or options) still decode.
+ * heights or options) and version 2 codes (an options byte with just banking,
+ * barriers and scenery) still decode.
+ *
+ * Options bits: banking 0-1, barriers on 2, theme 3-4, then each field of
+ * OPTION_CHOICES in order (index 0 = the default), so older codes, whose
+ * higher bits are all zero, get the defaults for everything newer.
  */
 export const CODE_PREFIX = 'IC1.';
-const VERSION = 2;
+const VERSION = 3;
 const THEMES: ThemeId[] = ['meadow', 'desert', 'snow'];
 const MAX_NAME_BYTES = 64;
 const MAX_DOTS = 2000;
@@ -44,12 +49,37 @@ function checksum(bytes: ArrayLike<number>, n: number): number {
   return h;
 }
 
-const optionsByte = (o: TrackOptions) => (o.banking & 3) | (o.walls ? 4 : 0) | (Math.max(0, THEMES.indexOf(o.theme)) << 3);
-const optionsFrom = (b: number): TrackOptions => ({
-  banking: Math.min(2, b & 3) as 0 | 1 | 2,
-  walls: (b & 4) !== 0,
-  theme: THEMES[(b >> 3) & 3] ?? 'meadow',
-});
+/** Bits per OPTION_CHOICES field (room to grow). */
+const FIELD_BITS: Record<keyof typeof OPTION_CHOICES, number> = { width: 2, kerbs: 2, runoff: 2, barrier: 1, pits: 1, time: 2, laps: 2, trees: 2 };
+const FIELDS = Object.keys(OPTION_CHOICES) as (keyof typeof OPTION_CHOICES)[];
+
+function optionsBits(o: TrackOptions): number {
+  let v = (o.banking & 3) | (o.walls ? 4 : 0) | (Math.max(0, THEMES.indexOf(o.theme)) << 3);
+  let shift = 5;
+  for (const f of FIELDS) {
+    const idx = Math.max(0, (OPTION_CHOICES[f] as readonly unknown[]).indexOf(o[f]));
+    v |= idx << shift;
+    shift += FIELD_BITS[f];
+  }
+  return v >>> 0;
+}
+
+function optionsFrom(v: number): TrackOptions {
+  const o: TrackOptions = {
+    ...DEFAULT_OPTIONS,
+    banking: Math.min(2, v & 3) as 0 | 1 | 2,
+    walls: (v & 4) !== 0,
+    theme: THEMES[(v >> 3) & 3] ?? 'meadow',
+  };
+  let shift = 5;
+  for (const f of FIELDS) {
+    const choices = OPTION_CHOICES[f] as readonly unknown[];
+    const idx = (v >>> shift) & ((1 << FIELD_BITS[f]) - 1);
+    (o as unknown as Record<string, unknown>)[f] = choices[idx] ?? choices[0];
+    shift += FIELD_BITS[f];
+  }
+  return o;
+}
 
 export function encodeTrack(name: string, dots: readonly Dot[], options: Partial<TrackOptions> = {}): string {
   const q = TRACK.quantize;
@@ -57,7 +87,7 @@ export function encodeTrack(name: string, dots: readonly Dot[], options: Partial
   let nameBytes = new TextEncoder().encode(name);
   if (nameBytes.length > MAX_NAME_BYTES) nameBytes = nameBytes.slice(0, MAX_NAME_BYTES);
   out.push(nameBytes.length, ...nameBytes);
-  out.push(optionsByte({ ...DEFAULT_OPTIONS, ...options }));
+  pushVarint(out, optionsBits({ ...DEFAULT_OPTIONS, ...options }));
   pushVarint(out, dots.length);
   let px = 0;
   let py = 0;
@@ -115,12 +145,14 @@ function decodeBody(code: string): DecodeResult {
     }
   };
   const version = byte();
-  if (version !== 1 && version !== 2) return { ok: false, error: 'format' };
+  if (version < 1 || version > 3) return { ok: false, error: 'format' };
   const nameLen = byte();
   if (nameLen < 0 || nameLen > MAX_NAME_BYTES || i + nameLen > end) return { ok: false, error: 'format' };
   const name = new TextDecoder().decode(bytes.slice(i, i + nameLen));
   i += nameLen;
-  const options = version >= 2 ? optionsFrom(byte()) : { ...DEFAULT_OPTIONS };
+  const rawOptions = version >= 3 ? varint() : version === 2 ? byte() : 0;
+  if (rawOptions < 0) return { ok: false, error: 'format' };
+  const options = version >= 2 ? optionsFrom(rawOptions) : { ...DEFAULT_OPTIONS };
   const count = varint();
   if (count < 3 || count > MAX_DOTS) return { ok: false, error: 'format' };
   const q = TRACK.quantize;

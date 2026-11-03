@@ -16,6 +16,13 @@ export interface Settings {
   adPaints: PaintId[];
   /** Finished runs (paints unlock as this grows). */
   runs: number;
+  /** Display: graphics quality, speed units, minimap in the race, corner numbers in the editor. */
+  graphics: 'full' | 'fast';
+  units: 'kmh' | 'mph';
+  minimap: boolean;
+  cornerLabels: boolean;
+  /** Editor sidebar section left open. */
+  sidebarSection: number;
 }
 
 const DEFAULTS: Settings = {
@@ -28,6 +35,11 @@ const DEFAULTS: Settings = {
   paint: 'yellow',
   adPaints: [],
   runs: 0,
+  graphics: 'full',
+  units: 'kmh',
+  minimap: true,
+  cornerLabels: true,
+  sidebarSection: 0,
 };
 const KEY = 'settings';
 

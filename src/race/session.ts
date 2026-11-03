@@ -61,8 +61,12 @@ export class RaceSession {
   private wrongWayTicks = 0;
   private countdownTicks: number;
 
-  constructor(length: number, best: BestLap | null = null, laps: number = RACE.laps) {
+  /** How far from the centre line a checkpoint still counts. */
+  private readonly reach: number;
+
+  constructor(length: number, best: BestLap | null = null, laps: number = RACE.laps, roadWidth = 12) {
     this.length = length;
+    this.reach = roadWidth / 2 + RACE.checkpointMargin;
     this.best = best;
     this.lapsToRun = laps;
     this.countdownTicks = Math.round(RACE.countdown * HANDLING.tickRate);
@@ -124,7 +128,7 @@ export class RaceSession {
     const L = this.length;
     const ds = (now.s - prev.s + L) % L; // forward progress this tick
     if (ds <= 0 || ds > RACE.maxProgressPerTick) return; // not moving forward along the track, or a jump
-    const near = Math.abs(now.lateral) <= RACE.checkpointReach;
+    const near = Math.abs(now.lateral) <= this.reach;
     const t0 = (this.tick - 1) * this.dt;
     const crossedAt = (mark: number): number | null => {
       const d = (mark - prev.s + L) % L;

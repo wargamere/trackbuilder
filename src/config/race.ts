@@ -1,5 +1,3 @@
-import { TRACK } from './track.ts';
-
 /** Time-trial rules. */
 export const RACE = {
   /** Valid laps per run before the results screen. */
@@ -14,8 +12,8 @@ export const RACE = {
    * the grass to another stretch, or a reset) never pass a checkpoint.
    */
   maxProgressPerTick: 3,
-  /** ...and only if the car is at most this far from the centre line. */
-  checkpointReach: TRACK.roadWidth / 2 + 8,
+  /** ...and only if the car is at most this far beyond the road's edge. */
+  checkpointMargin: 8,
   /** Driving backwards along the track this fast for this long shows "Wrong way". */
   wrongWaySpeed: 3,
   wrongWaySeconds: 1,

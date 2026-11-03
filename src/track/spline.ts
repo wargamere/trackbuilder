@@ -25,6 +25,9 @@ export interface Centerline {
   dist: Float32Array;
   length: number;
   spacing: number;
+  /** Road width (m), and how far from the centre the barriers stand. */
+  width: number;
+  wallOffset: number;
 }
 
 /** Left-hand side normal for a direction of travel (x east, y south). */
@@ -156,8 +159,11 @@ export function limitSlope(h: Float32Array, maxStep: number): Float32Array {
 /** Banking levels: maximum bank angle (reached at radius ≤ TRACK.bankRadius). */
 export const BANK_LEVELS = [0, (7 * Math.PI) / 180, (15 * Math.PI) / 180] as const;
 
+/** Barrier distance from the centre line for a road `width` wide. */
+export const wallOffsetFor = (width: number): number => width / 2 + TRACK.kerbWidth + TRACK.wallGap;
+
 /** Builds the evenly sampled centre line through a closed loop of dots. `banking` is 0 (off), 1 or 2. */
-export function buildCenterline(ctrl: readonly Dot[], banking = 0, spacing: number = TRACK.centerSpacing): Centerline {
+export function buildCenterline(ctrl: readonly Dot[], banking = 0, spacing: number = TRACK.centerSpacing, width: number = TRACK.roadWidth): Centerline {
   const dense = sampleClosedCatmullRom(ctrl, 1);
   const { points: pts, length } = resampleClosed(dense, spacing);
   const n = pts.length;
@@ -196,7 +202,7 @@ export function buildCenterline(ctrl: readonly Dot[], banking = 0, spacing: numb
   }
   const r = Math.max(1, Math.round(12 / realSpacing));
   const bank = maxBank > 0 ? smoothLoop(smoothLoop(rawBank, r), r) : rawBank;
-  return { points, tangents, curvature, height, grade, eased, bank, dist: distArr, length, spacing: realSpacing };
+  return { points, tangents, curvature, height, grade, eased, bank, dist: distArr, length, spacing: realSpacing, width, wallOffset: wallOffsetFor(width) };
 }
 
 /** Position and direction at distance `s` along the loop (wraps; linearly interpolated). */

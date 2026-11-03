@@ -18,13 +18,14 @@ import {
   Scene,
   SphereGeometry,
   type Texture,
+  Vector2,
   WebGLRenderer,
   BackSide,
 } from 'three';
 import { THEMES, type Theme } from '../config/themes.ts';
-import type { ThemeId } from '../config/track.ts';
+import type { ThemeId, TimeOfDay } from '../config/track.ts';
 import { valueNoise } from '../core/random.ts';
-import { buildKerbGeometry, buildRoadGeometry, buildWallGeometry } from '../track/mesh.ts';
+import { buildKerbGeometry, buildPitGeometry, buildRoadGeometry, buildRunoffGeometry, buildWallGeometry } from '../track/mesh.ts';
 import { buildScenery } from '../track/scenery.ts';
 import { surfaceFor, TERRAIN_RECT, type Terrain } from '../track/surface.ts';
 import type { Track } from '../track/track.ts';
@@ -61,9 +62,12 @@ export class View3D {
     prop: MeshLambertMaterial;
     atlas: MeshLambertMaterial;
     ground: MeshLambertMaterial;
+    gravel: MeshLambertMaterial;
+    runoffTarmac: MeshLambertMaterial;
   };
   private readonly groundTextures = new Map<ThemeId, Texture>();
-  private theme: ThemeId | null = null;
+  private theme: string | null = null;
+  private quality: 'full' | 'fast' = 'full';
   private trackGroup: Group | null = null;
   private disposeTrack: (() => void) | null = null;
   private currentTrack: Track | null = null;
@@ -88,6 +92,9 @@ export class View3D {
       atlas: new MeshLambertMaterial({ map: atlas }),
       // The ground is pushed back in depth so the road lying on it never z-fights.
       ground: new MeshLambertMaterial({ vertexColors: true, polygonOffset: true, polygonOffsetFactor: 2, polygonOffsetUnits: 4 }),
+      // Run-off beside the road: drawn like the road (after the ground, no depth writes).
+      gravel: new MeshLambertMaterial({ map: makeGroundTexture({ base: '#cdb991', speck: [1, 0.9, 0.74], lo: 140, hi: 235 }), depthWrite: false }),
+      runoffTarmac: new MeshLambertMaterial({ map: asphalt, color: 0xb9bec8, depthWrite: false }),
     };
 
     this.fog = new Fog(0xffffff, 260, 1500);
@@ -101,7 +108,7 @@ export class View3D {
     this.ground = this.buildOuterGround();
     this.hills = this.buildHills();
     this.scene.add(this.sky, this.ground, this.hills);
-    this.applyTheme('meadow');
+    this.applyTheme('meadow', 'day');
   }
 
   private buildSky(): Mesh {
@@ -182,33 +189,55 @@ export class View3D {
     return new Mesh(g, new MeshLambertMaterial({ vertexColors: true, flatShading: true, side: DoubleSide }));
   }
 
-  /** Recolours sky, fog, light, hills and ground for a theme. */
-  private applyTheme(id: ThemeId): void {
-    if (this.theme === id) return;
-    this.theme = id;
+  /**
+   * Graphics quality: "fast" renders at 1 pixel per CSS pixel and sees less
+   * far, which helps a lot on slow GPUs; "full" uses up to 2× pixels.
+   */
+  setQuality(q: 'full' | 'fast'): void {
+    this.quality = q;
+    this.renderer.setPixelRatio(q === 'fast' ? 1 : Math.min(2, window.devicePixelRatio || 1));
+    this.fog.near = q === 'fast' ? 180 : 260;
+    this.fog.far = q === 'fast' ? 900 : 1500;
+    this.camera.far = q === 'fast' ? 1100 : 2400;
+    this.camera.updateProjectionMatrix();
+    const size = this.renderer.getSize(new Vector2());
+    this.renderer.setSize(size.x, size.y, false);
+  }
+
+  /** Recolours sky, fog, light, hills and ground for a theme at a time of day. */
+  private applyTheme(id: ThemeId, time: TimeOfDay): void {
+    const key = `${id}/${time}`;
+    if (this.theme === key) return;
+    this.theme = key;
     const th: Theme = THEMES[id];
-    const top = new Color(th.skyTop);
-    const hor = new Color(th.skyHorizon);
+    const dusk = time === 'sunset';
+    const mix = (a: number, b: number, t: number) => new Color(a).lerp(new Color(b), t);
+    const top = dusk ? mix(th.skyTop, 0x2a2c66, 0.75) : new Color(th.skyTop);
+    const hor = dusk ? mix(th.skyHorizon, 0xff9455, 0.8) : new Color(th.skyHorizon);
     this.scene.background = hor;
-    this.fog.color.copy(hor);
-    this.hemi.color.setHex(th.hemiSky);
-    this.hemi.groundColor.setHex(th.hemiGround);
-    this.sun.color.setHex(th.sun);
-    this.sun.intensity = th.sunIntensity;
+    this.fog.color.copy(dusk ? mix(th.skyHorizon, 0xe89a72, 0.7) : hor);
+    this.hemi.color.copy(dusk ? mix(th.hemiSky, 0xffb98c, 0.7) : new Color(th.hemiSky));
+    this.hemi.groundColor.copy(dusk ? new Color(th.hemiGround).multiplyScalar(0.55) : new Color(th.hemiGround));
+    this.sun.color.copy(dusk ? mix(th.sun, 0xff9a50, 0.8) : new Color(th.sun));
+    this.sun.intensity = th.sunIntensity * (dusk ? 0.85 : 1);
+    // Low evening sun from the west, or high midday sun.
+    if (dusk) this.sun.position.set(-1, 0.28, 0.35);
+    else this.sun.position.set(-0.45, 1, 0.3);
 
     const sg = this.sky.geometry;
     const sp = sg.getAttribute('position');
     const sc = sg.getAttribute('color');
     const c = new Color();
     for (let i = 0; i < sp.count; i++) {
-      c.copy(hor).lerp(top, Math.pow(Math.max(0, sp.getY(i) / 2000), 0.6));
+      c.copy(hor).lerp(top, Math.pow(Math.max(0, sp.getY(i) / 2000), dusk ? 0.45 : 0.6));
       sc.setXYZ(i, c.r, c.g, c.b);
     }
     sc.needsUpdate = true;
 
     const hc = this.hills.geometry.getAttribute('color');
-    const near = new Color(th.hills[0]);
-    const far = new Color(th.hills[1]);
+    const shade = dusk ? 0x7a5a6a : 0xffffff;
+    const near = new Color(th.hills[0]).multiply(new Color(shade));
+    const far = dusk ? mix(th.hills[1], 0xc9837a, 0.6) : new Color(th.hills[1]);
     for (let i = 0; i < hc.count; i++) {
       const v = [near, far, near, near, far, far][i % 6];
       hc.setXYZ(i, v.r, v.g, v.b);
@@ -253,7 +282,7 @@ export class View3D {
     if (this.currentTrack === track) return;
     this.clearTrack();
     this.currentTrack = track;
-    this.applyTheme(track.options.theme);
+    this.applyTheme(track.options.theme, track.options.time);
     const surf = surfaceFor(track);
     const group = new Group();
     group.name = 'track';
@@ -271,8 +300,11 @@ export class View3D {
     const road = buildRoadGeometry(track.center, surf);
     add(road.ground, this.mats.road, 1);
     add(road.deck, this.mats.deck, 2);
+    const runoff = track.options.runoff === 'gravel' ? this.mats.gravel : this.mats.runoffTarmac;
+    add(buildRunoffGeometry(track, surf), runoff, 0.5);
     add(buildKerbGeometry(track), this.mats.kerb);
     add(buildWallGeometry(track, surf), this.mats.wall);
+    add(buildPitGeometry(track, surf), this.mats.wall);
 
     let pillars: InstancedMesh | null = null;
     if (surf.pillars.length) {
@@ -308,7 +340,7 @@ export class View3D {
   }
 
   resize(w: number, h: number): void {
-    this.renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+    this.renderer.setPixelRatio(this.quality === 'fast' ? 1 : Math.min(2, window.devicePixelRatio || 1));
     this.renderer.setSize(w, h, false);
     this.camera.aspect = w / Math.max(1, h);
     this.camera.updateProjectionMatrix();
@@ -317,6 +349,25 @@ export class View3D {
   render(): void {
     this.sky.position.copy(this.camera.position);
     this.renderer.render(this.scene, this.camera);
+  }
+
+  /**
+   * Hides everything that isn't the world or the track (the cars), e.g. for
+   * the editor's 3D view; returns a function that puts it back.
+   */
+  hideExtras(): () => void {
+    const keep = new Set<unknown>([this.sky, this.ground, this.hills, this.hemi, this.sun, this.trackGroup]);
+    const hidden = this.scene.children.filter((o) => !keep.has(o) && o.visible);
+    for (const o of hidden) o.visible = false;
+    return () => {
+      for (const o of hidden) o.visible = true;
+    };
+  }
+
+  /** Fog distances (the editor's 3D view looks at the whole track from far away). */
+  setFog(near: number, far: number): void {
+    this.fog.near = near;
+    this.fog.far = far;
   }
 
   /** Draw calls and triangles in the last frame (for the debug overlay and budget checks). */

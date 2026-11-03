@@ -45,9 +45,9 @@ export function withHeights(dots: readonly Dot[], hs: readonly number[]): Dot[] 
 
 /**
  * A rolling height profile round the loop: a few smooth periodic waves, scaled
- * to a random peak and kept well inside the steepest allowed grade.
+ * to a random peak in `peakRange` (m) and kept well inside the steepest allowed grade.
  */
-export function rollingHeights(pos: readonly number[], length: number, rand: () => number): number[] {
+export function rollingHeights(pos: readonly number[], length: number, rand: () => number, peakRange: [number, number] = [6, 22]): number[] {
   const kMax = Math.max(1, Math.min(5, Math.floor(length / 260)));
   const waves: { k: number; a: number; p: number }[] = [];
   const count = 2 + Math.floor(rand() * 3);
@@ -64,7 +64,7 @@ export function rollingHeights(pos: readonly number[], length: number, rand: () 
     hi = Math.max(hi, v);
     slope = Math.max(slope, Math.abs(f(s + step) - v) / step);
   }
-  const peak = 6 + rand() * 16;
+  const peak = peakRange[0] + rand() * (peakRange[1] - peakRange[0]);
   let scale = peak / Math.max(1e-6, hi - lo);
   scale = Math.min(scale, (TRACK.maxGrade * 0.55) / Math.max(1e-6, slope));
   return pos.map((s) => (f(s) - lo) * scale);

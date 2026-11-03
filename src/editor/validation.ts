@@ -112,11 +112,12 @@ export function validateCenterline(c: Centerline): Validation {
       return { ok: false, issue: 'crossing-start', at: x.at };
     }
   }
+  const minSep = c.width + TRACK.separationMargin;
   // Around each crossing (flat or bridge) the two roads are allowed to be close; size the zone by the angle.
   const zones = all.map((x) => ({
     i: x.i,
     j: x.j,
-    half: Math.ceil((TRACK.roadWidth / Math.sin(x.angle) + TRACK.minSeparation) / c.spacing),
+    half: Math.ceil((c.width / Math.sin(x.angle) + minSep) / c.spacing),
   }));
   const inCrossingZone = (a: number, b: number) =>
     zones.some(
@@ -126,10 +127,10 @@ export function validateCenterline(c: Centerline): Validation {
     );
 
   // Two unrelated parts of the road too close together. For each point, walk
-  // along the track in both directions until it first gets `minSeparation` away:
+  // along the track in both directions until it first gets `minSep` away:
   // that stretch is the point's own neighbourhood. Anything else closer than
-  // `minSeparation` is a different part of the track coming back.
-  const sep2 = TRACK.minSeparation * TRACK.minSeparation;
+  // `minSep` is a different part of the track coming back.
+  const sep2 = minSep * minSep;
   for (let i = 0; i < n; i++) {
     const p = pts[i];
     let fwd = 1;

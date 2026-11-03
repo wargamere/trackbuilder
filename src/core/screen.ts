@@ -5,7 +5,7 @@ import type { Track } from '../track/track.ts';
 import type { Surface2D } from './surface2d.ts';
 
 /** States of the main state machine (see main.ts). */
-export type ScreenId = 'race' | 'editor' | 'results' | 'library';
+export type ScreenId = 'race' | 'editor' | 'results' | 'library' | 'preview';
 
 export interface Screen {
   /** Which canvas the screen draws on; main.ts shows that one and hides the other. */
@@ -38,4 +38,6 @@ export interface GameContext {
   interrupted: boolean;
   /** Re-applies the selected paint to the car. */
   refreshPaint(): void;
+  /** What the 3D preview shows (set by the editor), and how to race it from there. */
+  preview: { track: Track; race(): void; back(): void } | null;
 }

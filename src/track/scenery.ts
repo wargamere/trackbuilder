@@ -15,7 +15,6 @@ import {
   Vector3,
 } from 'three';
 import { THEMES, type PropKind } from '../config/themes.ts';
-import { TRACK } from '../config/track.ts';
 import { merge, tint } from '../render/geom.ts';
 import { ATLAS } from '../render/textures.ts';
 import { ROAD_Y } from './mesh.ts';
@@ -145,11 +144,12 @@ function startFrame(c: Centerline): Matrix4 {
   return new Matrix4().makeBasis(x, y, z).setPosition(p.x, c.height[0], p.y);
 }
 
-const GANTRY = { postX: TRACK.roadWidth / 2 + 1.4, height: 7, beamY: 6.2, beamH: 1.6, beamD: 0.7 } as const;
+/** Start gantry dimensions for a road `width` wide. */
+const gantryFor = (width: number) => ({ postX: width / 2 + 1.4, height: 7, beamY: 6.2, beamH: 1.6, beamD: 0.7 });
 
 /** Gantry posts and beam (vertex-coloured, merged into one mesh). */
-function buildGantryFrame(frame: Matrix4, mat: Material): Mesh {
-  const g = GANTRY;
+function buildGantryFrame(frame: Matrix4, mat: Material, width: number): Mesh {
+  const g = gantryFor(width);
   const parts: BufferGeometry[] = [];
   for (const sx of [-1, 1]) {
     parts.push(tint(new BoxGeometry(0.6, g.height, 0.6).translate(sx * g.postX, g.height / 2, 0), 0xdadde3));
@@ -161,7 +161,7 @@ function buildGantryFrame(frame: Matrix4, mat: Material): Mesh {
 }
 
 /** Banner on both faces of the beam plus the chequered line on the road: one mesh, one texture. */
-function buildStartAtlasMesh(frame: Matrix4, mat: Material): Mesh {
+function buildStartAtlasMesh(frame: Matrix4, mat: Material, width: number): Mesh {
   const pos: number[] = [];
   const nor: number[] = [];
   const uv: number[] = [];
@@ -173,7 +173,7 @@ function buildStartAtlasMesh(frame: Matrix4, mat: Material): Mesh {
       uv.push(uvs[k][0], uvs[k][1]);
     }
   };
-  const g = GANTRY;
+  const g = gantryFor(width);
   const bw = g.postX * 2 - 0.8; // banner width
   const bh = bw / ATLAS.bannerAspect;
   const y0 = g.beamY - bh / 2;
@@ -191,7 +191,7 @@ function buildStartAtlasMesh(frame: Matrix4, mat: Material): Mesh {
   // Facing the other way.
   quad([new Vector3(-bw / 2, y0, z), new Vector3(bw / 2, y0, z), new Vector3(bw / 2, y1, z), new Vector3(-bw / 2, y1, z)], bannerUv);
   // Chequered line lying on the road: 8 squares across, 2 along.
-  const hw = TRACK.roadWidth / 2 - 0.3;
+  const hw = width / 2 - 0.3;
   const d = 0.9;
   const y = ROAD_Y + 0.006;
   const k = ATLAS.checker;
@@ -219,8 +219,8 @@ export function buildScenery(track: Track, mats: SceneryMaterials): { group: Gro
   const frame = startFrame(track.center);
   const owned: BufferGeometry[] = [];
 
-  const gantry = buildGantryFrame(frame, mats.prop);
-  const atlas = buildStartAtlasMesh(frame, mats.atlas);
+  const gantry = buildGantryFrame(frame, mats.prop, track.center.width);
+  const atlas = buildStartAtlasMesh(frame, mats.atlas, track.center.width);
   owned.push(gantry.geometry, atlas.geometry);
   group.add(gantry, atlas);
 

@@ -1,4 +1,3 @@
-import { TRACK } from '../config/track.ts';
 import { surfaceY } from './spline.ts';
 import { terrainHeight, type TrackSurface } from './surface.ts';
 import type { Track } from './track.ts';
@@ -24,7 +23,7 @@ export function groundPose(track: Track, surf: TrackSurface, x: number, z: numbe
   const n = c.points.length;
   const cos = Math.cos(heading);
   const sin = Math.sin(heading);
-  if (Math.abs(pos.lateral) <= TRACK.wallOffset + 0.5) {
+  if (Math.abs(pos.lateral) <= track.center.wallOffset + 0.5) {
     const i = Math.max(0, pos.index);
     const j = (i + 1) % n;
     let f = pos.s / c.spacing - i;

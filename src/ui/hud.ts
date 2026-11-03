@@ -1,4 +1,5 @@
 import { STR } from '../config/strings.ts';
+import { settings } from '../core/settings.ts';
 import { MEDALS, type MedalTimes } from '../race/medals.ts';
 import { formatTime } from '../race/session.ts';
 import { button, h } from './dom.ts';
@@ -31,6 +32,7 @@ export class Hud {
   private medalKey = '';
   readonly minimap = new Minimap();
   private lastSpeed = -1;
+  private readonly speedUnit: HTMLElement;
   private lastTime = '';
   private hintTimer = 0;
   private centerTimer = 0;
@@ -57,7 +59,8 @@ export class Hud {
     const timer = h('div', { class: 'hud-timer' }, this.lapLabel, this.time, this.lastBest, this.medals, this.split);
     this.center = h('div', { class: 'hud-center' });
     this.speedValue = h('span', { class: 'speed-value', text: '0' });
-    const speed = h('div', { class: 'hud-speed' }, this.speedValue, h('span', { class: 'speed-unit', text: STR.race.speedUnit }));
+    this.speedUnit = h('span', { class: 'speed-unit', text: STR.race.speedUnit });
+    const speed = h('div', { class: 'hud-speed' }, this.speedValue, this.speedUnit);
     this.hint = h('div', { class: 'hud-hint' });
     this.debug = h('div', { class: 'hud-debug' });
     this.root = h('div', { class: 'screen hud' }, top, timer, this.minimap.root, this.center, speed, this.hint, this.debug);
@@ -102,11 +105,19 @@ export class Hud {
   }
 
   setSpeed(metresPerSecond: number): void {
-    const kmh = Math.round(Math.abs(metresPerSecond) * 3.6);
-    if (kmh !== this.lastSpeed) {
-      this.speedValue.textContent = String(kmh);
-      this.lastSpeed = kmh;
+    const mph = settings().units === 'mph';
+    const v = Math.round(Math.abs(metresPerSecond) * (mph ? 2.23694 : 3.6));
+    if (v !== this.lastSpeed) {
+      this.speedValue.textContent = String(v);
+      this.lastSpeed = v;
     }
+    const unit = mph ? STR.race.speedUnitMph : STR.race.speedUnit;
+    if (this.speedUnit.textContent !== unit) this.speedUnit.textContent = unit;
+  }
+
+  /** Shows or hides the minimap (Display settings). */
+  showMinimap(on: boolean): void {
+    this.minimap.root.hidden = !on;
   }
 
   /** Big centred message (countdown digits, GO!, lap messages). `seconds` <= 0 keeps it up. */

@@ -94,7 +94,10 @@ export class ResultsScreen implements Screen {
           row(STR.results.bestLap, formatTime(r.bestLap), r.newRecord ? STR.results.newRecord : undefined),
           r.newRecord ? null : row(STR.results.record, formatTime(r.recordLap)),
           row(STR.results.laps, r.laps.map((t) => formatTime(t)).join('  ·  ')),
-          row(STR.results.avgSpeed, fmt(STR.results.kmh, { v: r.avgSpeedKmh.toFixed(1) })),
+          row(
+            STR.results.avgSpeed,
+            settings().units === 'mph' ? fmt(STR.results.mph, { v: (r.avgSpeedKmh / 1.609344).toFixed(1) }) : fmt(STR.results.kmh, { v: r.avgSpeedKmh.toFixed(1) }),
+          ),
           row(STR.results.multiplier, `×${r.multiplier.toFixed(2)}`),
           this.medalRow(r.bestLap, r.author),
         ),

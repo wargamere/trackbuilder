@@ -1,10 +1,14 @@
 import { STR, fmt } from '../config/strings.ts';
-import type { SmoothingLevel, ThemeId, TrackOptions } from '../config/track.ts';
+import type { SmoothingLevel, TrackOptions } from '../config/track.ts';
+import type { Settings } from '../core/settings.ts';
 import type { InkStats } from '../track/ink.ts';
+import type { TrackStats } from '../track/stats.ts';
 import { button, h } from './dom.ts';
 
 export type MessageKind = 'info' | 'ok' | 'error' | 'warn';
 export type EditorMode = 'draw' | 'dots' | 'height';
+export type Terrain = 'flat' | 'rolling' | 'hilly';
+export type DisplaySettings = Pick<Settings, 'graphics' | 'units' | 'minimap' | 'cornerLabels'>;
 
 export interface EditorActions {
   back(): void;
@@ -12,24 +16,61 @@ export interface EditorActions {
   redo(): void;
   clear(): void;
   race(): void;
+  preview(): void;
   setMode(m: EditorMode): void;
   setSmoothing(s: SmoothingLevel): void;
   setSnap(on: boolean): void;
+  setSoft(on: boolean): void;
+  setOptions(o: Partial<TrackOptions>): void;
+  setDisplay(d: Partial<DisplaySettings>): void;
   reverse(): void;
   sample(i: number): void;
   rename(name: string): void;
   myTracks(): void;
   share(): void;
-  setSoft(on: boolean): void;
-  setOptions(o: Partial<TrackOptions>): void;
+  save(): void;
   hills(): void;
-  flatten(): void;
+  terrain(t: Terrain): void;
   smoothHeights(): void;
+  flatten(): void;
+  transform(how: 'grow' | 'shrink' | 'rotate' | 'mirror'): void;
   zoom(how: 'in' | 'out' | 'fit'): void;
+  focusCorner(i: number): void;
+}
+
+/** One numbered corner, for the Corners section. */
+export interface CornerInfo {
+  dir: 'L' | 'R';
+  radius: number;
+  /** Bank angle at the apex (degrees). */
+  bank: number;
+}
+
+/** Everything the editor overlay shows; set every frame (DOM is only touched on change). */
+export interface EditorViewState {
+  canUndo: boolean;
+  canRedo: boolean;
+  canRace: boolean;
+  mode: EditorMode;
+  smoothing: SmoothingLevel;
+  snap: boolean;
+  soft: boolean;
+  options: TrackOptions;
+  display: DisplaySettings;
+  name: string;
+  stats: TrackStats | null;
+  corners: CornerInfo[];
+  /** Pits are switched on but there is no room for them. */
+  pitsNoRoom: boolean;
+}
+
+interface Choice<T> {
+  el: HTMLElement;
+  set(v: T): void;
 }
 
 /** A row of buttons where exactly one is "on". */
-function segmented<T extends string>(items: [T, string, string?][], onPick: (v: T) => void): { el: HTMLElement; set(v: T): void } {
+function segmented<T extends string | number | boolean>(items: [T, string, string?][], onPick: (v: T) => void): Choice<T> {
   const btns = new Map<T, HTMLButtonElement>();
   const el = h('div', { class: 'segmented' });
   for (const [value, label, icon] of items) {
@@ -45,11 +86,36 @@ function segmented<T extends string>(items: [T, string, string?][], onPick: (v: 
   };
 }
 
-/** DOM overlay for the track editor. */
+function checkbox(label: string, onChange: (on: boolean) => void): { el: HTMLElement; input: HTMLInputElement } {
+  const input = h('input');
+  input.type = 'checkbox';
+  input.addEventListener('change', () => onChange(input.checked));
+  return { el: h('label', { class: 'field check' }, input, h('span', { text: label })), input };
+}
+
+const field = (label: string, ...children: (Node | string)[]) => h('div', { class: 'field' }, h('span', { class: 'label', text: label }), ...children);
+
+interface Section {
+  root: HTMLElement;
+  summary: HTMLElement;
+  body: HTMLElement;
+}
+
+/** Wide screens dock the sidebar; narrower ones show a rail of numbers that opens over the map. */
+const DOCK_MIN_WIDTH = 1100;
+
+/**
+ * DOM overlay for the track editor: a sidebar of seven numbered sections
+ * (Draw, Size & shape, Corners, Start & pits, Track edges, Scenery & world,
+ * Display) with the race button at the bottom, a top bar (undo, ink, messages,
+ * multiplier), a stats strip along the bottom and zoom buttons.
+ */
 export class EditorUI {
   readonly root: HTMLElement;
+  private readonly sidebar: HTMLElement;
   private readonly top: HTMLElement;
-  private readonly bottom: HTMLElement;
+  private readonly statsBar: HTMLElement;
+  private readonly statCells: Record<'length' | 'corners' | 'straight' | 'gradient' | 'elevation' | 'radius', HTMLElement>;
   private readonly inkFill: HTMLElement;
   private readonly inkValue: HTMLElement;
   private readonly inkBox: HTMLElement;
@@ -59,46 +125,76 @@ export class EditorUI {
   private readonly undoBtn: HTMLButtonElement;
   private readonly redoBtn: HTMLButtonElement;
   private readonly raceBtn: HTMLButtonElement;
-  private readonly optionsBtn: HTMLButtonElement;
-  private readonly options: HTMLElement;
-  private readonly mode: { el: HTMLElement; set(v: EditorMode): void };
-  private readonly smoothing: { el: HTMLElement; set(v: SmoothingLevel): void };
-  private readonly snap: HTMLInputElement;
-  private readonly soft: HTMLInputElement;
-  private readonly walls: HTMLInputElement;
-  private readonly banking: { el: HTMLElement; set(v: '0' | '1' | '2'): void };
-  private readonly theme: { el: HTMLElement; set(v: ThemeId): void };
-  private readonly name: HTMLInputElement;
-  private readonly tools: HTMLElement;
   private readonly zoomBox: HTMLElement;
+  private readonly sections: Section[] = [];
+  private open: number;
+  private docked = true;
+  private overlay = false;
+  private readonly name: HTMLInputElement;
+  private readonly ctl: {
+    mode: Choice<EditorMode>;
+    smoothing: Choice<SmoothingLevel>;
+    snap: HTMLInputElement;
+    soft: HTMLInputElement;
+    heightTools: HTMLElement;
+    width: Choice<number>;
+    terrain: Choice<Terrain>;
+    banking: Choice<number>;
+    cornerList: HTMLElement;
+    laps: Choice<number>;
+    pits: Choice<boolean>;
+    pitsNote: HTMLElement;
+    kerbs: Choice<string>;
+    runoff: Choice<string>;
+    barrier: Choice<string>;
+    theme: Choice<string>;
+    time: Choice<string>;
+    trees: Choice<string>;
+    graphics: Choice<string>;
+    units: Choice<string>;
+    minimap: HTMLInputElement;
+    cornerLabels: HTMLInputElement;
+  };
+  private cornerKey = '';
 
-  constructor(actions: EditorActions, sampleNames: readonly string[]) {
+  constructor(actions: EditorActions, sampleNames: readonly string[], openSection = 0) {
     const k = STR.editor.keys;
+    const S = STR.sidebar;
+    this.open = openSection;
+
+    // ---------------------------------------------------------- top bar
     this.inkFill = h('div', { class: 'meter-fill' });
     this.inkValue = h('span', { class: 'ink-value' });
-    this.inkBox = h(
-      'div',
-      { class: 'ink' },
-      h('span', { class: 'label', text: STR.editor.ink }),
-      h('div', { class: 'meter' }, this.inkFill),
-      this.inkValue,
-    );
+    this.inkBox = h('div', { class: 'ink' }, h('span', { class: 'label', text: STR.editor.ink }), h('div', { class: 'meter' }, this.inkFill), this.inkValue);
     this.multValue = h('div', { class: 'mult-value' });
     this.multDetail = h('div', { class: 'mult-detail' });
-    const mult = h(
-      'div',
-      { class: 'mult', title: STR.editor.multiplierLabel },
-      h('div', { class: 'label', text: STR.editor.multiplierLabel }),
-      this.multValue,
-      this.multDetail,
-    );
+    const mult = h('div', { class: 'mult', title: STR.editor.multiplierLabel }, h('div', { class: 'label', text: STR.editor.multiplierLabel }), this.multValue, this.multDetail);
     this.message = h('div', { class: 'message' });
-    this.top = h('div', { class: 'bar top' }, this.inkBox, this.message, mult);
+    this.undoBtn = button('', actions.undo, { icon: '↶', class: 'tool', title: `${STR.buttons.undo} (${k.undo})` });
+    this.redoBtn = button('', actions.redo, { icon: '↷', class: 'tool', title: `${STR.buttons.redo} (${k.redo})` });
+    const tools = h(
+      'div',
+      { class: 'tools' },
+      this.undoBtn,
+      this.redoBtn,
+      button('', actions.clear, { icon: '⌫', class: 'tool', title: `${STR.buttons.clear} (${k.clear})` }),
+      button('', actions.preview, { icon: '◈', class: 'tool', title: S.preview }),
+    );
+    this.top = h('div', { class: 'bar top' }, tools, this.message, this.inkBox, mult);
 
-    this.undoBtn = button(STR.buttons.undo, actions.undo, { key: k.undo, icon: '↶', class: 'compact' });
-    this.redoBtn = button(STR.buttons.redo, actions.redo, { key: k.redo, icon: '↷', class: 'compact' });
-    this.raceBtn = button(STR.buttons.raceIt, actions.race, { key: k.race, icon: '▶', class: 'primary' });
-    this.mode = segmented<EditorMode>(
+    // ------------------------------------------------------------- sidebar
+    this.name = h('input', { class: 'text-input' });
+    this.name.type = 'text';
+    this.name.maxLength = 32;
+    this.name.placeholder = STR.editor.optName;
+    this.name.addEventListener('input', () => actions.rename(this.name.value));
+    this.name.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === 'Escape') this.name.blur();
+      e.stopPropagation(); // typing a name must not trigger editor shortcuts
+    });
+
+    const opt = actions.setOptions;
+    const ctlMode = segmented<EditorMode>(
       [
         ['draw', STR.editor.modeDraw, '✎'],
         ['dots', STR.editor.modeDots, '●'],
@@ -106,30 +202,7 @@ export class EditorUI {
       ],
       actions.setMode,
     );
-    this.optionsBtn = button(STR.buttons.options, () => this.toggleOptions(), { key: k.options, icon: '⚙', class: 'compact' });
-    this.bottom = h(
-      'div',
-      { class: 'bar bottom' },
-      button(STR.buttons.back, actions.back, { key: k.back, icon: '✕', class: 'compact' }),
-      this.undoBtn,
-      this.redoBtn,
-      button(STR.buttons.clear, actions.clear, { key: k.clear, icon: '⌫', class: 'compact' }),
-      this.mode.el,
-      this.optionsBtn,
-      h('div', { class: 'spacer' }),
-      this.raceBtn,
-    );
-
-    // Options panel.
-    this.name = h('input', { class: 'text-input' });
-    this.name.type = 'text';
-    this.name.maxLength = 32;
-    this.name.addEventListener('input', () => actions.rename(this.name.value));
-    this.name.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' || e.key === 'Escape') this.name.blur();
-      e.stopPropagation(); // typing a name must not trigger editor shortcuts
-    });
-    this.smoothing = segmented<SmoothingLevel>(
+    const smoothing = segmented<SmoothingLevel>(
       [
         ['sharp', STR.editor.smoothing.sharp],
         ['normal', STR.editor.smoothing.normal],
@@ -137,60 +210,226 @@ export class EditorUI {
       ],
       actions.setSmoothing,
     );
-    this.snap = h('input');
-    this.snap.type = 'checkbox';
-    this.snap.addEventListener('change', () => actions.setSnap(this.snap.checked));
-    const samples = h('div', { class: 'row wrap' }, ...sampleNames.map((n, i) => button(n, () => actions.sample(i), { icon: '★' })));
-    this.soft = h('input');
-    this.soft.type = 'checkbox';
-    this.soft.addEventListener('change', () => actions.setSoft(this.soft.checked));
-    this.walls = h('input');
-    this.walls.type = 'checkbox';
-    this.walls.addEventListener('change', () => actions.setOptions({ walls: this.walls.checked }));
-    this.banking = segmented<'0' | '1' | '2'>(
-      [
-        ['0', STR.editor.banking[0]],
-        ['1', STR.editor.banking[1]],
-        ['2', STR.editor.banking[2]],
-      ],
-      (v) => actions.setOptions({ banking: Number(v) as 0 | 1 | 2 }),
-    );
-    this.theme = segmented<ThemeId>(
-      [
-        ['meadow', STR.editor.themes.meadow],
-        ['desert', STR.editor.themes.desert],
-        ['snow', STR.editor.themes.snow],
-      ],
-      (v) => actions.setOptions({ theme: v }),
-    );
-    this.options = h(
+    const snap = checkbox(STR.editor.optSnap, actions.setSnap);
+    const soft = checkbox(STR.editor.optSoft, actions.setSoft);
+    const heightTools = h(
       'div',
-      { class: 'options-panel' },
-      h('label', { class: 'field' }, h('span', { class: 'label', text: STR.editor.optName }), this.name),
-      h('div', { class: 'field' }, h('span', { class: 'label', text: STR.editor.optSmoothing }), this.smoothing.el),
-      h('label', { class: 'field check' }, this.snap, h('span', { text: STR.editor.optSnap })),
-      h('label', { class: 'field check' }, this.soft, h('span', { text: STR.editor.optSoft })),
-      h('div', { class: 'field' }, h('span', { class: 'label', text: STR.editor.optTheme }), this.theme.el),
-      h('div', { class: 'field' }, h('span', { class: 'label', text: STR.editor.optBanking }), this.banking.el),
-      h('label', { class: 'field check' }, this.walls, h('span', { text: STR.editor.optWalls })),
-      h('div', { class: 'row wrap' }, button(STR.buttons.reverse, actions.reverse, { icon: '⇄', key: 'R' }), button(STR.buttons.shareTrack, actions.share, { icon: '⧉' })),
-      h('div', { class: 'row' }, button(STR.buttons.myTracks, actions.myTracks, { icon: '☰' })),
-      h('div', { class: 'field' }, h('span', { class: 'label', text: STR.editor.optSamples }), samples),
-      h('div', { class: 'field' }, h('span', { class: 'label', text: STR.editor.optHelpTitle }), h('p', { class: 'help', text: STR.editor.optHelp })),
-    );
-    this.options.hidden = true;
-
-    // Height tools (a second bar under the top one, in Height mode only).
-    this.tools = h(
-      'div',
-      { class: 'bar tools' },
+      { class: 'row wrap' },
       button(STR.editor.hills, actions.hills, { icon: '⛰', key: k.hills }),
       button(STR.editor.smoothHeights, actions.smoothHeights, { icon: '∿' }),
       button(STR.editor.flatten, actions.flatten, { icon: '▬' }),
     );
-    this.tools.hidden = true;
+    const samples = h('div', { class: 'row wrap' }, ...sampleNames.map((n, i) => button(n, () => actions.sample(i), { icon: '★' })));
 
-    // Zoom buttons at the right edge.
+    const width = segmented<number>(
+      [
+        [10, S.widths[10]],
+        [12, S.widths[12]],
+        [15, S.widths[15]],
+      ],
+      (w) => opt({ width: w as TrackOptions['width'] }),
+    );
+    const terrain = segmented<Terrain>(
+      [
+        ['flat', S.terrains.flat],
+        ['rolling', S.terrains.rolling],
+        ['hilly', S.terrains.hilly],
+      ],
+      actions.terrain,
+    );
+    const banking = segmented<number>(
+      [
+        [0, STR.editor.banking[0]],
+        [1, STR.editor.banking[1]],
+        [2, STR.editor.banking[2]],
+      ],
+      (b) => opt({ banking: b as TrackOptions['banking'] }),
+    );
+    const cornerList = h('div', { class: 'corner-list' });
+    cornerList.addEventListener('click', (e) => {
+      const row = (e.target as HTMLElement).closest<HTMLElement>('[data-corner]');
+      if (row) actions.focusCorner(Number(row.dataset.corner));
+    });
+    const laps = segmented<number>(
+      [
+        [1, '1'],
+        [3, '3'],
+        [5, '5'],
+      ],
+      (n) => opt({ laps: n as TrackOptions['laps'] }),
+    );
+    const pits = segmented<boolean>(
+      [
+        [true, S.on],
+        [false, S.off],
+      ],
+      (on) => opt({ pits: on }),
+    );
+    const pitsNote = h('p', { class: 'help warn', text: S.pitsNoRoom });
+    const kerbs = segmented<string>(
+      (['raised', 'flat', 'none'] as const).map((v) => [v, S.kerbStyles[v]] as [string, string]),
+      (v) => opt({ kerbs: v as TrackOptions['kerbs'] }),
+    );
+    const runoff = segmented<string>(
+      (['grass', 'gravel', 'tarmac'] as const).map((v) => [v, S.runoffs[v]] as [string, string]),
+      (v) => opt({ runoff: v as TrackOptions['runoff'] }),
+    );
+    const barrier = segmented<string>(
+      (['none', 'concrete', 'tyres'] as const).map((v) => [v, S.barriers[v]] as [string, string]),
+      (v) => opt(v === 'none' ? { walls: false } : { walls: true, barrier: v as TrackOptions['barrier'] }),
+    );
+    const theme = segmented<string>(
+      (['meadow', 'desert', 'snow'] as const).map((v) => [v, STR.editor.themes[v]] as [string, string]),
+      (v) => opt({ theme: v as TrackOptions['theme'] }),
+    );
+    const time = segmented<string>(
+      (['day', 'sunset'] as const).map((v) => [v, S.times[v]] as [string, string]),
+      (v) => opt({ time: v as TrackOptions['time'] }),
+    );
+    const trees = segmented<string>(
+      (['sparse', 'normal', 'dense'] as const).map((v) => [v, S.treeLevels[v]] as [string, string]),
+      (v) => opt({ trees: v as TrackOptions['trees'] }),
+    );
+    const graphics = segmented<string>(
+      (['full', 'fast'] as const).map((v) => [v, S.graphicsLevels[v]] as [string, string]),
+      (v) => actions.setDisplay({ graphics: v as Settings['graphics'] }),
+    );
+    const units = segmented<string>(
+      (['kmh', 'mph'] as const).map((v) => [v, S.unitNames[v]] as [string, string]),
+      (v) => actions.setDisplay({ units: v as Settings['units'] }),
+    );
+    const minimap = checkbox(S.minimap, (on) => actions.setDisplay({ minimap: on }));
+    const cornerLabels = checkbox(S.cornerLabels, (on) => actions.setDisplay({ cornerLabels: on }));
+    this.ctl = {
+      mode: ctlMode,
+      smoothing,
+      snap: snap.input,
+      soft: soft.input,
+      heightTools,
+      width,
+      terrain,
+      banking,
+      cornerList,
+      laps,
+      pits,
+      pitsNote,
+      kerbs,
+      runoff,
+      barrier,
+      theme,
+      time,
+      trees,
+      graphics,
+      units,
+      minimap: minimap.input,
+      cornerLabels: cornerLabels.input,
+    };
+
+    const bodies: [string, HTMLElement[]][] = [
+      [
+        S.sections.draw,
+        [
+          field(S.tool, ctlMode.el),
+          heightTools,
+          field(STR.editor.optSmoothing, smoothing.el),
+          snap.el,
+          soft.el,
+          field(STR.editor.optSamples, samples),
+          h('p', { class: 'help', text: STR.editor.optHelp }),
+        ],
+      ],
+      [
+        S.sections.shape,
+        [
+          field(S.roadWidth, width.el),
+          field(
+            S.resize,
+            h(
+              'div',
+              { class: 'row wrap' },
+              button(S.shrink, () => actions.transform('shrink'), { icon: '−' }),
+              button(S.grow, () => actions.transform('grow'), { icon: '+' }),
+              button(S.rotate, () => actions.transform('rotate'), { icon: '⟳' }),
+              button(S.mirror, () => actions.transform('mirror'), { icon: '⇋' }),
+            ),
+          ),
+          field(S.terrain, terrain.el, h('div', { class: 'row wrap' }, button(STR.editor.smoothHeights, actions.smoothHeights, { icon: '∿' }))),
+          h('p', { class: 'help', text: S.terrainHelp }),
+        ],
+      ],
+      [S.sections.corners, [field(STR.editor.optBanking, banking.el), field(S.cornerListLabel, cornerList)]],
+      [
+        S.sections.start,
+        [
+          field(S.laps, laps.el),
+          field(S.pits, pits.el),
+          pitsNote,
+          h('div', { class: 'row wrap' }, button(STR.buttons.reverse, actions.reverse, { icon: '⇄', key: 'R' })),
+          h('p', { class: 'help', text: S.startHelp }),
+        ],
+      ],
+      [S.sections.edges, [field(S.kerbs, kerbs.el), field(S.runoff, runoff.el), field(S.barrier, barrier.el), h('p', { class: 'help', text: S.edgesHelp })]],
+      [S.sections.world, [field(STR.editor.optTheme, theme.el), field(S.time, time.el), field(S.trees, trees.el)]],
+      [S.sections.display, [field(S.graphics, graphics.el), h('p', { class: 'help', text: S.graphicsHelp }), field(S.units, units.el), minimap.el, cornerLabels.el]],
+    ];
+    const list = h('div', { class: 'sections' });
+    bodies.forEach(([title, content], i) => {
+      const summary = h('span', { class: 'sec-summary' });
+      const head = h(
+        'button',
+        { class: 'sec-head' },
+        h('span', { class: 'sec-num', text: String(i + 1) }),
+        h('span', { class: 'sec-text' }, h('span', { class: 'sec-title', text: title }), summary),
+        h('span', { class: 'sec-chev', text: '▸' }),
+      );
+      head.type = 'button';
+      head.tabIndex = -1;
+      head.title = title;
+      head.addEventListener('mousedown', (e) => e.preventDefault());
+      head.addEventListener('click', () => this.toggleSection(i));
+      const body = h('div', { class: 'sec-body' }, ...content);
+      const root = h('div', { class: 'sec' }, head, body);
+      this.sections.push({ root, summary, body });
+      list.append(root);
+    });
+
+    this.raceBtn = button(STR.buttons.raceIt, actions.race, { key: k.race, icon: '▶', class: 'primary race' });
+    const foot = h(
+      'div',
+      { class: 'side-foot' },
+      h(
+        'div',
+        { class: 'row' },
+        button(S.preview, actions.preview, { icon: '◈', class: 'compact', title: `${S.preview} (V)` }),
+        button(STR.buttons.share, actions.share, { icon: '⧉', class: 'compact', title: STR.buttons.share }),
+        button(S.save, actions.save, { icon: '⬇', class: 'compact', title: S.save }),
+        button(STR.buttons.myTracks, actions.myTracks, { icon: '☰', class: 'compact', title: STR.buttons.myTracks }),
+      ),
+      this.raceBtn,
+    );
+    const head = h(
+      'div',
+      { class: 'side-head' },
+      button('', actions.back, { icon: '✕', class: 'tool', title: `${STR.buttons.back} (${k.back})` }),
+      h('span', { class: 'side-title', text: S.title }),
+    );
+    this.sidebar = h('aside', { class: 'sidebar' }, head, h('div', { class: 'side-name' }, this.name), list, foot);
+
+    // ------------------------------------------------------ stats + zoom
+    const cell = (label: string) => {
+      const v = h('span', { class: 'stat-v', text: '—' });
+      return { el: h('div', { class: 'stat-cell' }, h('span', { class: 'stat-l', text: label }), v), v };
+    };
+    const cells = {
+      length: cell(S.stats.length),
+      corners: cell(S.stats.corners),
+      straight: cell(S.stats.straight),
+      gradient: cell(S.stats.gradient),
+      elevation: cell(S.stats.elevation),
+      radius: cell(S.stats.radius),
+    };
+    this.statCells = { length: cells.length.v, corners: cells.corners.v, straight: cells.straight.v, gradient: cells.gradient.v, elevation: cells.elevation.v, radius: cells.radius.v };
+    this.statsBar = h('div', { class: 'stats-bar' }, ...Object.values(cells).map((c) => c.el));
     this.zoomBox = h(
       'div',
       { class: 'zoom-box' },
@@ -198,41 +437,100 @@ export class EditorUI {
       button('', () => actions.zoom('out'), { icon: '−', class: 'round', title: `${STR.editor.zoomOut} (${k.zoomOut})` }),
       button('', () => actions.zoom('fit'), { icon: '⤢', class: 'round', title: `${STR.editor.zoomFit} (${k.zoomFit})` }),
     );
-    this.root = h('div', { class: 'screen editor' }, this.top, this.tools, this.zoomBox, this.options, this.bottom);
+    this.root = h('div', { class: 'screen editor' }, this.top, this.statsBar, this.zoomBox, this.sidebar);
+    this.applySections();
   }
 
-  /** Heights of the top and bottom bars, so the canvas can keep the track clear of them. */
-  insets(): { top: number; bottom: number } {
-    return { top: this.top.offsetHeight + (this.tools.hidden ? 0 : this.tools.offsetHeight), bottom: this.bottom.offsetHeight };
-  }
+  // ------------------------------------------------------------- layout
 
-  /** Shows the height tools; returns true if that changed the layout. */
-  showTools(on: boolean): boolean {
-    if (this.tools.hidden === !on) return false;
-    this.tools.hidden = !on;
-    this.tools.style.top = `${this.top.offsetHeight}px`;
+  /** Docks the sidebar on wide screens, or folds it into a rail; true if that changed. */
+  setLayout(w: number): boolean {
+    const docked = w >= DOCK_MIN_WIDTH;
+    if (docked === this.docked) return false;
+    this.docked = docked;
+    this.overlay = false;
+    this.applySections();
     return true;
   }
 
-  /** Keeps the zoom buttons in the middle of the free area on the right. */
+  /** Space taken by the bars, so the map can keep clear of them. */
+  insets(): { top: number; bottom: number; left: number } {
+    // On narrow screens the sidebar opens over the map, so only the rail counts.
+    const rail = parseFloat(getComputedStyle(this.root).getPropertyValue('--rail')) || 54;
+    const left = this.docked ? this.sidebar.offsetWidth : rail;
+    return { top: this.top.offsetHeight, bottom: this.statsBar.offsetHeight + 6, left };
+  }
+
+  /** Keeps the zoom buttons in the free area on the right. */
   placeZoom(top: number, bottom: number): void {
     this.zoomBox.style.top = `${top}px`;
     this.zoomBox.style.bottom = `${bottom}px`;
   }
 
-  toggleOptions(force?: boolean): void {
-    this.options.hidden = force === undefined ? !this.options.hidden : !force;
-    this.optionsBtn.classList.toggle('on', !this.options.hidden);
+  /** Moves the stats strip up when the height profile takes the bottom of the screen. */
+  placeStats(bottom: number): void {
+    this.statsBar.style.bottom = `${bottom}px`;
   }
 
-  get optionsOpen(): boolean {
-    return !this.options.hidden;
+  /** True while the sidebar is open over the map (narrow screens). */
+  get overlayOpen(): boolean {
+    return !this.docked && this.overlay;
   }
+
+  closeOverlay(): void {
+    if (!this.overlayOpen) return;
+    this.overlay = false;
+    this.applySections();
+  }
+
+  /** "O": open or close the sidebar section (and, on narrow screens, the overlay). */
+  toggleSidebar(): void {
+    if (this.docked) this.toggleSection(this.open >= 0 ? this.open : 0);
+    else {
+      this.overlay = !this.overlay;
+      if (this.overlay && this.open < 0) this.open = 0;
+      this.applySections();
+    }
+  }
+
+  /** Opens a section (e.g. Draw when switching modes) without closing it if it's open. */
+  showSection(i: number): void {
+    if (this.open === i && (this.docked || this.overlay)) return;
+    this.open = i;
+    if (!this.docked) this.overlay = true;
+    this.applySections();
+  }
+
+  /** The open section (-1 = none), to remember between visits. */
+  get openSection(): number {
+    return this.open;
+  }
+
+  private toggleSection(i: number): void {
+    if (!this.docked && !this.overlay) {
+      this.overlay = true;
+      this.open = i;
+    } else if (this.open === i) {
+      this.open = -1;
+      if (!this.docked) this.overlay = false;
+    } else this.open = i;
+    this.applySections();
+  }
+
+  private applySections(): void {
+    this.root.classList.toggle('docked', this.docked);
+    this.root.classList.toggle('rail', !this.docked);
+    this.sidebar.classList.toggle('open', this.docked || this.overlay);
+    this.sections.forEach((s, i) => s.root.classList.toggle('expanded', i === this.open));
+  }
+
+  // -------------------------------------------------------------- state
 
   setInk(left: number, out = false): void {
     const pct = Math.max(0, Math.min(1, left));
     this.inkFill.style.width = `${(pct * 100).toFixed(1)}%`;
-    this.inkValue.textContent = fmt(STR.editor.inkLeft, { pct: Math.round(pct * 100) });
+    const t = fmt(STR.editor.inkLeft, { pct: Math.round(pct * 100) });
+    if (this.inkValue.textContent !== t) this.inkValue.textContent = t;
     this.inkBox.classList.toggle('low', pct < 0.15);
     this.inkBox.classList.toggle('out', out);
   }
@@ -262,30 +560,85 @@ export class EditorUI {
 
   setMessage(text: string, kind: MessageKind = 'info'): void {
     if (this.message.textContent !== text) this.message.textContent = text;
-    this.message.className = `message ${kind}`;
+    const cls = `message ${kind}`;
+    if (this.message.className !== cls) this.message.className = cls;
   }
 
-  setState(s: {
-    canUndo: boolean;
-    canRedo: boolean;
-    canRace: boolean;
-    mode: EditorMode;
-    smoothing: SmoothingLevel;
-    snap: boolean;
-    soft: boolean;
-    options: TrackOptions;
-    name: string;
-  }): void {
+  setState(s: EditorViewState): void {
+    const S = STR.sidebar;
+    const c = this.ctl;
+    const o = s.options;
     this.undoBtn.disabled = !s.canUndo;
     this.redoBtn.disabled = !s.canRedo;
     this.raceBtn.disabled = !s.canRace;
-    this.mode.set(s.mode);
-    this.smoothing.set(s.smoothing);
-    this.snap.checked = s.snap;
-    this.soft.checked = s.soft;
-    this.walls.checked = s.options.walls;
-    this.banking.set(String(s.options.banking) as '0' | '1' | '2');
-    this.theme.set(s.options.theme);
+    c.mode.set(s.mode);
+    c.heightTools.hidden = s.mode !== 'height';
+    c.smoothing.set(s.smoothing);
+    c.snap.checked = s.snap;
+    c.soft.checked = s.soft;
+    c.width.set(o.width);
+    c.terrain.set(s.stats?.terrain ?? 'flat');
+    c.banking.set(o.banking);
+    c.laps.set(o.laps);
+    c.pits.set(o.pits);
+    c.pitsNote.hidden = !s.pitsNoRoom;
+    c.kerbs.set(o.kerbs);
+    c.runoff.set(o.runoff);
+    c.barrier.set(o.walls ? o.barrier : 'none');
+    c.theme.set(o.theme);
+    c.time.set(o.time);
+    c.trees.set(o.trees);
+    c.graphics.set(s.display.graphics);
+    c.units.set(s.display.units);
+    c.minimap.checked = s.display.minimap;
+    c.cornerLabels.checked = s.display.cornerLabels;
     if (document.activeElement !== this.name) this.name.value = s.name;
+
+    // Section summaries, as in "1.36 km · 12 m wide · terrain flat".
+    const st = s.stats;
+    const modeName = s.mode === 'draw' ? STR.editor.modeDraw : s.mode === 'dots' ? STR.editor.modeDots : STR.editor.modeHeight;
+    const summaries = [
+      s.mode === 'draw' ? fmt(S.sum.draw, { mode: modeName, smoothing: STR.editor.smoothing[s.smoothing] }) : modeName,
+      fmt(S.sum.shape, { len: st ? (st.length / 1000).toFixed(2) : '—', width: o.width, terrain: S.terrains[st?.terrain ?? 'flat'].toLowerCase() }),
+      fmt(S.sum.corners, { n: st?.corners ?? 0, banking: S.bankingSum[o.banking] }),
+      fmt(S.sum.start, { laps: o.laps, pits: o.pits ? (s.pitsNoRoom ? S.pitsNoRoomShort : S.pitsOn) : S.pitsOff }),
+      fmt(S.sum.edges, { kerbs: S.kerbStyles[o.kerbs], runoff: S.runoffs[o.runoff], barrier: o.walls ? S.barriers[o.barrier] : S.noBarriers }),
+      fmt(S.sum.world, { theme: STR.editor.themes[o.theme], time: S.times[o.time], trees: S.treeLevels[o.trees] }),
+      fmt(S.sum.display, { graphics: S.graphicsLevels[s.display.graphics], units: S.unitNames[s.display.units] }),
+    ];
+    summaries.forEach((t, i) => {
+      const el = this.sections[i].summary;
+      if (el.textContent !== t) el.textContent = t;
+    });
+
+    // Corner list (rebuilt only when it changes).
+    const key = s.corners.map((k) => `${k.dir}${Math.round(k.radius)}/${Math.round(k.bank)}`).join(',');
+    if (key !== this.cornerKey) {
+      this.cornerKey = key;
+      c.cornerList.replaceChildren(
+        ...(s.corners.length
+          ? s.corners.map((k, i) =>
+              h(
+                'button',
+                { class: 'corner-row', 'data-corner': String(i) },
+                h('span', { class: 'corner-num', text: String(i + 1) }),
+                h('span', { text: fmt(S.cornerRow, { dir: k.dir === 'L' ? S.left : S.right, r: Math.round(k.radius), bank: Math.round(k.bank) }) }),
+              ),
+            )
+          : [h('p', { class: 'help', text: S.noCorners })]),
+      );
+    }
+
+    // Stats strip.
+    const v = this.statCells;
+    const set = (el: HTMLElement, t: string) => {
+      if (el.textContent !== t) el.textContent = t;
+    };
+    set(v.length, st ? `${(st.length / 1000).toFixed(2)} km` : '—');
+    set(v.corners, st ? String(st.corners) : '—');
+    set(v.straight, st ? `${Math.round(st.longestStraight)} m` : '—');
+    set(v.gradient, st ? `${st.maxGradient.toFixed(1)}%` : '—');
+    set(v.elevation, st ? `${st.elevation.toFixed(1)} m` : '—');
+    set(v.radius, st && Number.isFinite(st.tightestRadius) ? `${Math.round(st.tightestRadius)} m` : '—');
   }
 }

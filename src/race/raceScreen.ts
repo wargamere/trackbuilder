@@ -10,6 +10,7 @@ import { RACE } from '../config/race.ts';
 import { STR, fmt } from '../config/strings.ts';
 import { FixedStep } from '../core/fixedStep.ts';
 import type { GameContext, Screen } from '../core/screen.ts';
+import { settings } from '../core/settings.ts';
 import { CAPS, prefersTouchControls } from '../platform/platform.ts';
 import { platform } from '../platform/services.ts';
 import { writeHashCode } from '../platform/web.ts';
@@ -104,6 +105,8 @@ export class RaceScreen implements Screen {
   enter(): void {
     const t = this.game.track;
     this.game.ui.append(this.hud.root, this.pauseMenu.root);
+    this.hud.showMinimap(settings().minimap);
+    this.game.view3d?.setQuality(settings().graphics);
     this.hud.setTrackInfo(
       fmt(STR.race.trackInfo, { name: t.def.name, len: Math.round(t.center.length), mult: t.ink.multiplier.toFixed(2) }),
     );
@@ -163,7 +166,8 @@ export class RaceScreen implements Screen {
     if (CAPS.links) writeHashCode(encodeTrack(def.name, def.control, def.options));
     car.placeAt(-8);
     const rec = this.game.records.get(this.game.track.def.id);
-    this.session = new RaceSession(this.game.track.center.length, rec.best);
+    const t = this.game.track;
+    this.session = new RaceSession(t.center.length, rec.best, t.options.laps, t.center.width);
     this.ghost = rec.ghost;
     if (rec.author === undefined && this.author?.id !== def.id) this.author = { id: def.id, lap: new AuthorLap(this.game.track) };
     this.ghostIndex = -1;
@@ -421,7 +425,7 @@ export class RaceScreen implements Screen {
 
     this.rig.update(v.camera, this.view, dt);
     this.placeGhostLabel(pose, v.camera);
-    this.hud.minimap.draw(this.game.track, this.view, pose);
+    if (settings().minimap) this.hud.minimap.draw(this.game.track, this.view, pose);
     this.measureAuthor();
     v.render();
     this.hud.setSpeed(this.view.speed);

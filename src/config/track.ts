@@ -10,6 +10,7 @@ export const WORLD = {
 } as const;
 
 export const TRACK = {
+  /** Default road width; each track can be narrow, normal or wide (TrackOptions.width). */
   roadWidth: 12,
   /** Spacing of the final evenly sampled centreline. */
   centerSpacing: 2.5,
@@ -19,8 +20,8 @@ export const TRACK = {
   quantize: 0.5,
   /** Corners tighter than this radius are rejected (the car can't get round). */
   minRadius: 4.5,
-  /** Centres of two unrelated parts of the track must be at least this far apart. */
-  minSeparation: 13,
+  /** Centres of two unrelated parts of the track must be at least the road width plus this apart. */
+  separationMargin: 1,
   /** The track may cross itself (a flat crossroads) if the roads meet at least this steeply. */
   minCrossingAngle: (35 * Math.PI) / 180,
   /** ...and the start line must be at least this far (along the track) from any crossing. */
@@ -44,8 +45,8 @@ export const TRACK = {
   /** Roads crossing at different heights need this much clearance to be a bridge; closer heights must be level. */
   bridgeClearance: 6,
   levelCrossingTolerance: 1,
-  /** Barrier distance from the centre line, and height. */
-  wallOffset: 6 + 1.6 + 1.2,
+  /** Barriers stand this far beyond the kerb's outer edge (so road half-width + kerb + this). */
+  wallGap: 1.2,
   wallHeight: 0.95,
   /** The road counts as a raised deck (bridge) when it's this far above the ground below. */
   deckClearance: 1.2,
@@ -53,14 +54,60 @@ export const TRACK = {
 
 /** Per-track options, stored with the track. */
 export type ThemeId = 'meadow' | 'desert' | 'snow';
+export type RoadWidth = 10 | 12 | 15;
+export type KerbStyle = 'raised' | 'flat' | 'none';
+export type RunoffId = 'grass' | 'gravel' | 'tarmac';
+export type BarrierStyle = 'concrete' | 'tyres';
+export type TimeOfDay = 'day' | 'sunset';
+export type LapCount = 1 | 3 | 5;
+export type TreeDensity = 'normal' | 'sparse' | 'dense';
 export interface TrackOptions {
   /** 0 = flat corners, 1 = banked, 2 = steeply banked. */
   banking: 0 | 1 | 2;
-  /** Concrete barriers along both edges (raised decks always get guard rails). */
+  /** Barriers along both edges (raised decks always get guard rails). */
   walls: boolean;
   theme: ThemeId;
+  /** Road width (m). */
+  width: RoadWidth;
+  /** Kerbs on the outside of corners: raised (a bump), flat (painted), or none. */
+  kerbs: KerbStyle;
+  /** What's beside the road: grass, gravel traps (very slow) or tarmac run-off (no penalty). */
+  runoff: RunoffId;
+  /** What the barriers look like. */
+  barrier: BarrierStyle;
+  /** Pit building and garages beside the start straight. */
+  pits: boolean;
+  time: TimeOfDay;
+  /** Laps per race. */
+  laps: LapCount;
+  /** How much scenery (trees, cacti, rocks) there is. */
+  trees: TreeDensity;
 }
-export const DEFAULT_OPTIONS: TrackOptions = { banking: 1, walls: true, theme: 'meadow' };
+export const DEFAULT_OPTIONS: TrackOptions = {
+  banking: 1,
+  walls: true,
+  theme: 'meadow',
+  width: 12,
+  kerbs: 'raised',
+  runoff: 'grass',
+  barrier: 'concrete',
+  pits: true,
+  time: 'day',
+  laps: 3,
+  trees: 'normal',
+};
+
+/** Choices for each option, in the order the track code stores them (the first is the default). */
+export const OPTION_CHOICES = {
+  width: [12, 10, 15],
+  kerbs: ['raised', 'flat', 'none'],
+  runoff: ['grass', 'gravel', 'tarmac'],
+  barrier: ['concrete', 'tyres'],
+  pits: [true, false],
+  time: ['day', 'sunset'],
+  laps: [3, 1, 5],
+  trees: ['normal', 'sparse', 'dense'],
+} as const;
 
 /**
  * Freehand smoothing levels: how much hand jitter is filtered out (Taubin

@@ -32,11 +32,13 @@ src/
   editor/     drawing.ts (editor screen + input), smoothing.ts, validation.ts,
               pipeline.ts (stroke -> track), render2d.ts, viewport.ts (zoom/pan),
               pen.ts (lazy pen), splice.ts (redraw a section), heights.ts
-              (soft editing, hills), profile.ts (height profile graph)
+              (soft editing, hills), profile.ts (height profile graph),
+              transform.ts (resize / rotate / mirror), preview.ts (3D view)
   track/      spline.ts (centripetal Catmull-Rom -> evenly spaced centre line),
               corners.ts, ink.ts, track.ts (TrackDef/Track), samples.ts,
               mesh.ts (road ribbon, kerbs, barriers, bridge decks), surface.ts
-              (terrain, decks, barrier and pillar placement), ground.ts (ground
+              (terrain, decks, barrier and pillar placement), pits.ts (pit
+              layout), stats.ts (stats strip numbers), ground.ts (ground
               under a car), scenery.ts (trees, cones, gantry), code.ts (track
               codes), library.ts (saved tracks)
   render/     view3d.ts (renderer, sky, ground, hills, lights), textures.ts
@@ -61,7 +63,15 @@ Everything static is merged or instanced, which comes to about 15 draw calls for
 
 **Elevation.** Every dot has a height (0–40 m, in 0.5 m steps) and the spline carries it round the loop. The road banks into corners (off / 7° / 15°, scaled by how tight the corner is). `track/surface.ts` builds the ground from the road: a 5 m heightfield that follows the road, with the shoulders tilted like the road, and fades back to flat 55 m away. Where two stretches are near each other the lower one wins, so the ground runs under bridges. A final pass pushes the ground down anywhere it would show through the road. Road above the ground there becomes a **bridge deck** with concrete sides, rails and pillars, and no pillar stands on a road below.
 
-**Barriers** (optional per track, always on decks) run along both edges, red and white on top, with gaps where another stretch at the same level comes through.
+**Barriers** (optional per track, always on decks) run along both edges, with gaps where another stretch at the same level comes through. They are either concrete (red and white on top) or tyre walls.
+
+**Track edges and width.** Roads are 10, 12 or 15 m wide; the barriers, kerbs, run-off, gantry and the "too close" check all follow the width.
+- Kerbs are raised (a bump), flat (painted) or off.
+- Run-off out to the barrier line is grass, gravel (slower than grass) or tarmac (no penalty). Beyond it is always grass.
+
+**Pits.** A white pit building with up to ten team-coloured garages and a pit lane stands behind the barrier beside the start straight, on whichever side has room. It needs about 30 m of straight either side of the start line; otherwise the editor says so. The ground under it is levelled, trees keep clear, and the car can't drive through it.
+
+**Sunset** recolours the sky, fog and light and drops the sun low in the west.
 
 **Scenery themes:** Meadow (pines and broadleaf trees), Desert (cacti and rocks) and Snow (snowy pines). Each recolours the sky, fog, light, hills and ground texture.
 
@@ -81,13 +91,31 @@ Physics runs at a fixed 120 Hz from an accumulator (`core/fixedStep.ts`), and re
 
 ### Track editor
 
-A track is a closed loop of **dots** with a smooth spline through them (`TrackDef.control`), plus a few options, and that is the only thing stored.
+A track is a closed loop of **dots** with a smooth spline through them (`TrackDef.control`), plus its options, and that is the only thing stored.
+
+**Layout.**
+- **Sidebar:** seven numbered sections, each with a one-line summary, plus the Race button. On screens 1100 px or wider it is docked; on narrower ones it folds into a rail of numbers that opens over the map.
+- **Top bar:** undo, redo, clear, 3D view, the message line, the ink meter and the multiplier.
+- **Stats strip** along the bottom: length, corners, longest straight, max gradient, elevation change and tightest radius.
+- **On the map:** numbered corners with their bank angle, the pit building, and the run-off colour.
+
+| Section | What's in it |
+|---|---|
+| 1 Draw | Freehand / Dots / Height tool, hill tools in Height mode, freehand smoothing, snap to grid, soft editing, sample tracks |
+| 2 Size & shape | Road width (10 / 12 / 15 m), smaller / bigger / rotate / mirror the whole track, terrain (flat / rolling / hilly random hills, smooth) |
+| 3 Corners | Banking (off / normal / steep), list of numbered corners with direction, radius and bank (tap to zoom to one) |
+| 4 Start & pits | Laps per race (1 / 3 / 5), pit building on/off, reverse direction |
+| 5 Track edges | Kerbs (raised / flat / none), run-off (grass / gravel / tarmac), barriers (none / concrete / tyres) |
+| 6 Scenery & world | Meadow / Desert / Snow, day / sunset, few / normal / lots of trees |
+| 7 Display | Graphics full / fast, km/h or mph, minimap in the race, corner numbers on the map (player settings, not part of the track) |
+
+The **3D view** (V, or the ◈ button) shows the track being edited from an orbiting camera. Drag to look around and scroll or pinch to zoom. Esc goes back to the editor with the edit untouched, and Enter races it.
 
 - **Draw mode:**
   - draw one stroke; if you stop short of the start, the loop closes itself;
   - the pen is "lazy": the ink trails the pointer on a short string, so hand wobble never reaches the paper. The string is longer with more smoothing, and a little longer for fingers;
   - **redraw part of a track:** start a line on the road and end it on the road. The stretch between is replaced (shown in red while drawing), and the other dots don't move. Drawing against the direction of travel replaces the stretch behind;
-  - Smoothing (in Options) sets how much wobble is removed and how tight a drawn corner may stay: Sharp 6 m, Normal 10 m, Smooth 22 m.
+  - Smoothing (sidebar, section 1) sets how much wobble is removed and how tight a drawn corner may stay: Sharp 6 m, Normal 10 m, Smooth 22 m.
 - **Dots mode:** click to place dots, then click the first dot (or press Enter) to close the loop. Click the road to insert a dot.
 - **Height mode:**
   - drag dots up and down on the map, or by their handles in the height profile along the bottom (amber where the road is as steep as allowed; crossings marked grey for level, blue for bridges);
@@ -100,7 +128,7 @@ A track is a closed loop of **dots** with a smooth spline through them (`TrackDe
   - drag the start flag to move the start line;
   - **zoom and pan:** mouse wheel or pinch to zoom (up to 8×), drag with two fingers, the middle button or Space held to move around, and buttons for +, − and fit (+ / − / F);
   - Undo (Z) and Redo (Y / Shift+Z), Clear (C), switch mode (M), Reverse direction (R);
-  - Options (O): name, smoothing, snap to grid (G), soft editing, scenery, banking (off / normal / steep), barriers, sample tracks.
+  - O opens or closes the sidebar section; the track name is at the top of the sidebar.
 - **Validation runs live** and marks the problem spot:
   - too short or too long (out of ink);
   - corner tighter than 4.5 m;
@@ -132,8 +160,8 @@ A **minimap** in the top-right corner shows the track (bridges drawn on top), yo
 
   If storage itself is blocked (private mode, sandboxed iframe), values live in memory for the session.
 
-  What's saved: your tracks, best lap and splits, best score and the best-lap ghost per track (40 most recent tracks), and settings (sound, camera, editor mode, smoothing, snap). Ghosts are stored at 30 samples/s as int16 (5 cm), about 11 KB per 45 s lap.
-- **Track codes** (`track/code.ts`): `IC1.` + base64url of the dots, delta-encoded as zig-zag varints in 0.5 m steps, plus their heights, one byte of options (banking, barriers, scenery), the name and a checksum. That's about 100–250 characters. Codes from before heights existed still load. Pasting a damaged code gives a clear error.
+  What's saved: your tracks, best lap and splits, best score and the best-lap ghost per track (40 most recent tracks), and settings (sound, camera, editor mode, smoothing, snap, display settings, the open sidebar section). Ghosts are stored at 30 samples/s as int16 (5 cm), about 11 KB per 45 s lap.
+- **Track codes** (`track/code.ts`): `IC1.` + base64url of the dots, delta-encoded as zig-zag varints in 0.5 m steps, plus their heights, the options as a varint (banking, barriers, scenery, width, kerbs, run-off, barrier style, pits, time of day, laps, trees), the name and a checksum. That's about 100–250 characters. Older codes (v1 without heights, v2 with three options) still load with defaults for everything newer. Pasting a damaged code gives a clear error.
   - The web build also puts the current track's code in the URL hash (`#track=…`), so the address bar is a share link, and has a "Copy link" button.
   - The CrazyGames build never touches the URL or shows links.
 - **My tracks** (Pause → My tracks, Results, editor Options):
@@ -184,3 +212,4 @@ Tested against the real SDK in its `local` mode (localhost): the SDK's own log s
 - [x] Phase 5: track library, sharing, audio
 - [x] Phase 6: CrazyGames SDK
 - [x] Elevation, banking, barriers, bridges, scenery themes; editor zoom/pan, lazy pen, section redraw, soft editing and Height mode; minimap and medals
+- [x] Editor sidebar (7 sections), stats strip, numbered corners, road width, kerb / run-off / barrier styles, pits, sunset, laps, tree density, display settings, 3D view

@@ -1,4 +1,3 @@
-import { TRACK } from '../config/track.ts';
 import { wrap } from '../core/math.ts';
 import { overpasses } from '../editor/render2d.ts';
 import type { Track } from '../track/track.ts';
@@ -75,7 +74,7 @@ export class Minimap {
       }
       g.stroke();
     };
-    const road = Math.max(3, TRACK.roadWidth * this.scale);
+    const road = Math.max(3, track.center.width * this.scale);
     g.strokeStyle = 'rgba(255, 255, 255, 0.9)';
     g.lineWidth = road + 3;
     run(0, n);

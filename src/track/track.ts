@@ -36,7 +36,7 @@ export const trackOptions = (def: Pick<TrackDef, 'options'>): TrackOptions => ({
 
 export function buildTrack(def: TrackDef): Track {
   const options = trackOptions(def);
-  const center = buildCenterline(def.control, options.banking);
+  const center = buildCenterline(def.control, options.banking, undefined, options.width);
   const tightCorners = findCorners(center, INK.cornerRadius, INK.cornerMinTurn);
   const kerbs = findCorners(center, TRACK.kerbRadius, TRACK.kerbMinTurn);
   return { def, options, center, tightCorners, kerbs, ink: inkStats(center.length, tightCorners) };

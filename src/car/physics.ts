@@ -1,7 +1,7 @@
 import { HANDLING } from '../config/handling.ts';
 import { clamp } from '../core/math.ts';
-import { TRACK } from '../config/track.ts';
 import { locatorFor, type TrackLocator } from '../track/locator.ts';
+import { pitLayout } from '../track/pits.ts';
 import { placeTrees } from '../track/placement.ts';
 import { leftOf, sampleAt } from '../track/spline.ts';
 import { groundPose } from '../track/ground.ts';
@@ -42,7 +42,7 @@ export class CarState {
   speed = 0;
   /** Sideways sliding speed, m/s. */
   slip = 0;
-  /** 0 = all wheels on road, 0.5 = one side on grass, 1 = all on grass. */
+  /** How rough the ground under the wheels is: 0 on the road, 0.5 one side on grass, 1 all on grass (more on gravel). */
   grass = 0;
   longAccel = 0;
   latAccel = 0;
@@ -83,6 +83,22 @@ export function lerpState(a: CarState, b: CarState, t: number, out: CarState): C
   out.y = a.y + (b.y - a.y) * t;
   out.pitch = a.pitch + (b.pitch - a.pitch) * t;
   out.roll = a.roll + (b.roll - a.roll) * t;
+  return out;
+}
+
+/** The pit building as a row of round obstacles (only reachable where there are no barriers). */
+function pitObstacles(track: Track): { x: number; z: number; r: number }[] {
+  const pits = pitLayout(track);
+  if (!pits) return [];
+  const c = track.center;
+  const out: { x: number; z: number; r: number }[] = [];
+  const mid = (pits.building[0] + pits.building[1]) / 2;
+  const r = (pits.building[1] - pits.building[0]) / 2;
+  for (let s = pits.from + r / 2; s <= pits.to - r / 2 + 0.01; s += r * 0.8) {
+    const { p, t } = sampleAt(c, s);
+    const l = leftOf(t);
+    out.push({ x: p.x + l.x * mid * pits.side, z: p.y + l.y * mid * pits.side, r });
+  }
   return out;
 }
 
@@ -142,7 +158,7 @@ export class CarPhysics {
     this.track = track;
     this.locator = locatorFor(track);
     this.surf = surfaceFor(track);
-    this.obstacles = new ObstacleGrid(placeTrees(track).map((t) => ({ x: t.x, z: t.z, r: t.radius })));
+    this.obstacles = new ObstacleGrid([...placeTrees(track).map((t) => ({ x: t.x, z: t.z, r: t.radius })), ...pitObstacles(track)]);
     this.placeAt(-8);
   }
 
@@ -187,11 +203,18 @@ export class CarPhysics {
     st.lateral = pos.lateral;
     const edgeL = this.locator.edge(pos.index, 1);
     const edgeR = -this.locator.edge(pos.index, -1);
-    const offRoad = (w: number) => (w > edgeL || w < edgeR ? 1 : 0);
-    const grass = (offRoad(pos.lateral + H.halfTrack) + offRoad(pos.lateral - H.halfTrack)) / 2;
-    const grip = 1 + (H.grass.gripFactor - 1) * grass;
-    const speedF = 1 + (H.grass.speedFactor - 1) * grass;
-    const accelF = 1 + (H.grass.accelFactor - 1) * grass;
+    // Off the road, the run-off surface reaches out to the barrier line; beyond it is grass.
+    const runoffEdge = this.track.center.wallOffset + 1.5;
+    const runoff = H[this.track.options.runoff];
+    const surfaceAt = (w: number) => (w <= edgeL && w >= edgeR ? H.road : Math.abs(w) <= runoffEdge ? runoff : H.grass);
+    const a = surfaceAt(pos.lateral + H.halfTrack);
+    const b = surfaceAt(pos.lateral - H.halfTrack);
+    /** Rough-ground amount (for sound and camera shake), 0 on tarmac. */
+    const grass = (a.rough + b.rough) / 2;
+    const grip = (a.gripFactor + b.gripFactor) / 2;
+    const speedF = (a.speedFactor + b.speedFactor) / 2;
+    const accelF = (a.accelFactor + b.accelFactor) / 2;
+    const surfDrag = (a.drag + b.drag) / 2;
 
     // --- steering: lock shrinks with speed; wheels turn at a limited rate
     const throttle = clamp(inp.throttle, 0, 1);
@@ -204,7 +227,7 @@ export class CarPhysics {
 
     // --- longitudinal: driving force, then resistances that can only slow the car
     let drive = 0;
-    let resist = H.rollingDrag + H.grass.drag * grass + H.aeroDrag * vf * vf;
+    let resist = H.rollingDrag + surfDrag + H.aeroDrag * vf * vf;
     if (throttle > 0) {
       if (vf >= -0.5) drive += H.engineAccel * accelF * throttle * Math.max(0, 1 - vf / (H.maxSpeed * speedF));
       else resist += H.brakeDecel * throttle;
@@ -226,7 +249,7 @@ export class CarPhysics {
     const c = this.track.center;
     const t = c.tangents[pos.index];
     const along = Math.sign(cos * t.x + sin * t.y) || 1;
-    const onRoad = Math.abs(pos.lateral) <= TRACK.wallOffset;
+    const onRoad = Math.abs(pos.lateral) <= this.track.center.wallOffset;
     const bank = onRoad ? c.bank[pos.index] * along : 0;
     const bankAssist = G * Math.sin(Math.abs(bank)) * (Math.sign(bank) === Math.sign(st.yawRate) ? 1 : -0.5);
     const latMax = Math.max(H.maxLateralAccel * grip * 0.5, H.maxLateralAccel * grip + bankAssist * H.bankGripFactor);
@@ -265,7 +288,7 @@ export class CarPhysics {
   /** Slope along the car's heading at its position (road grade on the road, terrain elsewhere). */
   private slopeAhead(cos: number, sin: number, i: number, lateral: number): number {
     const c = this.track.center;
-    if (Math.abs(lateral) <= TRACK.wallOffset) {
+    if (Math.abs(lateral) <= this.track.center.wallOffset) {
       const t = c.tangents[i];
       return c.grade[i] * (cos * t.x + sin * t.y);
     }
@@ -291,7 +314,7 @@ export class CarPhysics {
     const pos = this.locator.locate({ x: st.x, y: st.z }, st.trackIndex, 6);
     const side = pos.lateral >= 0 ? 1 : -1;
     const flags = side > 0 ? this.surf.wallL : this.surf.wallR;
-    const limit = TRACK.wallOffset - H.halfWidth;
+    const limit = this.track.center.wallOffset - H.halfWidth;
     const excess = Math.abs(pos.lateral) - limit;
     // Only within a sensible band: a car that is already far outside (through a gap) isn't pulled back.
     if (excess <= 0 || excess > 2.5 || !flags[pos.index]) return;

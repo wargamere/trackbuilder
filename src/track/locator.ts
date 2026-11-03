@@ -30,8 +30,10 @@ export class TrackLocator {
     this.center = track.center;
     const n = track.center.points.length;
     this.kerbSide = new Int8Array(n);
-    for (const k of track.kerbs) {
-      for (let j = -3; j < k.count + 3; j++) this.kerbSide[wrap(k.start + j, n)] = k.sign > 0 ? 1 : -1;
+    if (track.options.kerbs !== 'none') {
+      for (const k of track.kerbs) {
+        for (let j = -3; j < k.count + 3; j++) this.kerbSide[wrap(k.start + j, n)] = k.sign > 0 ? 1 : -1;
+      }
     }
   }
 
@@ -68,7 +70,7 @@ export class TrackLocator {
     };
     if (hint >= 0) scan(hint - window, window * 2 + 1);
     // Off the local stretch (or no hint): search everything.
-    if (best < 0 || bestD2 > (TRACK.roadWidth * 2) ** 2) scan(0, n);
+    if (best < 0 || bestD2 > (this.center.width * 2) ** 2) scan(0, n);
     const c = this.center;
     const a = c.points[best];
     const l = leftOf(c.tangents[best]);
@@ -79,7 +81,7 @@ export class TrackLocator {
 
   /** How far the road (including any kerb) reaches on one side at sample `i`. */
   edge(i: number, side: 1 | -1): number {
-    const hw = TRACK.roadWidth / 2;
+    const hw = this.center.width / 2;
     return this.kerbSide[i] === side ? hw + TRACK.kerbWidth : hw + 0.2;
   }
 }

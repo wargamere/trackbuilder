@@ -1,6 +1,7 @@
 import { TRACK, WORLD } from '../config/track.ts';
 import { wrap, type Dot, type Vec2 } from '../core/math.ts';
-import { leftOf } from '../track/spline.ts';
+import { pitLayout } from '../track/pits.ts';
+import { leftOf, sampleAt } from '../track/spline.ts';
 import type { Track } from '../track/track.ts';
 import { crossingKind, crossingsOf } from './validation.ts';
 
@@ -28,12 +29,12 @@ export const PAPER = {
 } as const;
 
 /** Fits the world rectangle into the free part of the screen. */
-export function fitView(w: number, h: number, top: number, bottom: number): View {
+export function fitView(w: number, h: number, top: number, bottom: number, left = 0, right = 0): View {
   const margin = Math.max(8, Math.min(w, h) * 0.025);
-  const availW = w - margin * 2;
+  const availW = w - left - right - margin * 2;
   const availH = h - top - bottom - margin * 2;
   const scale = Math.max(0.1, Math.min(availW / WORLD.width, availH / WORLD.height));
-  return { scale, ox: w / 2, oy: top + margin + availH / 2 };
+  return { scale, ox: left + margin + availW / 2, oy: top + margin + availH / 2 };
 }
 
 export const toScreen = (v: View, p: Vec2): Vec2 => ({ x: v.ox + p.x * v.scale, y: v.oy + p.y * v.scale });
@@ -144,7 +145,7 @@ export function overpasses(track: Track): { from: number; count: number }[] {
   for (const x of crossingsOf(c)) {
     if (crossingKind(x.dh) !== 'bridge') continue;
     const upper = x.dh > 0 ? x.j : x.i;
-    const half = Math.ceil((TRACK.roadWidth / Math.max(0.3, Math.sin(x.angle)) + 10) / c.spacing);
+    const half = Math.ceil((c.width / Math.max(0.3, Math.sin(x.angle)) + 10) / c.spacing);
     o.push({ from: upper - half, count: half * 2 + 1 });
   }
   overpassCache.set(track, o);
@@ -167,7 +168,7 @@ function strokeRun(ctx: CanvasRenderingContext2D, v: View, pts: readonly Vec2[],
 /** The asphalt of samples [from, from + count], coloured by height if asked. */
 function paintRoad(ctx: CanvasRenderingContext2D, v: View, track: Track, s: RoadStyle, from: number, count: number): void {
   const c = track.center;
-  const w = TRACK.roadWidth * v.scale;
+  const w = c.width * v.scale;
   ctx.strokeStyle = s.edge;
   ctx.lineWidth = w;
   strokeRun(ctx, v, c.points, from, count);
@@ -188,7 +189,7 @@ function paintRoad(ctx: CanvasRenderingContext2D, v: View, track: Track, s: Road
 /** Thin barrier lines just outside the kerbs. */
 function drawWallLines(ctx: CanvasRenderingContext2D, v: View, track: Track): void {
   const c = track.center;
-  const off = TRACK.wallOffset;
+  const off = c.wallOffset;
   ctx.strokeStyle = 'rgba(40, 44, 52, 0.55)';
   ctx.lineWidth = Math.max(1, 0.5 * v.scale);
   for (const side of [1, -1]) {
@@ -210,16 +211,23 @@ export function drawTrack(ctx: CanvasRenderingContext2D, v: View, track: Track, 
   const s: RoadStyle = { asphalt: PAPER.asphalt, edge: PAPER.edge, arrows: true, heights: false, walls: false, ...style };
   const c = track.center;
   const n = c.points.length;
-  const w = TRACK.roadWidth * v.scale;
+  const w = c.width * v.scale;
   ctx.lineJoin = 'round';
   ctx.lineCap = 'round';
 
+  drawPits(ctx, v, track);
+  if (track.options.runoff !== 'grass') {
+    // Gravel or tarmac run-off out to the barrier line.
+    ctx.strokeStyle = track.options.runoff === 'gravel' ? '#d9c79f' : '#8d939d';
+    ctx.lineWidth = (c.wallOffset + 0.4) * 2 * v.scale;
+    strokeRun(ctx, v, c.points, 0, n);
+  }
   if (s.walls) drawWallLines(ctx, v, track);
   // Kerbs first, so the road covers their inner half.
-  drawKerbs(ctx, v, track);
+  if (track.options.kerbs !== 'none') drawKerbs(ctx, v, track);
   paintRoad(ctx, v, track, s, 0, n);
   if (s.arrows) drawArrows(ctx, v, track);
-  drawStartLine(ctx, v, c.points[0], c.tangents[0]);
+  drawStartLine(ctx, v, c.points[0], c.tangents[0], c.width);
 
   // Bridges: a soft shadow, then the upper road again over the one below.
   ctx.lineCap = 'butt';
@@ -236,7 +244,7 @@ export function drawTrack(ctx: CanvasRenderingContext2D, v: View, track: Track, 
       for (let k = 0; k <= o.count; k++) {
         const i = wrap(o.from + k, n);
         const l = leftOf(c.tangents[i]);
-        const off = (TRACK.roadWidth / 2 + 1.2) * side;
+        const off = (c.width / 2 + 1.2) * side;
         const x = v.ox + (c.points[i].x + l.x * off) * v.scale;
         const y = v.oy + (c.points[i].y + l.y * off) * v.scale;
         if (k === 0) ctx.moveTo(x, y);
@@ -251,7 +259,7 @@ export function drawTrack(ctx: CanvasRenderingContext2D, v: View, track: Track, 
 function drawKerbs(ctx: CanvasRenderingContext2D, v: View, track: Track): void {
   const c = track.center;
   const n = c.points.length;
-  const off = TRACK.roadWidth / 2 + TRACK.kerbWidth * 0.25;
+  const off = c.width / 2 + TRACK.kerbWidth * 0.25;
   ctx.lineWidth = Math.max(2, TRACK.kerbWidth * 1.6 * v.scale);
   ctx.lineCap = 'butt';
   const stripe = 2; // samples per stripe (~5 m)
@@ -279,7 +287,7 @@ function drawKerbs(ctx: CanvasRenderingContext2D, v: View, track: Track): void {
 function drawArrows(ctx: CanvasRenderingContext2D, v: View, track: Track): void {
   const c = track.center;
   const every = Math.max(1, Math.round(70 / c.spacing));
-  const size = Math.max(3, TRACK.roadWidth * 0.22 * v.scale);
+  const size = Math.max(3, c.width * 0.22 * v.scale);
   ctx.strokeStyle = 'rgba(255, 255, 255, 0.55)';
   ctx.lineWidth = Math.max(1.5, size * 0.35);
   for (let i = every; i < c.points.length - every / 2; i += every) {
@@ -295,17 +303,17 @@ function drawArrows(ctx: CanvasRenderingContext2D, v: View, track: Track): void 
 }
 
 /** Chequered start/finish band across the road. */
-export function drawStartLine(ctx: CanvasRenderingContext2D, v: View, p: Vec2, t: Vec2): void {
+export function drawStartLine(ctx: CanvasRenderingContext2D, v: View, p: Vec2, t: Vec2, width: number = TRACK.roadWidth): void {
   const l = leftOf(t);
   const cols = 6;
   const rows = 2;
-  const half = TRACK.roadWidth / 2;
+  const half = width / 2;
   const depth = 1.6; // metres per row
   for (let r = 0; r < rows; r++) {
     for (let k = 0; k < cols; k++) {
       ctx.fillStyle = (r + k) % 2 === 0 ? '#111' : '#fff';
-      const a = -half + (k / cols) * TRACK.roadWidth;
-      const b = -half + ((k + 1) / cols) * TRACK.roadWidth;
+      const a = -half + (k / cols) * width;
+      const b = -half + ((k + 1) / cols) * width;
       const d0 = (r - rows / 2) * depth;
       const d1 = d0 + depth;
       const corner = (side: number, along: number) =>
@@ -463,7 +471,7 @@ export function drawReplaced(ctx: CanvasRenderingContext2D, v: View, track: Trac
   if (count < 1) return;
   ctx.lineCap = 'round';
   ctx.strokeStyle = 'rgba(214, 58, 58, 0.35)';
-  ctx.lineWidth = TRACK.roadWidth * v.scale * 1.3;
+  ctx.lineWidth = c.width * v.scale * 1.3;
   strokeRun(ctx, v, c.points, from, count);
 }
 
@@ -501,4 +509,82 @@ export function drawHeightTags(ctx: CanvasRenderingContext2D, v: View, dots: rea
     ctx.fillStyle = '#1b1b1b';
     ctx.fillText(text, x, y);
   }
+}
+
+/** The pit lane and garages beside the start straight, with a "PIT" label. */
+function drawPits(ctx: CanvasRenderingContext2D, v: View, track: Track): void {
+  const pits = pitLayout(track);
+  if (!pits) return;
+  const c = track.center;
+  const at = (s: number, lat: number) => {
+    const { p, t } = sampleAt(c, s);
+    const l = leftOf(t);
+    return toScreen(v, { x: p.x + l.x * lat * pits.side, y: p.y + l.y * lat * pits.side });
+  };
+  const band = (l0: number, l1: number, fill: string) => {
+    ctx.beginPath();
+    for (let s = pits.from; s <= pits.to + 0.01; s += 2.5) {
+      const q = at(s, l0);
+      if (s === pits.from) ctx.moveTo(q.x, q.y);
+      else ctx.lineTo(q.x, q.y);
+    }
+    for (let s = pits.to; s >= pits.from - 0.01; s -= 2.5) {
+      const q = at(s, l1);
+      ctx.lineTo(q.x, q.y);
+    }
+    ctx.closePath();
+    ctx.fillStyle = fill;
+    ctx.fill();
+  };
+  band(pits.lane[0], pits.lane[1], 'rgba(74, 79, 88, 0.85)');
+  band(pits.building[0], pits.building[1], 'rgba(242, 183, 5, 0.85)');
+  // Garages as dots along the front of the building.
+  ctx.fillStyle = '#7a5a00';
+  const r = Math.max(1.5, 1.4 * v.scale);
+  for (const s of pits.doors) {
+    const q = at(s, pits.building[0] + 2.5);
+    ctx.beginPath();
+    ctx.arc(q.x, q.y, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  const mid = at((pits.from + pits.to) / 2, pits.building[1] + 5 + 6 / v.scale);
+  ctx.font = '800 11px system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#7a5a00';
+  ctx.fillText('PIT', mid.x, mid.y);
+  ctx.textAlign = 'left';
+}
+
+/** Numbered corner markers just outside each corner, with the bank angle underneath. */
+export function drawCornerLabels(ctx: CanvasRenderingContext2D, v: View, track: Track): void {
+  const c = track.center;
+  const r = 10;
+  ctx.font = '800 11px system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  track.kerbs.forEach((k, idx) => {
+    const i = k.apex;
+    const l = leftOf(c.tangents[i]);
+    const side = k.sign > 0 ? 1 : -1; // outside of a right-hander is on the left
+    const off = c.width / 2 + TRACK.kerbWidth + (r + 8) / v.scale;
+    const p = toScreen(v, { x: c.points[i].x + l.x * off * side, y: c.points[i].y + l.y * off * side });
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(27, 58, 138, 0.92)';
+    ctx.fill();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = PAPER.close;
+    ctx.stroke();
+    ctx.fillStyle = '#fff';
+    ctx.fillText(String(idx + 1), p.x, p.y + 0.5);
+    const bank = Math.round((Math.abs(c.bank[i]) * 180) / Math.PI);
+    if (bank > 0) {
+      ctx.fillStyle = PAPER.ink;
+      ctx.font = '700 9px system-ui, sans-serif';
+      ctx.fillText(`${bank}°`, p.x, p.y + r + 7);
+      ctx.font = '800 11px system-ui, sans-serif';
+    }
+  });
+  ctx.textAlign = 'left';
 }

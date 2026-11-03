@@ -2,6 +2,7 @@ import { THEMES } from '../config/themes.ts';
 import { TRACK } from '../config/track.ts';
 import { dist2, wrap, type Vec2 } from '../core/math.ts';
 import { hashString, rng, valueNoise } from '../core/random.ts';
+import { pitLayout } from './pits.ts';
 import { leftOf, type Centerline } from './spline.ts';
 import type { Track } from './track.ts';
 
@@ -29,6 +30,9 @@ function clearOfTrack(c: Centerline, p: Vec2, clearance: number): boolean {
   return true;
 }
 
+/** Scenery density multipliers (TrackOptions.trees). */
+const DENSITY = { sparse: 0.4, normal: 1, dense: 1.8 } as const;
+
 const treeCache = new WeakMap<Track, TreeSpot[]>();
 const coneCache = new WeakMap<Track, Vec2[]>();
 
@@ -39,9 +43,13 @@ export function placeTrees(track: Track): TreeSpot[] {
   const seed = hashString(track.def.id);
   const rand = rng(seed);
   const c = track.center;
-  const clearance = TRACK.wallOffset + 6;
+  const clearance = c.wallOffset + 6;
   const radius = THEMES[track.options.theme].propRadius;
   const step = 15;
+  const density = DENSITY[track.options.trees];
+  // Keep the pit building and lane clear.
+  const pits = pitLayout(track)?.footprint ?? [];
+  const clearOfPits = (x: number, z: number) => pits.every((q) => (q.x - x) ** 2 + (q.y - z) ** 2 > 12 * 12);
   const extentX = 600;
   const extentZ = 420;
   const spots: TreeSpot[] = [];
@@ -52,9 +60,9 @@ export function placeTrees(track: Track): TreeSpot[] {
       const wood = valueNoise(x / 110, z / 110, seed & 0xffff);
       // Thinner beyond the drawable area: those trees are small and fogged anyway.
       const far = Math.abs(x) > 420 || Math.abs(z) > 260 ? 0.5 : 1;
-      const chance = (wood > 0.55 ? 0.7 : wood > 0.42 ? 0.2 : 0.035) * far;
+      const chance = Math.min(0.95, (wood > 0.55 ? 0.7 : wood > 0.42 ? 0.2 : 0.035) * far * density);
       if (rand() > chance) continue;
-      if (!clearOfTrack(c, { x, y: z }, clearance)) continue;
+      if (!clearOfTrack(c, { x, y: z }, clearance) || !clearOfPits(x, z)) continue;
       const kind = wood > 0.5 ? (rand() < 0.75 ? 0 : 1) : rand() < 0.35 ? 0 : 1;
       const scale = 0.75 + rand() * 0.7;
       spots.push({ x, z, scale, rot: rand() * Math.PI * 2, kind, shade: 0.8 + rand() * 0.35, radius: radius[kind] * scale });
@@ -70,7 +78,7 @@ export function placeCones(track: Track): Vec2[] {
   if (cached) return cached;
   const c = track.center;
   const n = c.points.length;
-  const off = TRACK.roadWidth / 2 + TRACK.kerbWidth + 2.2;
+  const off = c.width / 2 + TRACK.kerbWidth + 2.2;
   const spots: Vec2[] = [];
   for (const corner of track.tightCorners) {
     const side = corner.sign > 0 ? 1 : -1;
@@ -78,7 +86,7 @@ export function placeCones(track: Track): Vec2[] {
       const i = wrap(corner.apex + o, n);
       const l = leftOf(c.tangents[i]);
       const p = { x: c.points[i].x + l.x * off * side, y: c.points[i].y + l.y * off * side };
-      if (clearOfTrack(c, p, TRACK.roadWidth / 2 + 1.5)) spots.push(p);
+      if (clearOfTrack(c, p, c.width / 2 + 1.5)) spots.push(p);
     }
   }
   coneCache.set(track, spots);

@@ -2,9 +2,11 @@ import css from './ui/style.css?inline';
 import { audio } from './audio/audio.ts';
 import { STR } from './config/strings.ts';
 import type { GameContext, Screen, ScreenId } from './core/screen.ts';
+import { settings } from './core/settings.ts';
 import { Surface2D } from './core/surface2d.ts';
 import { EditorScreen } from './editor/drawing.ts';
 import { getSampleTrack, trackFromCode } from './editor/pipeline.ts';
+import { PreviewScreen } from './editor/preview.ts';
 import { CAPS, PLATFORM } from './platform/platform.ts';
 import { platform, sdkEventLog } from './platform/services.ts';
 import { installOrientationPrompt, readHashCode } from './platform/web.ts';
@@ -39,6 +41,7 @@ const surface = new Surface2D(canvas2d);
 let view3d: View3D | null = null;
 try {
   view3d = new View3D(canvas3d);
+  view3d.setQuality(settings().graphics);
 } catch (err) {
   console.error('WebGL unavailable', err);
 }
@@ -52,6 +55,7 @@ class Game implements GameContext {
   readonly library = new TrackLibrary();
   lastResult: RunResult | null = null;
   interrupted = false;
+  preview: GameContext['preview'] = null;
   private readonly screens: Partial<Record<ScreenId, Screen>> = {};
   private current: Screen | null = null;
   private currentId: ScreenId | null = null;
@@ -62,6 +66,7 @@ class Game implements GameContext {
     this.screens.editor = new EditorScreen(this);
     this.screens.results = new ResultsScreen(this);
     this.screens.library = new LibraryScreen(this);
+    this.screens.preview = new PreviewScreen(this);
   }
 
   setTrack(track: Track): void {

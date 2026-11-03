@@ -2,8 +2,9 @@ import { BufferGeometry, Color, Float32BufferAttribute, Uint32BufferAttribute, V
 import { TRACK } from '../config/track.ts';
 import { wrap } from '../core/math.ts';
 import { QuadBuilder } from '../render/geom.ts';
-import { leftOf, surfaceY, type Centerline } from './spline.ts';
-import type { TrackSurface } from './surface.ts';
+import { pitLayout } from './pits.ts';
+import { leftOf, sampleAt, surfaceY, type Centerline } from './spline.ts';
+import { terrainHeight, type TrackSurface } from './surface.ts';
 import type { Track } from './track.ts';
 
 /** Height of the road surface above the ground it sits on. */
@@ -16,7 +17,7 @@ export const ROAD_Y = 0.02;
  */
 export function edgeOffsets(c: Centerline): { left: Float32Array; right: Float32Array } {
   const n = c.points.length;
-  const hw = TRACK.roadWidth / 2;
+  const hw = c.width / 2;
   const left = new Float32Array(n).fill(hw);
   const right = new Float32Array(n).fill(hw);
   const win = 3;
@@ -47,7 +48,7 @@ export function edgeOffsets(c: Centerline): { left: Float32Array; right: Float32
  */
 export function buildRoadGeometry(c: Centerline, surf: TrackSurface): { ground: BufferGeometry; deck: BufferGeometry | null } {
   const n = c.points.length;
-  const tiles = Math.max(1, Math.round(c.length / TRACK.roadWidth));
+  const tiles = Math.max(1, Math.round(c.length / c.width));
   const rows = n + 1;
   const pos = new Float32Array(rows * 2 * 3);
   const uv = new Float32Array(rows * 2 * 2);
@@ -95,17 +96,20 @@ const KERB_EXTEND = 3;
 /**
  * Red/white kerbs on the outside edge of every corner in `track.kerbs`, sitting
  * on the (possibly banked, raised) road: road edge -> crown -> outer edge.
+ * Raised kerbs have a crown; flat ones are just painted on.
  */
 export function buildKerbGeometry(track: Track): BufferGeometry | null {
+  if (track.options.kerbs === 'none') return null;
   const c = track.center;
   const n = c.points.length;
-  const hw = TRACK.roadWidth / 2;
+  const hw = c.width / 2;
   const kw = TRACK.kerbWidth;
   const q = new QuadBuilder();
+  const crown = track.options.kerbs === 'raised' ? 0.11 : ROAD_Y + 0.015;
   // Lateral offsets and lift above the road surface of the profile's three edges.
   const profile = [
     { off: hw - 0.15, lift: ROAD_Y + 0.01 },
-    { off: hw + kw * 0.45, lift: 0.11 },
+    { off: hw + kw * 0.45, lift: crown },
     { off: hw + kw, lift: 0.025 },
   ];
   const at = (i: number, side: number, k: number) => {
@@ -157,17 +161,22 @@ const CONCRETE = 0xc9ccd2;
 const CONCRETE_DARK = 0x9ea2aa;
 const WALL_RED = 0xd8342c;
 const WALL_WHITE = 0xf2f2ee;
+const TYRE = 0x2a2c31;
+const TYRE_DARK = 0x1d1f23;
+const TYRE_BAND = [0xd8342c, 0xf2f2ee, 0x2f6fd8, 0xf2f2ee] as const;
 
 /**
  * Barriers along the road edges (where the surface data says so) and the sides
- * of raised decks, as one vertex-coloured mesh. Barrier tops alternate red and
- * white every ~10 m so speed reads well.
+ * of raised decks, as one vertex-coloured mesh. Concrete barrier tops alternate
+ * red and white every ~10 m so speed reads well; tyre walls are stacks of dark
+ * tyres with a coloured band on top. Bridge rails are always concrete.
  */
 export function buildWallGeometry(track: Track, surf: TrackSurface): BufferGeometry | null {
   const c = track.center;
   const n = c.points.length;
   const p = new Panels();
-  const off = TRACK.wallOffset;
+  const off = c.wallOffset;
+  const tyres = track.options.barrier === 'tyres';
   const thick = 0.45;
   const hgt = TRACK.wallHeight;
   const band = Math.max(1, Math.round(10 / c.spacing));
@@ -183,15 +192,17 @@ export function buildWallGeometry(track: Track, surf: TrackSurface): BufferGeome
       if (!flags[i] || !flags[j]) continue;
       const inner = off * side;
       const outer = (off + thick) * side;
-      const top = Math.floor(i / band) % 2 === 0 ? WALL_RED : WALL_WHITE;
+      const tyre = tyres && !surf.deck[i];
+      const top = tyre ? TYRE_BAND[Math.floor(i / band) % TYRE_BAND.length] : Math.floor(i / band) % 2 === 0 ? WALL_RED : WALL_WHITE;
+      const face = tyre ? (i % 2 ? TYRE : TYRE_DARK) : CONCRETE;
       // Faces reach below the surface so banked or uneven ground never shows a gap.
-      p.quad(at(i, inner, -1.2), at(j, inner, -1.2), at(j, inner, hgt), at(i, inner, hgt), CONCRETE);
-      p.quad(at(i, outer, -1.2), at(j, outer, -1.2), at(j, outer, hgt), at(i, outer, hgt), CONCRETE_DARK);
+      p.quad(at(i, inner, -1.2), at(j, inner, -1.2), at(j, inner, hgt), at(i, inner, hgt), face);
+      p.quad(at(i, outer, -1.2), at(j, outer, -1.2), at(j, outer, hgt), at(i, outer, hgt), tyre ? TYRE_DARK : CONCRETE_DARK);
       p.quad(at(i, inner, hgt), at(j, inner, hgt), at(j, outer, hgt), at(i, outer, hgt), top);
     }
   }
   // Decks: a concrete shoulder from the road edge to the rails, the slab's edge and its underside.
-  const hw = TRACK.roadWidth / 2;
+  const hw = c.width / 2;
   for (let i = 0; i < n; i++) {
     const j = (i + 1) % n;
     if (!surf.deck[i] || !surf.deck[j]) continue;
@@ -204,4 +215,123 @@ export function buildWallGeometry(track: Track, surf: TrackSurface): BufferGeome
     p.quad(at(i, off + thick, -1.1), at(j, off + thick, -1.1), at(j, -(off + thick), -1.1), at(i, -(off + thick), -1.1), CONCRETE_DARK);
   }
   return p.empty ? null : p.build();
+}
+
+/**
+ * Gravel or tarmac run-off beside the road, out to the barrier line (nothing
+ * for grass: that's the ground itself). Drawn like the road, after the ground
+ * and without writing depth. Skipped on bridge decks, which have their own
+ * concrete shoulders. UVs are in world metres / 4.
+ */
+export function buildRunoffGeometry(track: Track, surf: TrackSurface): BufferGeometry | null {
+  if (track.options.runoff === 'grass') return null;
+  const c = track.center;
+  const n = c.points.length;
+  const inner = c.width / 2 - 0.1;
+  const outer = c.wallOffset + 0.4;
+  const pos: number[] = [];
+  const uv: number[] = [];
+  const idx: number[] = [];
+  for (const side of [1, -1]) {
+    const base = pos.length / 3;
+    for (let r = 0; r <= n; r++) {
+      const i = r % n;
+      const p = c.points[i];
+      const l = leftOf(c.tangents[i]);
+      for (const lat of [inner, outer]) {
+        const x = p.x + l.x * lat * side;
+        const z = p.y + l.y * lat * side;
+        pos.push(x, surfaceY(c, i, lat * side) + ROAD_Y * 0.4, z);
+        uv.push(x / 4, z / 4);
+      }
+    }
+    for (let r = 0; r < n; r++) {
+      if (surf.deck[r] || surf.deck[(r + 1) % n]) continue;
+      const a = base + r * 2;
+      // Winding so the face points up on either side.
+      if (side === 1) idx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3);
+      else idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2);
+    }
+  }
+  if (!idx.length) return null;
+  const g = new BufferGeometry();
+  g.setAttribute('position', new Float32BufferAttribute(pos, 3));
+  g.setAttribute('uv', new Float32BufferAttribute(uv, 2));
+  g.setIndex(new Uint32BufferAttribute(Uint32Array.from(idx), 1));
+  g.computeVertexNormals();
+  return g;
+}
+
+const PIT_LANE = 0x4b505a;
+const PIT_LINE = 0xf2f2ee;
+const PIT_WALL = 0xe9ebef;
+const PIT_BACK = 0xb9bec7;
+const PIT_ROOF = 0xf6f6f4;
+const PIT_DOOR = 0x22262e;
+/** Team colours above the garage doors. */
+const TEAMS = [0xd8342c, 0x2f6fd8, 0xf2b705, 0x2fa35a, 0xf07a1a, 0x8a4fd8, 0x18a9b8, 0xe0e0e0, 0xd84f9a, 0x3b3f47] as const;
+
+/**
+ * The pit building beside the start straight: a pit lane, then a long white
+ * building whose front is a row of garages with team-coloured signs, under a
+ * roof that overhangs the lane a little. One vertex-coloured mesh.
+ */
+export function buildPitGeometry(track: Track, surf: TrackSurface): BufferGeometry | null {
+  const pits = pitLayout(track);
+  if (!pits) return null;
+  const c = track.center;
+  const p = new Panels();
+  const side = pits.side;
+  const H = 6.2;
+  /** A point at track position s, `lat` metres out on the pit side, `y` above the pad. */
+  const at = (s: number, lat: number, y: number): number[] => {
+    const { p: q, t } = sampleAt(c, s);
+    const l = leftOf(t);
+    const x = q.x + l.x * lat * side;
+    const z = q.y + l.y * lat * side;
+    return [x, terrainHeight(surf.terrain, x, z) + y, z];
+  };
+  // Pit lane and its white edge lines.
+  const [l0, l1] = pits.lane;
+  const [b0, b1] = pits.building;
+  const step = 2.5;
+  for (let s = pits.from - 8; s < pits.to + 8; s += step) {
+    const e = s + step;
+    p.quad(at(s, l0, 0.06), at(e, l0, 0.06), at(e, l1 + 0.5, 0.06), at(s, l1 + 0.5, 0.06), PIT_LANE);
+    p.quad(at(s, l0 + 0.4, 0.08), at(e, l0 + 0.4, 0.08), at(e, l0 + 0.7, 0.08), at(s, l0 + 0.7, 0.08), PIT_LINE);
+  }
+  // The building: front with garages, back, roof and end walls.
+  const doorW = 4.4;
+  for (let k = 0; k < pits.doors.length; k++) {
+    const m = pits.doors[k];
+    const g0 = m - 3;
+    const g1 = m + 3;
+    const d0 = m - doorW / 2;
+    const d1 = m + doorW / 2;
+    // Pillars either side of the door and the wall above it.
+    p.quad(at(g0, b0, -0.6), at(d0, b0, -0.6), at(d0, b0, H), at(g0, b0, H), PIT_WALL);
+    p.quad(at(d1, b0, -0.6), at(g1, b0, -0.6), at(g1, b0, H), at(d1, b0, H), PIT_WALL);
+    p.quad(at(d0, b0, 3.6), at(d1, b0, 3.6), at(d1, b0, 4.6), at(d0, b0, 4.6), TEAMS[k % TEAMS.length]);
+    p.quad(at(d0, b0, 4.6), at(d1, b0, 4.6), at(d1, b0, H), at(d0, b0, H), PIT_WALL);
+    // The open garage: a dark recess.
+    p.quad(at(d0, b0 + 0.6, -0.6), at(d1, b0 + 0.6, -0.6), at(d1, b0 + 0.6, 3.6), at(d0, b0 + 0.6, 3.6), PIT_DOOR);
+    p.quad(at(d0, b0, 3.6), at(d1, b0, 3.6), at(d1, b0 + 0.6, 3.6), at(d0, b0 + 0.6, 3.6), PIT_BACK);
+    for (const d of [d0, d1]) p.quad(at(d, b0, -0.6), at(d, b0 + 0.6, -0.6), at(d, b0 + 0.6, 3.6), at(d, b0, 3.6), PIT_BACK);
+  }
+  const s0 = pits.from;
+  const s1 = pits.to;
+  for (let s = s0; s < s1 - 0.01; s += step) {
+    const e = Math.min(s1, s + step);
+    // Back wall and roof (overhanging the lane by 2 m).
+    p.quad(at(s, b1, -0.6), at(e, b1, -0.6), at(e, b1, H), at(s, b1, H), PIT_BACK);
+    p.quad(at(s, b0 - 2, H), at(e, b0 - 2, H), at(e, b1, H), at(s, b1, H), PIT_ROOF);
+    p.quad(at(s, b0 - 2, H - 0.35), at(e, b0 - 2, H - 0.35), at(e, b0 - 2, H), at(s, b0 - 2, H), PIT_BACK);
+  }
+  // Front beyond the first and last garage, and the end walls.
+  const g0 = pits.doors[0] - 3;
+  const g1 = pits.doors[pits.doors.length - 1] + 3;
+  p.quad(at(s0, b0, -0.6), at(g0, b0, -0.6), at(g0, b0, H), at(s0, b0, H), PIT_WALL);
+  p.quad(at(g1, b0, -0.6), at(s1, b0, -0.6), at(s1, b0, H), at(g1, b0, H), PIT_WALL);
+  for (const s of [s0, s1]) p.quad(at(s, b0, -0.6), at(s, b1, -0.6), at(s, b1, H), at(s, b0, H), PIT_BACK);
+  return p.build();
 }

@@ -19,11 +19,11 @@ export class Viewport {
   private cy = 0;
   view: View = { scale: 1, ox: 0, oy: 0 };
 
-  /** Sets the screen size and the space taken by bars at the top and bottom. */
-  setScreen(w: number, h: number, top: number, bottom: number): void {
+  /** Sets the screen size and the space taken by bars around the edges. */
+  setScreen(w: number, h: number, top: number, bottom: number, left = 0, right = 0): void {
     this.w = w;
     this.h = h;
-    this.fit = fitView(w, h, top, bottom);
+    this.fit = fitView(w, h, top, bottom, left, right);
     this.update();
   }
 
@@ -48,6 +48,14 @@ export class Viewport {
   /** Zooms about the middle of the free area (buttons, keys). */
   zoomCentre(factor: number): void {
     this.zoomAt(this.fit.ox, this.fit.oy, factor);
+  }
+
+  /** Puts world point `p` in the middle of the free area at `zoom`. */
+  centerOn(p: Vec2, zoom: number): void {
+    this.zoom = Math.max(ZOOM.min, Math.min(ZOOM.max, zoom));
+    this.cx = p.x;
+    this.cy = p.y;
+    this.update();
   }
 
   /** Moves the paper with the pointer by (dx, dy) screen pixels. */
