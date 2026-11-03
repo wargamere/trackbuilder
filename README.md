@@ -48,7 +48,8 @@ src/
               camera.ts (chase + bonnet)
   race/       raceScreen.ts (fixed-step loop, interpolation, pause), session.ts
               (countdown, checkpoints, lap timing, splits, race distance), ghost.ts,
-              records.ts, resultsScreen.ts, bot.ts (driver), ai.ts (AI opponents),
+              records.ts, resultsScreen.ts, ai.ts (AI opponents), racingLine.ts
+              (line + speed plan), driver.ts (drives it), bot.ts (test driver),
               medals.ts (medal times)
   ui/         dom helpers, menuScreen.ts (main menu), raceSetupScreen.ts (race
               setup), gridOverlay.ts (grid after qualifying), editor overlay, HUD,
@@ -173,19 +174,41 @@ The pause menu has Restart (Back to the grid in practice), Race settings and Mai
 
 ### AI cars
 
-Up to eleven AI cars (`race/ai.ts`) line up on a staggered grid, two by two, 6.5 m apart. Slots are pulled in towards the middle where the road narrows on a bend. The order comes from the setup's grid choice. The field is listed fastest first, in 12 different colours (the paints plus five AI-only colours, never yours). Each has its own car (the same physics as yours), its own lap counter and a driver built on the bot's line. It brakes for the corners it can see coming, using a share of the tyres' grip and a top speed set by its difficulty (`AI.pace`). The field spreads up to 8 points below the chosen difficulty, so the cars don't drive nose to tail.
+Up to eleven AI cars (`race/ai.ts`) line up on a staggered grid, two by two, 6.5 m apart. Slots are pulled in towards the middle where the road narrows on a bend. The order comes from the setup's grid choice. The field is listed fastest first, in 12 different colours (the paints plus five AI-only colours, never yours). Each has its own car (the same physics as yours), its own lap counter and a driver on the racing line.
 
-| Difficulty | AI lap vs the medal (gold) time |
+**Racing line** (`race/racingLine.ts`, worked out once per track). This is Rémi Coulom's K1999 method. Each point of the line is moved across the road until its curvature is the average of the curvature just before and after it, so the turning is spread as evenly as the road allows. It runs first with points 64 samples apart, then closer and closer, down to every sample. The road for this is the drawn road plus its kerbs, keeping the car's side 25 cm inside. What comes out is the classic line: in from the outside, clipping the apex, out to the outside, with straights cutting across between corners.
+
+**Speed plan.** Along that line, each corner allows a speed from its curvature, the share of the tyres' grip the driver uses, and the help from a bank leaning into the turn (as the physics gives it). Then a pass forwards limits it to what the engine can reach out of the corners before (engine, drag, slopes). A pass backwards limits it to what the brakes can lose before the next corner. Both passes go round twice, across the line.
+
+**Driving** (`race/driver.ts`):
+- Steering aims at a point on the line 3 m + 0.2 s ahead (pure pursuit), plus 60 % of the line's own curvature just ahead, so the wheels turn in as a corner begins. It tracks the line to within about 1 m at full speed.
+- Throttle and brakes follow the speed plan a quarter-second ahead: flat out below it, firm braking above it.
+
+On the test tracks a 100 % AI laps about 19 % faster than the old centre-line driver (up to 24 % on twisty ones), with no track-limit breaches and no barrier hits. The old driver's lap is now about 1.16× gold, so medals are roughly one step harder than before.
+
+**Difficulty** (`AI.pace`) sets the share of grip used in corners, the top speed and the share of the brakes. 100 % is the tyres' limit: with more grip the car slides off.
+
+| Difficulty | AI lap vs the gold time |
 |---|---|
 | 1 % | about 1.6× |
-| 25 % | about 1.25× (bronze) |
-| 50 % | about 1.08× |
-| 75 % | about 1.0× (gold) |
-| 100 % | about 0.96× (faster than gold) |
+| 20 % | about 1.25× (bronze) |
+| 45 % | about 1.09× (silver) |
+| 75 % | 1× (gold: medal times are this AI's flying lap) |
+| 100 % | about 0.95× |
 
-The AI moves over to pass a slower car in its line (to the side with more room), lifts rather than ram one it can't get past yet, and puts itself back on the road if it's stuck for 2.5 s. After the finish it cruises a cool-down lap.
+The field spreads up to 8 points below the chosen difficulty, so the cars don't drive nose to tail.
 
-**Contact.** Cars bump: each is two circles along its length (`car/contact.ts`). Overlapping cars are pushed apart half each, their closing speed is cancelled with a small bounce, and an off-centre hit turns them a little. A bump on you knocks like a barrier hit.
+**Traffic.**
+- The AI starts passing only a car it's actually catching (by 1 m/s, or about to touch it). It moves to the side with more room and stays on that side for 1.5 s, rather than weaving.
+- Following at the same speed, however close, it just follows. It lifts when it would touch the car ahead within 1.2 s, and brakes, the harder the sooner, within 0.6 s.
+- It puts itself back on the road if it's stuck for 2.5 s. After the finish it cruises a cool-down lap.
+
+**Contact** (`car/contact.ts`). Each car's body is a box the size of the car, turned with it.
+- **Overlap:** it's found with a separating-axis test on the four box sides, and the cars are pushed apart along the axis of least overlap, half each.
+- **Impulse:** the hit is resolved at the actual contact point, the middle of the overlap. A small bounce cancels the closing speed, and friction along the contact makes a side-swipe drag. Because it acts at the point of contact, a hit on a nose or tail turns the car, while a square hit pushes it straight.
+- **Packs:** contacts are resolved twice per tick, so in a pack a car pushed out of one car and into another is pushed out of that one too.
+- **Bridges:** cars more than 2.5 m apart in height (on and under a bridge) never touch.
+- A bump on you knocks like a barrier hit.
 
 **Positions.** The HUD shows your position (POS 2/6) beside the timer. It comes from each car's race distance: laps, checkpoints passed and the way since the last one. Reversing or cutting across never adds to it. Name tags float over the AI cars, and they show on the minimap in their colours. The race ends when you finish, with "Finished 2nd!". The results show your place and the finishing order, with each car's time from GO, as gaps behind the winner. A car still racing gets an estimated time from its average speed so far.
 
@@ -199,7 +222,7 @@ Lap times against AI cars count for bests, the ghost, medals and the score as us
 
 Your best lap is recorded tick by tick and replayed as a translucent ghost. The results screen shows the total time, each lap, the best lap and a score: average speed on your best lap × ink multiplier × 10.
 
-**Medals.** The first time a track is raced, the test bot drives it in the background (in slices during the countdown, about 30–60 ms in all). Its flying lap is the gold time; silver is +10% and bronze +25%. The targets show under the lap timer and light up as you beat them. The results screen shows the medal for the run and the next one to aim for, and My tracks shows each track's medal. Author times are saved with the track's records.
+**Medals.** The first time a track is raced, a 75 % AI drives a flying lap of it in the background (in slices, during the countdown). Its lap is the gold time; silver is +10% and bronze +25%. Medal times are measured again whenever the AI changes (`AUTHOR_VERSION`). The targets show under the lap timer and light up as you beat them. The results screen shows the medal for the run and the next one to aim for, and My tracks shows each track's medal. Author times are saved with the track's records.
 
 A **minimap** in the top-right corner shows the track (bridges drawn on top), you, the ghost and the AI cars.
 

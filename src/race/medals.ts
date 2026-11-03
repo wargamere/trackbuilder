@@ -1,7 +1,9 @@
 import { CarPhysics } from '../car/physics.ts';
 import { HANDLING } from '../config/handling.ts';
 import type { Track } from '../track/track.ts';
-import { botInput, type BotOptions } from './bot.ts';
+import { AI } from '../config/race.ts';
+import { aiPace } from './ai.ts';
+import { RacingDriver } from './driver.ts';
 
 export type MedalId = 'gold' | 'silver' | 'bronze';
 
@@ -13,7 +15,7 @@ export const MEDALS: readonly { id: MedalId; factor: number }[] = [
 ];
 
 /** Bump when the physics or the bot change, so stored author times are recomputed. */
-export const AUTHOR_VERSION = 3;
+export const AUTHOR_VERSION = 4;
 
 export type MedalTimes = Record<MedalId, number>;
 
@@ -38,33 +40,29 @@ export function nextMedal(current: MedalId | null): MedalId | null {
 }
 
 /**
- * Times the test bot on a flying lap: it starts behind the line, drives one
+ * Times an AI driver on a flying lap: it starts behind the line, drives one
  * lap to get up to speed and is timed over the second. Runs in slices so the
  * game can spread it over a few frames. Deterministic for a given track.
- * The default pace sets the medal times; AI cars qualify with their own.
+ * At the medal difficulty it sets the medal times; AI cars qualify with theirs.
  */
 export class AuthorLap {
   private readonly car: CarPhysics;
-  private readonly track: Track;
   private readonly length: number;
   private tick = 0;
   private prevS: number;
   private crossings: number[] = [];
   private travelled = 0;
   private readonly maxTicks: number;
-  private readonly aggression: number;
-  private readonly opts: BotOptions;
+  private readonly driver: RacingDriver;
   /** Lap time in seconds, null if the bot could not finish, undefined while running. */
   result: number | null | undefined = undefined;
 
-  constructor(track: Track, aggression = 0.8, opts: BotOptions = {}) {
-    this.track = track;
-    this.aggression = aggression;
-    this.opts = opts;
+  constructor(track: Track, difficulty: number = AI.medalDifficulty) {
+    this.driver = new RacingDriver(track, aiPace(difficulty));
     this.car = new CarPhysics(track);
     this.length = track.center.length;
     this.prevS = this.car.state.s;
-    // Two laps at a crawl of 8 m/s is the most we'll wait.
+    // A warm-up lap and a timed one at a crawl of 8 m/s is the most we'll wait.
     this.maxTicks = Math.ceil(((this.length * 2.2) / 8) * HANDLING.tickRate);
   }
 
@@ -73,7 +71,7 @@ export class AuthorLap {
     if (this.result !== undefined) return true;
     const L = this.length;
     for (let k = 0; k < budget; k++) {
-      this.car.step(botInput(this.car.state, this.track, this.aggression, this.opts));
+      this.car.step(this.driver.drive(this.car.state));
       this.tick++;
       const s = this.car.state.s;
       let ds = s - this.prevS;
@@ -85,10 +83,12 @@ export class AuthorLap {
         const before = L - this.prevS;
         const f = before / Math.max(1e-9, before + s);
         this.crossings.push((this.tick - 1 + f) / HANDLING.tickRate);
-        if (this.crossings.length === 1) this.travelled = s;
-        if (this.crossings.length === 2) {
+        // The first crossing is just after the start: the lap from there is the warm-up.
+        // The one after it, started at full speed, is timed.
+        if (this.crossings.length === 2) this.travelled = s;
+        if (this.crossings.length === 3) {
           // A real lap covers the whole track (not a spin back over the line).
-          this.result = this.travelled > L * 0.9 ? this.crossings[1] - this.crossings[0] : null;
+          this.result = this.travelled > L * 0.9 ? this.crossings[2] - this.crossings[1] : null;
           return true;
         }
       }

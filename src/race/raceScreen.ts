@@ -26,7 +26,7 @@ import { Hud } from '../ui/hud.ts';
 import { PauseMenu } from '../ui/pauseMenu.ts';
 import { TouchControls } from '../ui/touchControls.ts';
 import { GridOverlay, type GridEntry } from '../ui/gridOverlay.ts';
-import { AiDriver, aiField, aiPace, gridOrder, gridPlace, qualifyingOrder, YOU } from './ai.ts';
+import { AiDriver, aiField, gridOrder, gridPlace, qualifyingOrder, YOU } from './ai.ts';
 import { GhostRecorder, ghostPose, type GhostLap } from './ghost.ts';
 import { AuthorLap, medalTimes } from './medals.ts';
 import { scoreFor, type RunResult } from './records.ts';
@@ -325,10 +325,7 @@ export class RaceScreen implements Screen {
     car.placeAt(-8);
     this.playerStart = -8;
     this.states = [car.state];
-    this.qualSims = this.field(setup.opponents).map((f) => {
-      const p = aiPace(f.difficulty);
-      return new AuthorLap(t, p.aggression, { maxSpeed: p.maxSpeed });
-    });
+    this.qualSims = this.field(setup.opponents).map((f) => new AuthorLap(t, f.difficulty));
     this.hud.setMode('race');
     this.pauseMenu.setMode('qualifying');
     this.rig.snap(car.state);
@@ -490,12 +487,15 @@ export class RaceScreen implements Screen {
       this.progress(o.ai.car, o.prev);
       o.ai.car.step(o.ai.drive(this.states, car.dt));
     }
-    // Cars bump into each other (the player is states[0]).
+    // Cars bump into each other (the player is states[0]). A few times over, so a car pushed
+    // out of one car and into another in a pack is pushed out of that one too.
     const st = this.states;
-    for (let i = 0; i < st.length; i++) {
-      for (let j = i + 1; j < st.length; j++) {
-        const hit = collideCars(st[i], st[j]);
-        if (i === 0) this.hit = Math.max(this.hit, hit);
+    for (let pass = 0; pass < 3; pass++) {
+      for (let i = 0; i < st.length; i++) {
+        for (let j = i + 1; j < st.length; j++) {
+          const hit = collideCars(st[i], st[j]);
+          if (i === 0) this.hit = Math.max(this.hit, hit);
+        }
       }
     }
     this.events.length = 0;

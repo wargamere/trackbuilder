@@ -265,13 +265,13 @@ export const STR = {
     slotBack: '{pos} (back)',
     difficulty: 'AI difficulty',
     difficultyValue: '{n}%',
-    /** Shown under the difficulty slider (from 1 %, 25 %, 50 %, 75 %, 95 %). */
+    /** Shown under the difficulty slider (from 1 %, 20 %, 45 %, 75 % and 95 %). */
     difficultyHints: [
       'Easy: slower than bronze-medal pace.',
-      'Medium: about bronze-medal pace.',
+      'Medium: between bronze and silver pace.',
       'Hard: between silver and gold pace.',
-      'Expert: about gold-medal pace.',
-      'Brutal: faster than gold.',
+      'Expert: gold-medal pace and faster.',
+      'Flat out: as fast as the car can go.',
     ],
     start: 'Start',
     back: 'Back',

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { collideCars } from '../src/car/contact.ts';
+import { carOverlap, collideCars } from '../src/car/contact.ts';
 import { CarPhysics, CarState } from '../src/car/physics.ts';
 import { HANDLING } from '../src/config/handling.ts';
 import { AI, CONTACT } from '../src/config/race.ts';
@@ -25,30 +25,31 @@ function race(track: Track, difficulties: number[], laps: number, seconds: numbe
   const ais = difficulties.map((d, k) => new AiDriver(track, { name: `ai${k}`, paint: 0, difficulty: d, laps, slot: k }));
   const states = ais.map((a) => a.car.state);
   const events: RaceEvent[] = [];
-  let minGap = Infinity;
+  let maxOverlap = 0;
   for (let tick = 0; tick < seconds * HANDLING.tickRate; tick++) {
     const prev = ais.map((a) => progressOf(a.car, track));
     for (const a of ais) a.car.step(a.drive(states, DT));
-    for (let i = 0; i < states.length; i++) for (let j = i + 1; j < states.length; j++) collideCars(states[i], states[j]);
+    for (let pass = 0; pass < 3; pass++) for (let i = 0; i < states.length; i++) for (let j = i + 1; j < states.length; j++) collideCars(states[i], states[j]);
     ais.forEach((a, k) => a.session.step(prev[k], progressOf(a.car, track), events));
-    // How close the cars' centres get (after contact has pushed them apart).
+    // How deep any two cars end up inside each other (after contact has pushed them apart).
     for (let i = 0; i < states.length; i++) {
-      for (let j = i + 1; j < states.length; j++) minGap = Math.min(minGap, Math.hypot(states[i].x - states[j].x, states[i].z - states[j].z));
+      for (let j = i + 1; j < states.length; j++) maxOverlap = Math.max(maxOverlap, carOverlap(states[i], states[j]));
     }
     if (ais.every((a) => a.session.phase === 'finished')) break;
   }
-  return { ais, minGap };
+  return { ais, maxOverlap };
 }
 
-test('AI pace rises with difficulty, from well off bronze to faster than the medal bot', () => {
-  let last = { aggression: 0, maxSpeed: 0 };
+test('AI pace rises with difficulty, up to the limit of the tyres at 100 %', () => {
+  let last = { grip: 0, maxSpeed: 0, brake: 0 };
   for (let d = 0; d <= 1.0001; d += 0.05) {
     const p = aiPace(d);
-    assert.ok(p.aggression >= last.aggression && p.maxSpeed >= last.maxSpeed, `pace drops at ${d}`);
+    assert.ok(p.grip >= last.grip && p.maxSpeed >= last.maxSpeed && p.brake >= last.brake, `pace drops at ${d.toFixed(2)}`);
     last = p;
   }
-  assert.ok(aiPace(0).aggression < 0.3 && aiPace(0).maxSpeed < HANDLING.maxSpeed * 0.4);
-  assert.ok(aiPace(1).aggression > 0.8, 'top difficulty grips harder than the medal bot (0.8)');
+  assert.ok(aiPace(0).grip < 0.4 && aiPace(0).maxSpeed < HANDLING.maxSpeed * 0.45);
+  assert.equal(aiPace(1).grip, 1, 'all the grip there is at 100 %');
+  assert.equal(aiPace(1).maxSpeed, HANDLING.maxSpeed);
   assert.deepEqual(aiPace(-1), aiPace(0));
   assert.deepEqual(aiPace(2), aiPace(1));
 });
@@ -65,28 +66,61 @@ test('grid slots are staggered two by two behind the line, on the road, and neve
       car.placeAt(g.s, g.lateral);
       const i = car.state.trackIndex;
       assert.ok(car.state.lateral + HANDLING.halfWidth < left[i] && -car.state.lateral + HANDLING.halfWidth < right[i], `slot ${k} on the road on ${t.def.name}`);
-      for (const o of cars) assert.ok(Math.hypot(o.x - car.state.x, o.z - car.state.z) > CONTACT.radius * 2 + 0.5, `slot ${k} clear of the others`);
+      for (const o of cars) {
+        assert.equal(carOverlap(o, car.state), 0, `slot ${k} doesn't touch the others`);
+        assert.ok(Math.hypot(o.x - car.state.x, o.z - car.state.z) > 2 * CONTACT.halfWidth + 1, `slot ${k} has room around it`);
+      }
       cars.push(car.state);
     }
   }
 });
 
-test('two overlapping cars are pushed apart, and a rear-end hit shares the speed', () => {
-  const a = new CarState();
-  const b = new CarState();
-  a.x = 0;
-  b.x = 3; // a's nose circle overlaps b's tail circle
-  a.vx = 20;
-  b.vx = 10;
-  const hit = collideCars(a, b);
-  assert.ok(hit > 0, 'reports the impact');
-  assert.ok(b.x - a.x >= 2 * CONTACT.offset + 2 * CONTACT.radius - 1e-6, 'no longer overlapping');
-  assert.ok(a.vx < 20 && b.vx > 10, 'the hit slows the one behind and pushes the one ahead');
+/** A car at (x, z) facing `heading`, moving at (vx, vz). */
+const carAt = (x: number, z: number, heading = 0, vx = 0, vz = 0): CarState => Object.assign(new CarState(), { x, z, heading, vx, vz });
+/** Do the two car boxes overlap (by more than a hair)? */
+const overlapping = (a: CarState, b: CarState): boolean => carOverlap(a, b) > 1e-6;
+
+test('car bodies are boxes: rear-end, side-by-side and corner hits are all caught and pushed apart', () => {
+  const { halfLength: HL, halfWidth: HW } = CONTACT;
+  // Rear-end: a's nose 1 m into b's tail.
+  let a = carAt(0, 0, 0, 20);
+  let b = carAt(2 * HL - 1, 0, 0, 10);
+  assert.ok(collideCars(a, b) > 0, 'reports the impact');
+  assert.ok(b.x - a.x >= 2 * HL - 1e-6, 'no longer overlapping');
+  assert.ok(a.vx < 20 && b.vx > 10, 'the one behind slows, the one ahead is pushed');
   assert.ok(Math.abs(a.vx + b.vx - 30) < 1e-9, 'momentum is kept');
-  // Far apart: nothing happens.
-  const c = new CarState();
-  c.x = 50;
-  assert.equal(collideCars(a, c), 0);
+  // Side by side, overlapping by 0.3 m in the middle (two circles per car used to miss this).
+  a = carAt(0, 0, 0, 30, 1);
+  b = carAt(0.5, 2 * HW - 0.3, 0, 30, -1);
+  assert.ok(collideCars(a, b) > 0);
+  assert.ok(b.z - a.z >= 2 * HW - 1e-6, 'pushed apart sideways');
+  assert.ok(Math.abs(a.yawRate) < 0.25 && Math.abs(b.yawRate) < 0.25, `a side-by-side touch barely turns them (${a.yawRate.toFixed(2)}, ${b.yawRate.toFixed(2)})`);
+  // Corner into corner, one turned 45°.
+  a = carAt(0, 0, 0);
+  b = carAt(2 * HL + 0.4, 1.2, Math.PI / 4, -5, 0);
+  collideCars(a, b);
+  assert.ok(!overlapping(a, b), 'apart after the hit');
+  // Just clear: nothing happens, nothing moves.
+  a = carAt(0, 0, 0, 10);
+  b = carAt(2 * HL + 0.05, 0, 0, 0);
+  assert.equal(collideCars(a, b), 0);
+  assert.equal(b.x, 2 * HL + 0.05);
+});
+
+test('a nose into a car\'s rear corner spins it; a car on a bridge never touches one below', () => {
+  const { halfLength: HL, halfWidth: HW } = CONTACT;
+  // T-bone the back corner of b (pointing +x) with a moving +z.
+  const b = carAt(0, 0, 0);
+  const a = carAt(-HL + 0.4, -HW - HL + 0.3, Math.PI / 2, 0, 15);
+  const hit = collideCars(a, b);
+  assert.ok(hit > 10, `hard hit (${hit.toFixed(1)})`);
+  assert.ok(b.vz > 0, 'pushed the way it was hit');
+  assert.ok(Math.abs(b.yawRate) > 0.5, `hit behind its middle, it turns (${b.yawRate.toFixed(2)} rad/s)`);
+  // Same overlap, but b 6 m up on a bridge.
+  const up = carAt(0, 0, 0);
+  up.y = 6;
+  const below = carAt(1, 0.5, 0, 10);
+  assert.equal(collideCars(below, up), 0);
 });
 
 test('race distance: negative on the grid, grows as the car drives, never jumps when it reverses over the line', () => {
@@ -119,7 +153,7 @@ test('AI cars race the sample tracks: all finish, harder ones are faster, none d
     const t = getSampleTrack(si);
     const author = new AuthorLap(t).finish();
     assert.ok(author);
-    const { ais, minGap } = race(t, [1, 0.75, 0.5, 0.25, 0.01], 2, 400);
+    const { ais, maxOverlap } = race(t, [1, 0.75, 0.5, 0.25, 0.01], 2, 400);
     for (const a of ais) assert.equal(a.session.phase, 'finished', `${a.name} (${a.difficulty}) finished on ${t.def.name}`);
     const end = (a: AiDriver) => a.session.runEnd ?? Infinity;
     // Stronger drivers finish ahead (the field starts in difficulty order, fastest at the front).
@@ -128,7 +162,7 @@ test('AI cars race the sample tracks: all finish, harder ones are faster, none d
     const best = (a: AiDriver) => Math.min(...a.session.laps);
     assert.ok(best(ais[0]) < author! * 1.01, `100 %: ${best(ais[0]).toFixed(2)} vs ${author!.toFixed(2)} on ${t.def.name}`);
     assert.ok(best(ais[4]) > author! * 1.4, `1 %: ${best(ais[4]).toFixed(2)} vs ${author!.toFixed(2)} on ${t.def.name}`);
-    assert.ok(minGap > CONTACT.radius, `cars never pass through each other (closest ${minGap.toFixed(2)} m)`);
+    assert.ok(maxOverlap < 0.15, `cars never end a tick inside each other (deepest ${maxOverlap.toFixed(3)} m)`);
   }
 });
 
@@ -186,23 +220,22 @@ test('the AI field: fastest first, spread just below the chosen difficulty, name
 test('AI qualifying laps: a harder AI sets a faster flying lap', () => {
   const t = getSampleTrack(0);
   const lap = (d: number) => {
-    const p = aiPace(d);
-    return new AuthorLap(t, p.aggression, { maxSpeed: p.maxSpeed }).finish();
+    return new AuthorLap(t, d).finish();
   };
   const fast = lap(0.9);
   const slow = lap(0.3);
   assert.ok(fast && slow && fast < slow, `${fast} < ${slow}`);
-  // The default pace is still the medal lap.
-  assert.equal(new AuthorLap(t).finish(), new AuthorLap(t, 0.8, {}).finish());
+  // The default is the medal pace.
+  assert.equal(new AuthorLap(t).finish(), new AuthorLap(t, AI.medalDifficulty).finish());
 });
 
 test('a full grid of twelve cars races two laps on every sample: everyone finishes, nobody drives through anybody', () => {
   for (let si = 0; si < SAMPLE_COUNT; si++) {
     const t = getSampleTrack(si);
     const field = aiField(AI.maxOpponents + 1, 60, [0], ['x']);
-    const { ais, minGap } = race(t, field.map((f) => f.difficulty), 2, 500);
+    const { ais, maxOverlap } = race(t, field.map((f) => f.difficulty), 2, 500);
     for (const a of ais) assert.equal(a.session.phase, 'finished', `${a.name} ${a.difficulty.toFixed(2)} finished on ${t.def.name}`);
-    assert.ok(minGap > CONTACT.radius, `closest ${minGap.toFixed(2)} m on ${t.def.name}`);
+    assert.ok(maxOverlap < 0.15, `deepest overlap ${maxOverlap.toFixed(3)} m on ${t.def.name} (a car driving through another would be a metre or more)`);
   }
 });
 

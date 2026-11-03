@@ -1,21 +1,21 @@
 import { CarPhysics, NO_INPUT, type CarState, type DriveInput } from '../car/physics.ts';
 import { HANDLING } from '../config/handling.ts';
-import { AI } from '../config/race.ts';
+import { AI, CONTACT } from '../config/race.ts';
 import { clamp } from '../core/math.ts';
 import { edgeOffsets } from '../track/spline.ts';
 import type { Track } from '../track/track.ts';
-import { botInput } from './bot.ts';
+import { RacingDriver } from './driver.ts';
+import type { Pace } from './racingLine.ts';
 import { RaceSession } from './session.ts';
 
-/** Grip share and top speed (m/s) for a difficulty from 0 to 1 (see AI.pace). */
-export function aiPace(difficulty: number): { aggression: number; maxSpeed: number } {
+/** How hard an AI with a difficulty from 0 to 1 drives (see AI.pace). */
+export function aiPace(difficulty: number): Pace {
   const knots = AI.pace;
   const f = clamp(difficulty, 0, 1) * (knots.length - 1);
   const i = Math.min(knots.length - 2, Math.floor(f));
   const u = f - i;
-  const [a0, v0] = knots[i];
-  const [a1, v1] = knots[i + 1];
-  return { aggression: a0 + (a1 - a0) * u, maxSpeed: HANDLING.maxSpeed * (v0 + (v1 - v0) * u) };
+  const mix = (k: number) => knots[i][k] + (knots[i + 1][k] - knots[i][k]) * u;
+  return { grip: mix(0), maxSpeed: HANDLING.maxSpeed * mix(1), brake: mix(2) };
 }
 
 /**
@@ -85,7 +85,7 @@ const along = (a: number, b: number, L: number) => {
 };
 
 /**
- * An AI opponent: its own car, lap counter and a driver. It drives the bot's
+ * An AI opponent: its own car, lap counter and a driver. It drives the racing
  * line at a pace set by its difficulty, moves over to pass a slower car in its
  * way (to whichever side has more room), lifts rather than ram one it can't
  * get past, and puts itself back on the road if it gets stuck.
@@ -99,10 +99,16 @@ export class AiDriver {
   /** Where it started (m along the track; negative = behind the line). */
   readonly start: number;
   private readonly track: Track;
-  private readonly pace: { aggression: number; maxSpeed: number };
+  private readonly driver: RacingDriver;
   private readonly inp: DriveInput = { ...NO_INPUT };
-  private lane: number;
+  /** How far off the racing line it is driving (to pass), and where it's heading. */
+  private lane = 0;
   private laneTarget = 0;
+  /** Passing: on which side of the line (+1 left, -1 right, 0 = not passing), and for how much longer. */
+  private passSide = 0;
+  private passTimer = 0;
+  /** How long a car ahead has held us well below our pace. */
+  private heldUpFor = 0;
   private stuck = 0;
 
   constructor(track: Track, opts: { name: string; paint: number; difficulty: number; laps: number; slot: number }) {
@@ -110,14 +116,23 @@ export class AiDriver {
     this.name = opts.name;
     this.paint = opts.paint;
     this.difficulty = opts.difficulty;
-    this.pace = aiPace(opts.difficulty);
+    this.driver = new RacingDriver(track, aiPace(opts.difficulty));
     this.car = new CarPhysics(track);
     const g = gridPlace(track, opts.slot);
     this.start = g.s;
     this.car.placeAt(g.s, g.lateral);
-    this.lane = g.lateral;
-    this.laneTarget = g.lateral;
+    // Off the grid slot, it eases over onto the line.
+    this.lane = g.lateral - this.driver.lateralAt(g.s);
     this.session = new RaceSession(track.center.length, null, opts.laps, track.center.width);
+  }
+
+  /** Is the racing line gentle over the next stretch (fit to start a pass on)? */
+  private gentleAhead(s: number): boolean {
+    const c = this.track.center;
+    for (let d = 0; d <= AI.passClearAhead; d += c.spacing) {
+      if (Math.abs(this.driver.curvatureAt(s + d)) > AI.passMaxCurvature) return false;
+    }
+    return true;
   }
 
   /** Input for the next tick. `cars` are all the cars in the race (this one included). */
@@ -129,38 +144,56 @@ export class AiDriver {
     const L = c.length;
     const finished = s.phase === 'finished';
 
-    // Traffic: the nearest car ahead in (about) our line.
+    // Traffic: the nearest car ahead that is in our way: beside where we are now, or beside
+    // where we mean to be by the time we'd catch it (our paths may converge across the road).
     let ahead: CarState | null = null;
     let gap = Infinity;
     for (const o of cars) {
-      if (o === st) continue;
+      if (o === st || Math.abs(o.y - st.y) > CONTACT.heightGap) continue;
       const ds = along(st.s, o.s, L);
       if (ds <= 0 || ds > AI.lookAhead || ds >= gap) continue;
-      if (Math.abs(o.lateral - st.lateral) > AI.sameLine) continue;
+      const catchIn = Math.min(3, Math.max(0, ds - 2 * CONTACT.halfLength) / Math.max(0.5, st.speed - o.speed));
+      const meet = o.s + Math.max(0, o.speed) * catchIn;
+      const inWay = (lat: number) => Math.abs(o.lateral - lat) < AI.sameLine;
+      if (!inWay(st.lateral) && !inWay(this.driver.lateralAt(o.s, this.lane)) && !inWay(this.driver.lateralAt(meet, this.lane))) continue;
       ahead = o;
       gap = ds;
     }
-    const room = Math.max(0, c.width / 2 - 1.5);
-    if (ahead && !finished && (st.speed > ahead.speed - 0.5 || gap < 8)) {
-      // Pass on the side with more room; keep to the side we're on if both are as good.
-      const left = clamp(ahead.lateral + AI.passOffset, -room, room);
-      const right = clamp(ahead.lateral - AI.passOffset, -room, room);
-      const sepL = Math.abs(left - ahead.lateral);
-      const sepR = Math.abs(right - ahead.lateral);
-      this.laneTarget = Math.abs(sepL - sepR) > 0.5 ? (sepL > sepR ? left : right) : Math.abs(left - st.lateral) < Math.abs(right - st.lateral) ? left : right;
-    } else {
-      this.laneTarget = 0;
+    // Passing. Only a car that's clearly slower (we're catching it fast, or it has held us
+    // well below our own pace for a while), and only starting where the line ahead is
+    // gentle, not into a corner. The pass runs beside the racing line (so it bends like the
+    // line does) on the side where the car ahead leaves more room, and we keep to that side
+    // while anyone is alongside, so we never swing back into a car we're passing.
+    const closing = ahead ? st.speed - ahead.speed : 0;
+    const heldUp = !!ahead && gap < AI.heldUpGap && this.driver.speedAt(st.s) - st.speed > AI.heldUpBy;
+    this.heldUpFor = heldUp ? this.heldUpFor + dt : 0;
+    const wantPass = !!ahead && !finished && (closing > AI.passClosing || this.heldUpFor > AI.heldUpSeconds);
+    if (ahead && wantPass && (this.passTimer > 0 || this.gentleAhead(st.s))) {
+      if (this.passSide === 0) {
+        const roomLeft = this.driver.lateralAt(ahead.s, 99) - ahead.lateral;
+        const roomRight = ahead.lateral - this.driver.lateralAt(ahead.s, -99);
+        this.passSide = roomLeft >= roomRight ? 1 : -1;
+      }
+      this.passTimer = AI.passHold;
+    } else if (this.passTimer > 0) {
+      const alongside = cars.some((o) => o !== st && Math.abs(along(st.s, o.s, L)) < 2 * CONTACT.halfLength + 2 && Math.abs(o.lateral - st.lateral) < AI.passOffset + 1.5 && Math.abs(o.y - st.y) < CONTACT.heightGap);
+      if (!alongside) this.passTimer -= dt;
+      if (this.passTimer <= 0) this.passSide = 0;
     }
+    this.laneTarget = this.passTimer > 0 ? this.passSide * AI.passOffset : 0;
     const step = AI.laneRate * dt;
     this.lane += clamp(this.laneTarget - this.lane, -step, step);
-    this.lane = clamp(this.lane, -room, room);
 
-    const maxSpeed = finished ? Math.min(this.pace.maxSpeed, AI.coolDownSpeed) : this.pace.maxSpeed;
-    const inp = botInput(st, this.track, this.pace.aggression, { lane: this.lane, maxSpeed }, this.inp);
-    // Can't get by yet: lift, and brake a little if we're closing fast.
-    if (ahead && gap < 7 && Math.abs(ahead.lateral - st.lateral) < 2 && st.speed > ahead.speed) {
-      inp.throttle = 0;
-      if (st.speed > ahead.speed + 2) inp.brake = Math.max(inp.brake, 0.4);
+    // After the finish it carries on a little slower (not parked on the line for others to hit).
+    const inp = this.driver.drive(st, this.lane, this.inp, finished ? AI.afterFinishPace : 1);
+    // Closing on the car in our way: slow down to its speed before we'd touch it. Lift when
+    // that needs a gentle slowdown, brake for a firmer one. Following at its speed needs nothing.
+    if (ahead) {
+      const closingNow = st.speed - ahead.speed;
+      const gapLeft = Math.max(0.3, gap - 2 * CONTACT.halfLength - AI.followGap);
+      const need = closingNow > 0.1 ? (closingNow * closingNow) / (2 * gapLeft) : 0;
+      if (need > AI.liftDecel) inp.throttle = 0;
+      if (need > AI.brakeDecel) inp.brake = Math.max(inp.brake, clamp(need / (HANDLING.brakeDecel * 0.9), 0.25, 1));
     }
 
     // Stuck against something (or spun into the grass): back onto the road.
@@ -169,6 +202,8 @@ export class AiDriver {
       this.stuck = 0;
       this.car.resetToRoad();
       this.lane = this.laneTarget = 0;
+      this.passSide = 0;
+      this.passTimer = 0;
       return NO_INPUT;
     }
     return inp;

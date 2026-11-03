@@ -214,7 +214,7 @@ export class RaceSetupScreen implements Screen {
     const hasGhost = !!this.game.records.get(this.game.track.def.id).ghost;
     this.ghostHint.textContent = hasGhost ? S.ghostHint : S.ghostNone;
     const hints = S.difficultyHints;
-    const k = d.difficulty >= 95 ? 4 : d.difficulty >= 75 ? 3 : d.difficulty >= 50 ? 2 : d.difficulty >= 25 ? 1 : 0;
+    const k = d.difficulty >= 95 ? 4 : d.difficulty >= 75 ? 3 : d.difficulty >= 45 ? 2 : d.difficulty >= 20 ? 1 : 0;
     this.diffHint.textContent = hints[k];
     this.gridHint.textContent = fmt(S.gridHints[d.grid], { n: AI.qualifyingLaps });
     // The slot slider's labels depend on the number of cars.
