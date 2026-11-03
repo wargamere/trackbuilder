@@ -137,6 +137,8 @@ const CONCRETE = 0xc9ccd2;
 const CONCRETE_DARK = 0x9ea2aa;
 const WALL_RED = 0xd8342c;
 const WALL_WHITE = 0xf2f2ee;
+/** How far the earth skirt under the road's outer edge reaches down (m). */
+export const SKIRT_DEPTH = 2.6;
 const TYRE = 0x2a2c31;
 const TYRE_DARK = 0x1d1f23;
 const TYRE_BAND = [0xd8342c, 0xf2f2ee, 0x2f6fd8, 0xf2f2ee] as const;
@@ -208,7 +210,7 @@ export function buildWallGeometry(track: Track, surf: TrackSurface): BufferGeome
       if (surf.deck[i] || surf.deck[j]) continue;
       const ei = outerEdge(i, side) * side;
       const ej = outerEdge(j, side) * side;
-      p.quad(at(i, ei, ROAD_Y), at(j, ej, ROAD_Y), at(j, ej, -1.6), at(i, ei, -1.6), skirt);
+      p.quad(at(i, ei, ROAD_Y), at(j, ej, ROAD_Y), at(j, ej, -SKIRT_DEPTH), at(i, ei, -SKIRT_DEPTH), skirt);
     }
   }
 

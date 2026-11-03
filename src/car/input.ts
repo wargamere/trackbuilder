@@ -18,7 +18,6 @@ const KEYS = {
   brake: ['KeyS', 'ArrowDown'],
   left: ['KeyA', 'ArrowLeft'],
   right: ['KeyD', 'ArrowRight'],
-  handbrake: ['Space'],
 } as const;
 
 const ACTION_KEYS: Record<string, InputAction> = {
@@ -83,7 +82,7 @@ export class InputManager {
     if (e.ctrlKey || e.metaKey || e.altKey) return; // never interfere with browser shortcuts
     const action = ACTION_KEYS[e.code];
     if (!ALL_DRIVE_KEYS.has(e.code) && !action) return;
-    e.preventDefault(); // arrows and Space would otherwise scroll the host page
+    e.preventDefault(); // arrows would otherwise scroll the host page
     this.lastDevice = 'keyboard';
     if (down) {
       this.keys.add(e.code);
@@ -105,7 +104,6 @@ export class InputManager {
     const p = this.pad;
     if (!gp) {
       p.throttle = p.brake = p.steer = 0;
-      p.handbrake = false;
       this.padPressed = [];
       return;
     }
@@ -117,8 +115,7 @@ export class InputManager {
     p.steer = clamp(stick + dpad, -1, 1);
     p.throttle = Math.max(dz(btn(PAD.rt), INPUT.triggerDeadZone), pressed(PAD.a) ? 1 : 0);
     p.brake = Math.max(dz(btn(PAD.lt), INPUT.triggerDeadZone), pressed(PAD.x) ? 1 : 0);
-    p.handbrake = pressed(PAD.b);
-    if (p.steer || p.throttle || p.brake || p.handbrake) this.lastDevice = 'gamepad';
+    if (p.steer || p.throttle || p.brake) this.lastDevice = 'gamepad';
     for (const [i, action] of PAD_ACTIONS) {
       if (pressed(i) && !this.padPressed[i]) {
         this.lastDevice = 'gamepad';
@@ -136,7 +133,7 @@ export class InputManager {
     out.throttle = Math.max(held(KEYS.throttle) ? 1 : 0, this.pad.throttle, t.throttle ? 1 : 0);
     out.brake = Math.max(held(KEYS.brake) ? 1 : 0, this.pad.brake, t.brake ? 1 : 0);
     out.steer = clamp(keySteer + this.pad.steer + t.steer, -1, 1);
-    out.handbrake = held(KEYS.handbrake) || this.pad.handbrake;
+    out.handbrake = false; // the handbrake is switched off for now
     return out;
   }
 }

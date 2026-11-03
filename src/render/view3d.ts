@@ -14,7 +14,7 @@ import {
   MeshLambertMaterial,
   Object3D,
   PerspectiveCamera,
-  PlaneGeometry,
+  Uint32BufferAttribute,
   Scene,
   SphereGeometry,
   type Texture,
@@ -255,25 +255,43 @@ export class View3D {
     this.mats.ground.needsUpdate = true;
   }
 
-  /** The terrain around the track as one grid mesh. */
+  /**
+   * The terrain around the track as one grid mesh. Each cell is split into two
+   * triangles along the same diagonal terrainTri() uses, so what's drawn is
+   * exactly what the physics and the "ground under the road" check see.
+   */
   private buildTerrainMesh(t: Terrain): Mesh {
-    const g = new PlaneGeometry((t.nx - 1) * t.step, (t.nz - 1) * t.step, t.nx - 1, t.nz - 1).rotateX(-Math.PI / 2);
-    g.translate(t.x0 + ((t.nx - 1) * t.step) / 2, 0, t.z0 + ((t.nz - 1) * t.step) / 2);
-    const pos = g.getAttribute('position');
-    const uv = g.getAttribute('uv');
-    const col = new Float32Array(pos.count * 3);
-    for (let i = 0; i < pos.count; i++) {
-      const x = pos.getX(i);
-      const z = pos.getZ(i);
-      const ix = Math.round((x - t.x0) / t.step);
-      const iz = Math.round((z - t.z0) / t.step);
-      pos.setY(i, t.h[iz * t.nx + ix]);
-      const k = groundShade(x, z);
-      col.set([k, k, k], i * 3);
-      uv.setXY(i, x / GROUND_TILE, z / GROUND_TILE);
+    const count = t.nx * t.nz;
+    const pos = new Float32Array(count * 3);
+    const uv = new Float32Array(count * 2);
+    const col = new Float32Array(count * 3);
+    for (let j = 0; j < t.nz; j++) {
+      for (let i = 0; i < t.nx; i++) {
+        const k = j * t.nx + i;
+        const x = t.x0 + i * t.step;
+        const z = t.z0 + j * t.step;
+        pos.set([x, t.h[k], z], k * 3);
+        uv.set([x / GROUND_TILE, z / GROUND_TILE], k * 2);
+        const s = groundShade(x, z);
+        col.set([s, s, s], k * 3);
+      }
     }
+    const idx = new Uint32Array((t.nx - 1) * (t.nz - 1) * 6);
+    let o = 0;
+    for (let j = 0; j < t.nz - 1; j++) {
+      for (let i = 0; i < t.nx - 1; i++) {
+        const k = j * t.nx + i;
+        idx.set([k, k + t.nx, k + 1, k + t.nx, k + t.nx + 1, k + 1], o);
+        o += 6;
+      }
+    }
+    const g = new BufferGeometry();
+    g.setAttribute('position', new Float32BufferAttribute(pos, 3));
+    g.setAttribute('uv', new Float32BufferAttribute(uv, 2));
     g.setAttribute('color', new Float32BufferAttribute(col, 3));
+    g.setIndex(new Uint32BufferAttribute(idx, 1));
     g.computeVertexNormals();
+    g.computeBoundingSphere();
     return new Mesh(g, this.mats.ground);
   }
 

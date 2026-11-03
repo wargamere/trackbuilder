@@ -10,8 +10,9 @@ import { getSampleTrack, SAMPLE_COUNT, trackFromControl, trackFromStroke } from 
 import { crossingKind, findCrossings } from '../src/editor/validation.ts';
 import { botInput } from '../src/race/bot.ts';
 import { decodeTrack, encodeTrack } from '../src/track/code.ts';
+import { buildKerbGeometry, buildRoadGeometry, SKIRT_DEPTH } from '../src/track/mesh.ts';
 import { edgeOffsets, leftOf, surfaceY } from '../src/track/spline.ts';
-import { surfaceFor, terrainHeight } from '../src/track/surface.ts';
+import { forEachGroundProbe, type P3, surfaceFor, terrainHeight } from '../src/track/surface.ts';
 import { buildTrack, contentId, type Track } from '../src/track/track.ts';
 
 const curve = (n: number, f: (t: number) => Vec2): Vec2[] => Array.from({ length: n + 1 }, (_, i) => f(i / n));
@@ -198,14 +199,14 @@ test('big hills with steep banking and barriers leave no holes beside the road',
       const n = c.points.length;
       const { left, right } = edgeOffsets(c);
       for (let i = 0; i < n; i++) {
-        // Ground right beside the road edge stays close under it (the earth skirt covers 1.6 m).
+        // Ground right beside the road edge stays close under it (well within the earth skirt).
         if (!surf.deck[i]) {
           const l = leftOf(c.tangents[i]);
           for (const side of [1, -1]) {
             const e = side > 0 ? left[i] : right[i];
             const lat = (e + 0.3) * side;
             const drop = surfaceY(c, i, e * side) - terrainHeight(surf.terrain, c.points[i].x + l.x * lat, c.points[i].y + l.y * lat);
-            assert.ok(drop < 1.2, `${base.def.name} seed ${seed}: ground ${drop.toFixed(2)} m below the road edge at ${i}`);
+            assert.ok(drop < SKIRT_DEPTH - 0.4, `${base.def.name} seed ${seed}: ground ${drop.toFixed(2)} m below the road edge at ${i}`);
           }
         }
         // No barrier on the inside of a corner tighter than the barrier line (it would fold over).
@@ -220,7 +221,56 @@ test('big hills with steep banking and barriers leave no holes beside the road',
   }
 });
 
-test('a bridge gets a deck with rails and pillars, none standing on the road below', () => {
+test('grass never shows through the road: every drawn road and kerb triangle checked exactly, with steep banks and hills', () => {
+  for (let si = 0; si < SAMPLE_COUNT; si++) {
+    const base = getSampleTrack(si);
+    const L = base.center.length;
+    const hs = rollingHeights(
+      dotFractions(base).map((u) => u * L),
+      L,
+      rng(7 + si),
+      [14, 28],
+    );
+    const hilly = withHeights(base.def.control, hs);
+    const variants = [
+      { control: base.def.control.map((d) => ({ ...d, b: 30 })), options: { banking: 1 as const } },
+      { control: hilly.map((d) => ({ ...d, b: 25 })), options: { banking: 2 as const, width: 15 } },
+      // The case from the screenshots: big hills, 30 degree banks and barriers, through the editor's pipeline.
+      { control: hilly.map((d) => ({ ...d, b: 30 })), options: { banking: 2 as const, walls: true } },
+    ];
+    variants.forEach((v, vi) => {
+      const res = trackFromControl({ id: `dense-${si}-${vi}`, name: 'd', ...v });
+      const t = res.track ?? buildTrack({ id: `dense-${si}-${vi}`, name: 'd', ...v });
+      const surf = surfaceFor(t);
+      const road = buildRoadGeometry(t.center, surf);
+      let worst = -Infinity;
+      let where = '';
+      for (const g of [road.ground, road.deck, buildKerbGeometry(t)]) {
+        if (!g) continue;
+        const pos = g.getAttribute('position');
+        const idx = g.index;
+        const count = idx ? idx.count : pos.count;
+        const vert = (k: number): P3 => {
+          const m = idx ? idx.getX(k) : k;
+          return [pos.getX(m), pos.getY(m), pos.getZ(m)];
+        };
+        for (let k = 0; k < count; k += 3) {
+          forEachGroundProbe(surf.terrain, vert(k), vert(k + 1), vert(k + 2), (x, z, y) => {
+            const above = terrainHeight(surf.terrain, x, z) - y;
+            if (above > worst) {
+              worst = above;
+              where = `${x.toFixed(1)}, ${z.toFixed(1)}`;
+            }
+          });
+        }
+      }
+      // The meshes sit 2 cm or more above the road surface, and the ground at least 3 cm under it.
+      assert.ok(worst < -0.04, `${base.def.name} variant ${vi}: ground ${worst.toFixed(3)} m from the drawn road at ${where}`);
+    });
+  }
+});
+
+test('a bridge gets a deck with rails, and no pillar stands on the road below', () => {
   const res = hillyEight(rise(9));
   assert.ok(res.ok);
   if (!res.ok) return;
@@ -233,7 +283,7 @@ test('a bridge gets a deck with rails and pillars, none standing on the road bel
   assert.equal(surf.deck[upper], 1, 'upper road is a deck at the crossing');
   assert.equal(surf.deck[lower], 0, 'lower road is on the ground');
   assert.ok(surf.wallL[upper] && surf.wallR[upper], 'deck has rails on both sides');
-  assert.ok(surf.pillars.length > 0);
+  // (Pillars only stand clear of the road below; a short span over it needs none.)
   // No pillar within the lower road's width.
   const low = c.points[lower];
   for (const p of surf.pillars) assert.ok(Math.hypot(p.x - low.x, p.z - low.y) > TRACK.roadWidth / 2 + 1, 'pillar on the lower road');

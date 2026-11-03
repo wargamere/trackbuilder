@@ -138,9 +138,15 @@ function passHeight(c: Centerline, i: number, x: number, z: number): { h: number
   const lateral = (x - p.x) * l.x + (z - p.y) * l.y;
   // Along the road the height follows the grade from the nearest sample (samples are 2.5 m apart).
   const along = (x - p.x) * t.x + (z - p.y) * t.y;
-  // The shoulder out to the barrier line follows the road's bank; beyond it the ground blends away.
+  // The shoulder out to the barrier line follows the road's bank; beyond it the ground blends
+  // away. On the inside of a banked corner the tilt stops at the kerb and the ground stays level
+  // from there, so the inside of a banked hairpin is not a pit.
   const band = c.wallOffset + 0.5;
-  const edge = Math.max(-band, Math.min(band, lateral));
+  const innerBand = c.width / 2 + TRACK.kerbWidth;
+  const k = c.curvature[i];
+  const bandL = k < 0 ? innerBand : band; // left is the inside of a left-hander
+  const bandR = k > 0 ? innerBand : band;
+  const edge = Math.max(-bandR, Math.min(bandL, lateral));
   // Just under the road surface, so the road sits flush in the ground.
   const roadH = surfaceY(c, i, edge) + c.grade[i] * along - 0.03;
   const away = Math.max(0, Math.abs(lateral) - band, Math.abs(along) - c.spacing);
@@ -181,52 +187,127 @@ function buildTerrain(c: Centerline, grid: SampleGrid): Terrain {
   return { x0, z0, step, nx, nz, h };
 }
 
+/** A point [x, height, z]. */
+export type P3 = readonly [number, number, number];
+
 /**
- * Makes sure the ground never pokes through the road: checks points across the
- * road every half sample, out to its real edges (pulled in on the inside of
- * hairpins) and over the kerbs on the side that has them, and wherever the
- * interpolated ground comes up through the surface, lowers the four grid
- * corners around it. Checking only where there really is road keeps it from
- * digging pits inside tight banked corners.
+ * The road as it is drawn: for each segment the quad between the left and
+ * right edges of sample i and i + 1, split along the same diagonal as the road
+ * mesh (left i+1 to right i), plus each kerb quad split both ways (so either
+ * drawing is covered). Heights are the road surface itself, under the meshes'
+ * small lift.
  */
-function pressUnderRoad(t: Terrain, c: Centerline, kerbs: KerbLayout): void {
+export function forEachRoadTriangle(c: Centerline, kerbs: KerbLayout, fn: (a: P3, b: P3, q: P3) => void): void {
   const n = c.points.length;
   const { left, right } = edgeOffsets(c);
-  const margin = 0.03;
-  for (let pass = 0; pass < 6; pass++) {
-    let changed = false;
-    for (let i = 0; i < n; i++) {
-      const j = (i + 1) % n;
-      const l = leftOf(c.tangents[i]);
-      for (const f of [0, 0.5]) {
-        const cx = c.points[i].x + (c.points[j].x - c.points[i].x) * f;
-        const cz = c.points[i].y + (c.points[j].y - c.points[i].y) * f;
-        const lo = -Math.max(Math.min(right[i], right[j]), kerbAt(kerbs, i, -1)?.[1] ?? 0);
-        const hi = Math.max(Math.min(left[i], left[j]), kerbAt(kerbs, i, 1)?.[1] ?? 0);
-        for (let k = 0; k <= 8; k++) {
-          const lat = lo + ((hi - lo) * k) / 8;
-          const x = cx + l.x * lat;
-          const z = cz + l.y * lat;
-          const road = surfaceY(c, i, lat) * (1 - f) + surfaceY(c, j, lat) * f - margin;
-          const excess = terrainHeight(t, x, z) - road;
-          if (excess <= 0) continue;
-          const fx = (x - t.x0) / t.step;
-          const fz = (z - t.z0) / t.step;
-          const gi = Math.floor(fx);
-          const gj = Math.floor(fz);
-          if (gi < 0 || gj < 0 || gi >= t.nx - 1 || gj >= t.nz - 1) continue;
-          // Lower each corner by its share (the smallest change that gets this point under
-          // the road), so grid points well away from the road hardly move: no trough beside it.
-          const u = fx - gi;
-          const v = fz - gj;
-          const w = [(1 - u) * (1 - v), u * (1 - v), (1 - u) * v, u * v];
-          const w2 = w[0] * w[0] + w[1] * w[1] + w[2] * w[2] + w[3] * w[3];
-          const base = gj * t.nx + gi;
-          [0, 1, t.nx, t.nx + 1].forEach((o, k) => (t.h[base + o] -= (excess * w[k]) / w2 + 0.001));
-          changed = true;
-        }
-      }
+  const at = (i: number, lat: number): P3 => {
+    const p = c.points[i];
+    const l = leftOf(c.tangents[i]);
+    return [p.x + l.x * lat, surfaceY(c, i, lat), p.y + l.y * lat];
+  };
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n;
+    const li = at(i, left[i]);
+    const ri = at(i, -right[i]);
+    const lj = at(j, left[j]);
+    const rj = at(j, -right[j]);
+    fn(li, ri, lj);
+    fn(ri, rj, lj);
+    for (const side of [1, -1] as const) {
+      const ei = kerbAt(kerbs, i, side);
+      const ej = kerbAt(kerbs, j, side);
+      if (!ei || !ej) continue;
+      const a = at(i, ei[0] * side);
+      const b = at(j, ej[0] * side);
+      const q = at(j, ej[1] * side);
+      const d = at(i, ei[1] * side);
+      fn(a, b, q);
+      fn(a, q, d);
+      fn(a, b, d);
+      fn(b, q, d);
     }
+  }
+}
+
+/**
+ * Calls `fn(x, z, y)` at every point of triangle (a, b, q) where the ground can
+ * come closest to it or poke through it: its corners, the grid nodes inside it,
+ * and where its edges cross the grid's lines and cell diagonals (y is the
+ * triangle's height there). Between those points both surfaces are flat, so
+ * checking them checks the whole triangle exactly.
+ */
+export function forEachGroundProbe(t: Terrain, a: P3, b: P3, q: P3, fn: (x: number, z: number, y: number) => void): void {
+  const s = t.step;
+  // Grid coordinates: cell lines are whole X or Z, cell diagonals are whole X + Z.
+  const gx = (x: number) => (x - t.x0) / s;
+  const gz = (z: number) => (z - t.z0) / s;
+  fn(a[0], a[2], a[1]);
+  fn(b[0], b[2], b[1]);
+  fn(q[0], q[2], q[1]);
+  const edge = (p: P3, e: P3) => {
+    const cross = (u0: number, u1: number) => {
+      const lo = Math.min(u0, u1);
+      const hi = Math.max(u0, u1);
+      if (hi - lo < 1e-9) return;
+      for (let m = Math.floor(lo) + 1; m < hi; m++) {
+        const f = (m - u0) / (u1 - u0);
+        fn(p[0] + (e[0] - p[0]) * f, p[2] + (e[2] - p[2]) * f, p[1] + (e[1] - p[1]) * f);
+      }
+    };
+    const px = gx(p[0]);
+    const pz = gz(p[2]);
+    const ex = gx(e[0]);
+    const ez = gz(e[2]);
+    cross(px, ex);
+    cross(pz, ez);
+    cross(px + pz, ex + ez);
+  };
+  edge(a, b);
+  edge(b, q);
+  edge(q, a);
+  // Grid nodes inside the triangle.
+  const det = (b[2] - q[2]) * (a[0] - q[0]) + (q[0] - b[0]) * (a[2] - q[2]);
+  if (Math.abs(det) < 1e-9) return;
+  const i0 = Math.max(0, Math.ceil(gx(Math.min(a[0], b[0], q[0]))));
+  const i1 = Math.min(t.nx - 1, Math.floor(gx(Math.max(a[0], b[0], q[0]))));
+  const j0 = Math.max(0, Math.ceil(gz(Math.min(a[2], b[2], q[2]))));
+  const j1 = Math.min(t.nz - 1, Math.floor(gz(Math.max(a[2], b[2], q[2]))));
+  for (let j = j0; j <= j1; j++) {
+    for (let i = i0; i <= i1; i++) {
+      const x = t.x0 + i * s;
+      const z = t.z0 + j * s;
+      const w0 = ((b[2] - q[2]) * (x - q[0]) + (q[0] - b[0]) * (z - q[2])) / det;
+      const w1 = ((q[2] - a[2]) * (x - q[0]) + (a[0] - q[0]) * (z - q[2])) / det;
+      const w2 = 1 - w0 - w1;
+      if (w0 < -1e-9 || w1 < -1e-9 || w2 < -1e-9) continue;
+      fn(x, z, a[1] * w0 + b[1] * w1 + q[1] * w2);
+    }
+  }
+}
+
+/**
+ * Makes sure the ground never pokes through the road or its kerbs: every drawn
+ * triangle is checked exactly (see forEachGroundProbe), and wherever the
+ * ground comes up through it, the corners of the ground triangle there are
+ * lowered by their share (the smallest change that gets that point under), so
+ * grid points away from the road hardly move. Ground only ever goes down, so
+ * a point once fixed stays fixed; a second pass just confirms it.
+ */
+function pressUnderRoad(t: Terrain, c: Centerline, kerbs: KerbLayout): void {
+  const margin = 0.03;
+  for (let pass = 0; pass < 4; pass++) {
+    let changed = false;
+    forEachRoadTriangle(c, kerbs, (a, b, q) =>
+      forEachGroundProbe(t, a, b, q, (x, z, y) => {
+        const excess = terrainHeight(t, x, z) - (y - margin);
+        if (excess <= 0) return;
+        const tri = terrainTri(t, x, z);
+        if (!tri) return;
+        const w2 = tri.w[0] * tri.w[0] + tri.w[1] * tri.w[1] + tri.w[2] * tri.w[2];
+        for (let k = 0; k < 3; k++) t.h[tri.k[k]] -= (excess * tri.w[k]) / w2 + 0.002;
+        changed = true;
+      }),
+    );
     if (!changed) break;
   }
 }
@@ -250,19 +331,31 @@ function padForPits(t: Terrain, c: Centerline, pits: PitLayout): void {
   }
 }
 
-/** Bilinear terrain height at (x, z); flat (0) outside the grid. */
+/** Terrain height at (x, z), on the triangles the renderer draws; flat (0) outside the grid. */
 export function terrainHeight(t: Terrain, x: number, z: number): number {
+  const c = terrainTri(t, x, z);
+  if (!c) return 0;
+  return t.h[c.k[0]] * c.w[0] + t.h[c.k[1]] * c.w[1] + t.h[c.k[2]] * c.w[2];
+}
+
+/**
+ * The triangle of the terrain mesh that (x, z) lies in: its three grid
+ * indices and barycentric weights. Each 5 m cell is two triangles split along
+ * the diagonal from (i, j+1) to (i+1, j), exactly as the renderer draws them,
+ * so heights here match what you see (a smooth bilinear blend would not: on
+ * a twisted cell the drawn triangle can stand well above it).
+ */
+export function terrainTri(t: Terrain, x: number, z: number): { k: [number, number, number]; w: [number, number, number] } | null {
   const fx = (x - t.x0) / t.step;
   const fz = (z - t.z0) / t.step;
   const i = Math.floor(fx);
   const j = Math.floor(fz);
-  if (i < 0 || j < 0 || i >= t.nx - 1 || j >= t.nz - 1) return 0;
+  if (i < 0 || j < 0 || i >= t.nx - 1 || j >= t.nz - 1) return null;
   const u = fx - i;
   const v = fz - j;
   const k = j * t.nx + i;
-  const a = t.h[k] + (t.h[k + 1] - t.h[k]) * u;
-  const b = t.h[k + t.nx] + (t.h[k + t.nx + 1] - t.h[k + t.nx]) * u;
-  return a + (b - a) * v;
+  if (u + v <= 1) return { k: [k, k + 1, k + t.nx], w: [1 - u - v, u, v] };
+  return { k: [k + t.nx + 1, k + t.nx, k + 1], w: [u + v - 1, 1 - u, 1 - v] };
 }
 
 const cache = new WeakMap<Track, TrackSurface>();
