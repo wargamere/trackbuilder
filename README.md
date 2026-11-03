@@ -43,20 +43,22 @@ src/
               codes), library.ts (saved tracks)
   render/     view3d.ts (renderer, sky, ground, hills, lights), textures.ts
               (procedural canvas textures), geom.ts (merge/tint helpers)
-  car/        physics.ts (fixed-step arcade physics), input.ts (keyboard, gamepad,
-              touch), model.ts (low-poly car), camera.ts (chase + bonnet)
+  car/        physics.ts (fixed-step arcade physics), contact.ts (car-to-car
+              bumps), input.ts (keyboard, gamepad, touch), model.ts (low-poly car),
+              camera.ts (chase + bonnet)
   race/       raceScreen.ts (fixed-step loop, interpolation, pause), session.ts
-              (countdown, checkpoints, lap timing, splits), ghost.ts, records.ts,
-              resultsScreen.ts, bot.ts (test driver), medals.ts (medal times)
-  ui/         dom helpers, menuScreen.ts (main menu), editor overlay, HUD, minimap,
-              pause menu, touch controls,
+              (countdown, checkpoints, lap timing, splits, race distance), ghost.ts,
+              records.ts, resultsScreen.ts, bot.ts (driver), ai.ts (AI opponents),
+              medals.ts (medal times)
+  ui/         dom helpers, menuScreen.ts (main menu), raceSetupScreen.ts (race
+              setup), editor overlay, HUD, minimap, pause menu, touch controls,
               libraryScreen.ts (My tracks), shareDialog.ts, style.css
   audio/      audio.ts (synthesised engine, tyre squeal, grass rumble, beeps)
   platform/   platform.ts (PLATFORM flag + CAPS), services.ts (what the game calls:
               loading/gameplay events, ads, user, device), crazygames.ts (SDK wrapper),
               storage.ts (key-value store), web.ts (share links, rotate prompt)
-  main.ts     state machine: MENU (boot) ⇄ RACE (practice or race) ⇄ EDITOR ⇄
-              PREVIEW, RESULTS, LIBRARY
+  main.ts     state machine: MENU (boot) → SETUP → RACE (practice or race) →
+              RESULTS, with EDITOR, PREVIEW and LIBRARY
 ```
 
 ### 3D scene
@@ -87,6 +89,7 @@ Physics runs at a fixed 120 Hz from an accumulator (`core/fixedStep.ts`), and re
 | Brake / reverse | S / ↓ | LT or X | BRAKE |
 | Steer | A D / ← → | left stick, D-pad | ◀ ▶ pads |
 | Reset to road | R | Back | pause menu |
+| Restart the lap (practice) | R R (twice quickly) | Back Back | pause menu: Back to the grid |
 | Camera (chase / bonnet) | C | Y | — |
 | Pause | Esc / P | Start | Ⅱ button |
 
@@ -143,27 +146,56 @@ The **3D view** (V, or the ◈ button) shows the track being edited from an orbi
 
 Freehand pipeline: raw stroke → lazy pen → merge points closer than 2 m → trim any overshoot, or close the gap → resample every 6 m → Taubin de-jitter → open up corners tighter than the smoothing level's radius → Douglas-Peucker to editable dots (1.6 m tolerance, at most 70 m apart) → round to 0.5 m.
 
-### Menu, practice and races
+### Menu, race setup and practice
 
 The game boots to the **main menu**, with the current track turning slowly in 3D behind it. From there:
 - pick a track with ‹ › (or ← →): the samples, then your saved tracks;
-- **Practice** (Enter): drive straight away, no countdown, as many laps as you like. Lap times, splits, the ghost and personal bests work as in a race, but there's no lap limit and no results screen. The HUD and the pause menu have "Race · N laps" to start a proper race on the same track;
-- **Race** (R): the timed race below, ending on the results screen;
+- **Race this track** (Enter) opens the race setup (below);
 - **Draw a track** (E), **My tracks** (L), and sound / graphics / units toggles.
 
-The pause menu switches between practice and race and has Main menu; the editor's ✕ (and Esc) and My tracks' Back return to the menu. The results screen also offers Practice and Main menu.
+**Race setup** (`ui/raceSetupScreen.ts`) opens wherever you choose to race a track: the main menu, the editor's Race it (Enter), the 3D view, My tracks, the results screen's Race settings (S), the pause menu, and practice's "Start a race". Back (Esc) returns to where you came from (to the editor with your edit kept). It sets:
+- **Mode:** Practice or Race (P / R).
+- **Laps:** 1–10 (race only). Each track starts at its own "Laps per race" from the editor.
+- **Ghost car (your record):** on or off.
+- **AI cars:** 0–7, and **AI difficulty** 1–100 % (race only).
+
+Start (Enter) drives it. The mode, ghost, AI count and difficulty are remembered between visits. "Race again" on the results screen reruns the same setup.
+
+**Practice** starts at once, no countdown and no AI cars, as many laps as you like. Lap times, splits, the ghost and personal bests work as in a race, but there's no lap limit and no results screen. Press **R twice quickly** (within 0.5 s, or gamepad Back twice) to restart the lap from the grid; a single R just puts the car back on the road.
+
+The pause menu has Restart (Back to the grid in practice), Race settings and Main menu; the editor's ✕ (and Esc) and My tracks' Back return to the menu. The editor's Practice button still drives straight away, to try a track out.
+
+### AI cars
+
+Up to seven AI cars (`race/ai.ts`) line up on a staggered grid, two by two, 6.5 m apart, fastest at the front and you at the back. Each has its own car (the same physics as yours), its own lap counter and a driver built on the bot's line. It brakes for the corners it can see coming, using a share of the tyres' grip and a top speed set by its difficulty (`AI.pace`). The field spreads up to 8 points below the chosen difficulty, so the cars don't drive nose to tail.
+
+| Difficulty | AI lap vs the medal (gold) time |
+|---|---|
+| 1 % | about 1.6× |
+| 25 % | about 1.25× (bronze) |
+| 50 % | about 1.08× |
+| 75 % | about 1.0× (gold) |
+| 100 % | about 0.96× (faster than gold) |
+
+The AI moves over to pass a slower car in its line (to the side with more room), lifts rather than ram one it can't get past yet, and puts itself back on the road if it's stuck for 2.5 s. After the finish it cruises a cool-down lap.
+
+**Contact.** Cars bump: each is two circles along its length (`car/contact.ts`). Overlapping cars are pushed apart half each, their closing speed is cancelled with a small bounce, and an off-centre hit turns them a little. A bump on you knocks like a barrier hit.
+
+**Positions.** The HUD shows your position (POS 2/6) beside the timer. It comes from each car's race distance: laps, checkpoints passed and the way since the last one. Reversing or cutting across never adds to it. Name tags float over the AI cars, and they show on the minimap in their colours. The race ends when you finish, with "Finished 2nd!". The results show your place and the finishing order, with each car's time from GO, as gaps behind the winner. A car still racing gets an estimated time from its average speed so far.
+
+Lap times against AI cars count for bests, the ghost, medals and the score as usual.
 
 ### Races
 
 **Track limits.** Kerbs count as track; the grass, gravel or tarmac beyond them doesn't. If the whole car goes past the edge (both wheel tracks, with 25 cm of grace) for more than 0.12 s, the lap you're on is invalid. "Track limits!" flashes, and the timer turns red and struck through until the next lap. An invalid lap still counts towards a race's distance, but never for the best lap, the ghost, medals or the score. The results screen marks those laps ✗. A run with no clean lap scores nothing. Practice uses the same rule.
 
-3-2-1-GO, then 3 laps (1, 3 or 5, set per track). The timer starts when you cross the line. Ten checkpoints sit around the lap, and a lap counts only if you pass them in order, driving along the track. A jump of more than 3 m along the track in one physics tick (cutting across the grass to another stretch, or a reset) never passes a checkpoint. Lap times are interpolated within the 120 Hz tick. Each checkpoint shows a split against your best lap, and driving backwards shows "Wrong way!".
+3-2-1-GO, then the setup's number of laps (1–10). The timer starts when you cross the line. Ten checkpoints sit around the lap, and a lap counts only if you pass them in order, driving along the track. A jump of more than 3 m along the track in one physics tick (cutting across the grass to another stretch, or a reset) never passes a checkpoint. Lap times are interpolated within the 120 Hz tick. Each checkpoint shows a split against your best lap, and driving backwards shows "Wrong way!".
 
 Your best lap is recorded tick by tick and replayed as a translucent ghost. The results screen shows the total time, each lap, the best lap and a score: average speed on your best lap × ink multiplier × 10.
 
 **Medals.** The first time a track is raced, the test bot drives it in the background (in slices during the countdown, about 30–60 ms in all). Its flying lap is the gold time; silver is +10% and bronze +25%. The targets show under the lap timer and light up as you beat them. The results screen shows the medal for the run and the next one to aim for, and My tracks shows each track's medal. Author times are saved with the track's records.
 
-A **minimap** in the top-right corner shows the track (bridges drawn on top), you and the ghost.
+A **minimap** in the top-right corner shows the track (bridges drawn on top), you, the ghost and the AI cars.
 
 ### Saving, sharing and sound
 
@@ -227,3 +259,4 @@ Tested against the real SDK in its `local` mode (localhost): the SDK's own log s
 - [x] Phase 6: CrazyGames SDK
 - [x] Elevation, banking, barriers, bridges, scenery themes; editor zoom/pan, lazy pen, section redraw, soft editing and Height mode; minimap and medals
 - [x] Editor sidebar (7 sections), stats strip, numbered corners, road width, kerb / run-off / barrier styles, pits, sunset, laps, tree density, display settings, 3D view
+- [x] Race setup menu (practice / race, laps 1–10, ghost on / off), AI cars with difficulty 1–100 %, car-to-car contact, positions; double-tap R restarts a practice lap

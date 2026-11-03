@@ -176,7 +176,7 @@ export class LibraryScreen implements Screen {
 
   private race(def: TrackDef): void {
     this.game.setTrack(def.builtIn ? getSampleTrack(sampleIndexOf(def)) : buildTrack(def));
-    this.game.drive('race');
+    this.game.openSetup();
   }
 
   private edit(def: TrackDef): void {

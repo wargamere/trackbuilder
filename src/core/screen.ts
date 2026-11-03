@@ -5,10 +5,23 @@ import type { Track } from '../track/track.ts';
 import type { Surface2D } from './surface2d.ts';
 
 /** States of the main state machine (see main.ts). */
-export type ScreenId = 'menu' | 'race' | 'editor' | 'results' | 'library' | 'preview';
+export type ScreenId = 'menu' | 'setup' | 'race' | 'editor' | 'results' | 'library' | 'preview';
 
 /** How the race screen runs: free practice laps, or a timed race with a countdown and results. */
 export type DriveMode = 'practice' | 'race';
+
+/** What the race setup menu chooses for the next run. */
+export interface RaceSetup {
+  mode: DriveMode;
+  /** Laps in a race, 1–10 (practice laps never end). */
+  laps: number;
+  /** Show your best lap on the track as a see-through ghost car. */
+  ghost: boolean;
+  /** AI cars in a race, 0–7 (never in practice). */
+  opponents: number;
+  /** How fast the AI cars are, 1–100 (%). */
+  difficulty: number;
+}
 
 export interface Screen {
   /** Which canvas the screen draws on; main.ts shows that one and hides the other. */
@@ -33,6 +46,17 @@ export interface GameContext {
   go(id: ScreenId): void;
   /** Drives the current track in practice or race mode (restarting the run if already driving). */
   drive(mode: DriveMode): void;
+  /** Drives the current track with the setup, changed by `patch` (restarting the run if already driving). */
+  start(patch?: Partial<RaceSetup>): void;
+  /**
+   * Opens the race setup menu for the current track. Back returns to the
+   * screen it was opened from, or calls `back`; `mode` preselects a mode.
+   */
+  openSetup(opts?: { back?: () => void; mode?: DriveMode }): void;
+  /** Leaves the setup menu the way it was opened. */
+  closeSetup(): void;
+  /** The settings for the run being driven (or the next one). */
+  readonly setup: Readonly<RaceSetup>;
   /** The mode the race screen runs in. */
   readonly mode: DriveMode;
   /** Personal bests and ghosts per track. */

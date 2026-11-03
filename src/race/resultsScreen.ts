@@ -7,12 +7,14 @@ import { platform } from '../platform/services.ts';
 import { button, h } from '../ui/dom.ts';
 import { ShareDialog } from '../ui/shareDialog.ts';
 import { medalFor, medalTimes, nextMedal } from './medals.ts';
+import type { RunResult } from './records.ts';
 import { formatTime } from './session.ts';
 
 /**
  * RESULTS state: the run's times and score over a slow orbit of the finished
  * car, plus the paint shop.
- *  - "Race again" restarts on the same track (your best lap becomes the ghost).
+ *  - "Race again" restarts on the same track with the same setup (your best
+ *    lap becomes the ghost); "Race settings" opens the race setup first.
  *    In a Full Launch build this is where a midgame ad may play: a natural
  *    break between races. The UI is blocked until the ad finishes or fails.
  *  - Paints unlock by finishing runs; in a Full Launch build the next one can
@@ -66,7 +68,7 @@ export class ResultsScreen implements Screen {
               this.saveBtn,
               button(STR.buttons.shareTrack, () => this.share.open(this.game.track.def, this.game.ui), { icon: '⧉' }),
               button(STR.buttons.myTracks, () => this.leave('library'), { icon: '☰' }),
-              button(STR.buttons.practice, () => this.game.drive('practice'), { icon: '⟳', key: 'P' }),
+              button(STR.buttons.raceSettings, () => this.raceSettings(), { icon: '🏁', key: 'S' }),
               button(STR.buttons.mainMenu, () => this.leave('menu'), { icon: '⌂' }),
             ),
           ),
@@ -92,6 +94,7 @@ export class ResultsScreen implements Screen {
           h('div', { class: 'score-value', text: r.score.toLocaleString('en-US') }),
           r.newBestScore ? h('div', { class: 'badge big', text: STR.results.newBestScore }) : h('div', { class: 'score-best', text: `${STR.results.bestScore}: ${r.bestScore.toLocaleString('en-US')}` }),
         ),
+        ...[this.standingsBlock(r)].filter((x): x is HTMLElement => !!x),
         h(
           'div',
           { class: 'stats' },
@@ -131,6 +134,9 @@ export class ResultsScreen implements Screen {
         } else if (e.code === 'KeyE') {
           e.preventDefault();
           this.leave('editor');
+        } else if (e.code === 'KeyS') {
+          e.preventDefault();
+          this.raceSettings();
         }
       },
       { signal: this.abort.signal },
@@ -152,6 +158,42 @@ export class ResultsScreen implements Screen {
     this.saveBtn.disabled = saved;
     const l = this.saveBtn.querySelector('.btn-label');
     if (l) l.textContent = saved ? `${STR.buttons.savedTrack} ✓` : STR.buttons.saveTrack;
+  }
+
+  /** Opens the race setup; Back comes back here. */
+  private raceSettings(): void {
+    if (!this.busy) this.game.openSetup();
+  }
+
+  /** Your place and the finishing order, in a race against AI cars. */
+  private standingsBlock(r: RunResult): HTMLElement | null {
+    if (!r.standings || r.position === null) return null;
+    const n = r.standings.length;
+    const winner = r.standings[0].time;
+    const ord = (i: number) => STR.results.ordinals[i] ?? String(i + 1);
+    const list = h('ol', { class: 'standings' });
+    r.standings.forEach((e, i) => {
+      const time = i === 0 ? formatTime(e.time) : fmt(STR.results.gap, { t: (e.time - winner).toFixed(2) });
+      const dot = h('i', { class: 'car-dot' });
+      dot.style.background = `#${e.paint.toString(16).padStart(6, '0')}`;
+      list.append(
+        h(
+          'li',
+          { class: e.you ? 'you' : '' },
+          h('span', { class: 'standing-pos', text: ord(i) }),
+          dot,
+          h('span', { class: 'standing-name', text: e.name }),
+          h('span', { class: 'standing-time', text: e.estimated ? `${time} · ${STR.results.estimated}` : time }),
+        ),
+      );
+    });
+    return h(
+      'div',
+      { class: 'results-standings' },
+      h('div', { class: 'stat' }, h('span', { class: 'stat-label', text: STR.results.position }), h('span', { class: 'stat-value', text: fmt(STR.results.positionValue, { pos: ord(r.position - 1), n }) })),
+      h('div', { class: 'label', text: STR.results.standings }),
+      list,
+    );
   }
 
   /** The medal the run's best lap won, and the time for the next one up. */

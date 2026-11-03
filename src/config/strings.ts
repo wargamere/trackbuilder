@@ -36,8 +36,8 @@ export const STR = {
     close: 'Close',
     soundOn: 'Sound: on',
     soundOff: 'Sound: off',
-    startRace: 'Start race',
-    startRaceLaps: 'Race · {n} laps',
+    startRace: 'Start a race',
+    raceSettings: 'Race settings',
     practice: 'Practice',
     backToGrid: 'Back to the grid',
     mainMenu: 'Main menu',
@@ -46,10 +46,9 @@ export const STR = {
   },
 
   menu: {
-    practice: 'Practice',
     practiceHint: 'Free laps: no countdown, no pressure.',
-    race: 'Race · {n} laps',
-    raceHint: '3-2-1-GO, then timed laps for a score.',
+    race: 'Race this track',
+    raceHint: 'Practice or race, laps, ghost and AI cars.',
     draw: 'Draw a track',
     myTracks: 'My tracks',
     trackInfo: '{len} km · ×{mult}',
@@ -57,7 +56,7 @@ export const STR = {
     noBest: 'No lap yet',
     prev: 'Previous track',
     next: 'Next track',
-    keys: 'Enter practice · R race · E draw · ← → change track',
+    keys: 'Enter race this track · E draw · L my tracks · ← → change track',
   },
 
   editor: {
@@ -228,6 +227,45 @@ export const STR = {
     },
   },
 
+  setup: {
+    title: 'Race this track',
+    trackLine: '{name} · {len} km',
+    mode: 'Mode',
+    practice: 'Practice',
+    race: 'Race',
+    practiceHint: 'Free laps on your own, as many as you like. No countdown, no results.',
+    raceHint: 'Countdown, timed laps, a finishing position and a score.',
+    laps: 'Laps',
+    lapsValue: '{n} laps',
+    lapValue: '1 lap',
+    ghost: 'Ghost car (your record)',
+    ghostHint: 'Your best lap on this track, as a see-through car to chase.',
+    ghostNone: 'No record on this track yet: drive a clean lap to make one.',
+    on: 'On',
+    off: 'Off',
+    opponents: 'AI cars',
+    opponentsValue: '{n}',
+    noOpponents: 'None',
+    difficulty: 'AI difficulty',
+    difficultyValue: '{n}%',
+    /** Shown under the difficulty slider (from 1 %, 25 %, 50 %, 75 %, 95 %). */
+    difficultyHints: [
+      'Easy: slower than bronze-medal pace.',
+      'Medium: about bronze-medal pace.',
+      'Hard: between silver and gold pace.',
+      'Expert: about gold-medal pace.',
+      'Brutal: faster than gold.',
+    ],
+    start: 'Start',
+    back: 'Back',
+    keys: 'Enter start · Esc back · P practice · R race',
+  },
+
+  ai: {
+    /** AI drivers' names, fastest grid slot first. */
+    names: ['Ada', 'Bram', 'Cleo', 'Dex', 'Esme', 'Finn', 'Gus'],
+  },
+
   preview: {
     title: '3D view',
     back: 'Back to editor',
@@ -249,6 +287,13 @@ export const STR = {
     hintKeyboard: 'W/↑ drive · S/↓ brake & reverse · A D/← → steer · R reset · C camera · M sound · Esc pause',
     hintGamepad: 'RT drive · LT brake & reverse · stick steer · Back reset · Y camera · Start pause',
     hintTouch: 'Hold ◀ ▶ to steer, GAS and BRAKE on the right. Hold BRAKE to reverse.',
+    /** Added to the keyboard / gamepad hint in practice. */
+    hintRestartKeyboard: ' · R R restart lap',
+    hintRestartGamepad: ' · Back Back restart lap',
+    lapRestarted: 'Lap restarted',
+    position: 'POS',
+    positionValue: '{pos}/{n}',
+    finishedPos: 'Finished {pos}!',
     controlsTitle: 'Controls',
     touchGas: 'GAS',
     touchBrake: 'BRAKE',
@@ -314,6 +359,14 @@ export const STR = {
     noMedal: 'None yet',
     nextMedal: '{medal}: {time}',
     allMedals: 'Top medal!',
+    position: 'Position',
+    positionValue: '{pos} of {n}',
+    standings: 'Finishing order',
+    you: 'You',
+    estimated: 'still racing',
+    gap: '+{t}',
+    /** 1st, 2nd, … (up to 8 cars). */
+    ordinals: ['1st', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th'],
   },
 
   library: {

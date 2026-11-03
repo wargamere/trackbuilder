@@ -428,8 +428,11 @@ export class EditorScreen implements Screen {
     this.share.open(this.currentDef(contentId(this.dots, this.options)), this.game.ui);
   }
 
-  /** Races (or practises on) the track as it is now. */
-  private race(mode: 'race' | 'practice' = 'race'): void {
+  /**
+   * "Race it": opens the race setup for the track as it is now (Back returns
+   * here with the edit kept). "Practice" drives it straight away.
+   */
+  private race(mode: 'setup' | 'practice' = 'setup'): void {
     this.rebuild();
     if (!this.built?.ok || !this.closed) return;
     const def = this.currentDef('');
@@ -438,7 +441,16 @@ export class EditorScreen implements Screen {
     def.id = same && b ? b.id : contentId(def.control, def.options);
     if (same) def.builtIn = b?.builtIn;
     this.game.setTrack(buildTrack(def));
-    this.game.drive(mode);
+    if (mode === 'practice') {
+      this.game.drive('practice');
+      return;
+    }
+    this.game.openSetup({
+      back: () => {
+        this.keepState = true;
+        this.game.go('editor');
+      },
+    });
   }
 
   // -------------------------------------------------------------- heights

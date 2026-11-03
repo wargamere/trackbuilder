@@ -4,8 +4,8 @@ import type { Track } from '../track/track.ts';
 import { h } from './dom.ts';
 
 /**
- * Small map of the track in a corner of the HUD with the car and the ghost on
- * it. The track is drawn once into an offscreen canvas; each frame only copies
+ * Small map of the track in a corner of the HUD with the car, the ghost and
+ * the AI cars on it. The track is drawn once into an offscreen canvas; each frame only copies
  * it and adds two dots.
  */
 export class Minimap {
@@ -104,7 +104,7 @@ export class Minimap {
   }
 
   /** Draws the map with the car (and the ghost, if any) at world (x, z). */
-  draw(track: Track, car: { x: number; z: number }, ghost: { x: number; z: number } | null): void {
+  draw(track: Track, car: { x: number; z: number }, ghost: { x: number; z: number } | null, others: readonly { x: number; z: number; color: string }[] = []): void {
     const g = this.ctx;
     if (!g) return;
     this.prepare(track);
@@ -123,6 +123,7 @@ export class Minimap {
       g.stroke();
     };
     if (ghost) dot(ghost.x, ghost.z, 3.5, 'rgba(255, 255, 255, 0.75)', 'rgba(0, 0, 0, 0.5)');
+    for (const o of others) dot(o.x, o.z, 3.5, o.color, 'rgba(0, 0, 0, 0.6)');
     dot(car.x, car.z, 4.5, '#ffcc1a', '#1b1b1b');
   }
 }

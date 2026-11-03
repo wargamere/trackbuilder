@@ -1,5 +1,6 @@
 import { HANDLING } from '../config/handling.ts';
 import { RACE } from '../config/race.ts';
+import { clamp } from '../core/math.ts';
 
 export type RacePhase = 'countdown' | 'racing' | 'finished';
 
@@ -88,6 +89,33 @@ export class RaceSession {
     if (this.countdownTicks <= 0) this.phase = 'racing';
     this.checkpoints = [];
     for (let k = 1; k < RACE.checkpoints; k++) this.checkpoints.push((length * k) / RACE.checkpoints);
+  }
+
+  /** Session time of the start (GO), when every car sets off. */
+  get goTime(): number {
+    return this.countdownTicks * this.dt;
+  }
+
+  /**
+   * How far round the race the car is, for positions: completed laps and the
+   * checkpoints passed this lap, plus the way from the last one (negative on
+   * the grid, before the line). Driving backwards or cutting across never adds.
+   */
+  raceDistance(s: number): number {
+    const L = this.length;
+    let d = ((s % L) + L) % L;
+    if (this.lapStart === null) {
+      if (d > L / 2) d -= L;
+      return Math.min(d, 0);
+    }
+    if (this.phase === 'finished') return this.laps.length * L;
+    const cp = this.nextCheckpoint;
+    const from = cp === 0 ? 0 : this.checkpoints[cp - 1];
+    const to = cp < this.checkpoints.length ? this.checkpoints[cp] : L;
+    d = (s - from) % L;
+    if (d > L / 2) d -= L;
+    if (d <= -L / 2) d += L;
+    return this.laps.length * L + from + clamp(d, 0, to - from);
   }
 
   get canDrive(): boolean {

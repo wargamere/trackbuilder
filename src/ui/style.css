@@ -1920,3 +1920,151 @@ body {
   text-decoration: line-through;
   text-decoration-thickness: 0.12em;
 }
+
+/* ------------------------------------------------------------ race setup */
+
+.race-setup .panel h2 {
+  margin-bottom: 0.1rem;
+  text-align: left;
+}
+
+.setup-track {
+  margin-bottom: 0.7rem;
+  font-weight: 700;
+  color: #4a5270;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.race-setup .field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin-bottom: 0.7rem;
+}
+
+.race-setup .field[hidden] {
+  display: none;
+}
+
+.race-setup .field.disabled .range-row,
+.race-setup .field.disabled .setup-hint {
+  opacity: 0.45;
+}
+
+.race-setup .segmented {
+  display: flex;
+}
+
+.race-setup .segmented .btn {
+  flex: 1;
+  justify-content: center;
+}
+
+.setup-hint {
+  margin: 0;
+  font-size: 0.75rem;
+  color: #5a6280;
+}
+
+.setup-buttons {
+  margin-top: 0.2rem;
+}
+
+.setup-buttons .btn {
+  flex: 1;
+  justify-content: center;
+}
+
+.setup-buttons .btn.primary {
+  flex: 1.6;
+}
+
+/* ------------------------------------------------------------ AI race */
+
+.hud-pos {
+  position: absolute;
+  top: 0;
+  right: 100%;
+  margin-right: 0.4rem;
+  padding: 0.25em 0.7em 0.35em;
+  border-radius: 0.7em;
+  background: var(--panel-dark);
+  line-height: 1.1;
+  text-align: center;
+}
+
+.hud-pos[hidden] {
+  display: none;
+}
+
+.pos-label {
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: var(--highlight);
+}
+
+.pos-value {
+  font-size: 1.5rem;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+}
+
+.ai-label {
+  background: rgba(14, 18, 28, 0.7);
+}
+
+.results-standings {
+  margin: 0.4rem 0 0.6rem;
+}
+
+.standings {
+  margin: 0.25rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.standings li {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.18rem 0.4rem;
+  border-radius: 0.4rem;
+  font-size: 0.85rem;
+}
+
+.standings li.you {
+  background: #fff7d6;
+  font-weight: 800;
+}
+
+.standing-pos {
+  min-width: 2.2em;
+  font-weight: 800;
+  color: var(--ink);
+}
+
+.car-dot {
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 50%;
+  border: 1.5px solid rgba(0, 0, 0, 0.45);
+  flex: none;
+}
+
+.standing-name {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.standing-time {
+  font-variant-numeric: tabular-nums;
+  color: #4a5270;
+}

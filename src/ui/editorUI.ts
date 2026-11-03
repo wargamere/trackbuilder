@@ -3,7 +3,7 @@ import { TRACK, type SmoothingLevel, type TrackOptions } from '../config/track.t
 import type { Settings } from '../core/settings.ts';
 import type { InkStats } from '../track/ink.ts';
 import type { TrackStats } from '../track/stats.ts';
-import { button, h } from './dom.ts';
+import { button, h, segmented, slider, type Choice, type Slider } from './dom.ts';
 
 export type MessageKind = 'info' | 'ok' | 'error' | 'warn';
 export type EditorMode = 'draw' | 'dots' | 'height';
@@ -74,65 +74,6 @@ export interface EditorViewState {
   pitsNoRoom: boolean;
   /** The track as it is now is in My tracks. */
   saved: boolean;
-}
-
-interface Choice<T> {
-  el: HTMLElement;
-  set(v: T): void;
-}
-
-/** A row of buttons where exactly one is "on". */
-function segmented<T extends string | number | boolean>(items: [T, string, string?][], onPick: (v: T) => void): Choice<T> {
-  const btns = new Map<T, HTMLButtonElement>();
-  const el = h('div', { class: 'segmented' });
-  for (const [value, label, icon] of items) {
-    const b = button(label, () => onPick(value), { icon });
-    btns.set(value, b);
-    el.append(b);
-  }
-  return {
-    el,
-    set(v: T) {
-      for (const [k, b] of btns) b.classList.toggle('on', k === v);
-    },
-  };
-}
-
-interface Slider {
-  el: HTMLElement;
-  /** Shows a value (ignored while the slider is being dragged). */
-  set(v: number): void;
-}
-
-/** A range slider with its value beside it; `onInput` while dragging, `onDone` when let go. */
-function slider(min: number, max: number, step: number, onInput: (v: number) => void, onDone: () => void, format: (v: number) => string): Slider {
-  const input = h('input', { class: 'range' });
-  input.type = 'range';
-  input.min = String(min);
-  input.max = String(max);
-  input.step = String(step);
-  input.tabIndex = -1;
-  const value = h('span', { class: 'range-value' });
-  let dragging = false;
-  input.addEventListener('input', () => {
-    dragging = true;
-    value.textContent = format(Number(input.value));
-    onInput(Number(input.value));
-  });
-  input.addEventListener('change', () => {
-    dragging = false;
-    onDone();
-  });
-  input.addEventListener('keydown', (e) => e.stopPropagation()); // arrows move the slider, not the editor
-  return {
-    el: h('div', { class: 'range-row' }, input, value),
-    set(v: number) {
-      if (dragging) return;
-      if (input.value !== String(v)) input.value = String(v);
-      const t = format(v);
-      if (value.textContent !== t) value.textContent = t;
-    },
-  };
 }
 
 function checkbox(label: string, onChange: (on: boolean) => void): { el: HTMLElement; input: HTMLInputElement } {

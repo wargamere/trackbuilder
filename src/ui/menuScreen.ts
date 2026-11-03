@@ -5,6 +5,7 @@ import { settings, updateSettings } from '../core/settings.ts';
 import { getSampleTrack, SAMPLE_COUNT } from '../editor/pipeline.ts';
 import { medalFor, medalTimes } from '../race/medals.ts';
 import { formatTime } from '../race/session.ts';
+import { TrackOrbit } from '../render/orbit.ts';
 import { buildTrack, type Track, type TrackDef } from '../track/track.ts';
 import { button, h } from './dom.ts';
 
@@ -16,8 +17,8 @@ interface Pick {
 
 /**
  * MENU state (the boot screen): the current track turning slowly in 3D behind
- * a panel with Practice (free laps), Race, Draw a track and My tracks, a track
- * picker, and sound / graphics / units toggles. One tap or key starts driving.
+ * a panel with Race this track (which opens the race setup), Draw a track and
+ * My tracks, a track picker, and sound / graphics / units toggles.
  */
 export class MenuScreen implements Screen {
   readonly layer = '3d';
@@ -26,7 +27,6 @@ export class MenuScreen implements Screen {
   private readonly trackName: HTMLElement;
   private readonly trackInfo: HTMLElement;
   private readonly trackBest: HTMLElement;
-  private readonly raceBtn: HTMLButtonElement;
   private readonly soundBtn: HTMLButtonElement;
   private readonly gfxBtn: HTMLButtonElement;
   private readonly unitsBtn: HTMLButtonElement;
@@ -34,9 +34,7 @@ export class MenuScreen implements Screen {
   private restore: (() => void) | null = null;
   private picks: Pick[] = [];
   private index = 0;
-  private yaw = 0.6;
-  private dist = 400;
-  private target = { x: 0, y: 0, z: 0 };
+  private readonly orbit = new TrackOrbit();
 
   constructor(game: GameContext) {
     this.game = game;
@@ -45,7 +43,6 @@ export class MenuScreen implements Screen {
     this.trackInfo = h('div', { class: 'menu-track-info' });
     this.trackBest = h('div', { class: 'menu-track-best' });
     // Labels are filled in by refresh(); they need a placeholder so the label comes before the key hint.
-    this.raceBtn = button(M.race, () => this.game.drive('race'), { icon: '🏁', key: 'R' });
     this.soundBtn = button(STR.buttons.soundOn, () => this.toggleSound(), { icon: '♪', class: 'small', key: 'M' });
     this.gfxBtn = button(STR.sidebar.graphics, () => this.toggleGraphics(), { icon: '⚙', class: 'small' });
     this.unitsBtn = button(STR.sidebar.unitNames.kmh, () => this.toggleUnits(), { icon: '⏱', class: 'small' });
@@ -67,8 +64,7 @@ export class MenuScreen implements Screen {
         h(
           'div',
           { class: 'menu' },
-          h('div', { class: 'menu-choice' }, button(M.practice, () => this.game.drive('practice'), { icon: '▶', class: 'primary', key: 'Enter' }), h('span', { class: 'menu-hint', text: M.practiceHint })),
-          h('div', { class: 'menu-choice' }, this.raceBtn, h('span', { class: 'menu-hint', text: M.raceHint })),
+          h('div', { class: 'menu-choice' }, button(M.race, () => this.game.openSetup(), { icon: '🏁', class: 'primary', key: 'Enter' }), h('span', { class: 'menu-hint', text: M.raceHint })),
           h(
             'div',
             { class: 'menu row' },
@@ -111,9 +107,8 @@ export class MenuScreen implements Screen {
       (e) => {
         if (e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;
         const act: Record<string, () => void> = {
-          Enter: () => this.game.drive('practice'),
-          NumpadEnter: () => this.game.drive('practice'),
-          KeyR: () => this.game.drive('race'),
+          Enter: () => this.game.openSetup(),
+          NumpadEnter: () => this.game.openSetup(),
           KeyE: () => this.game.go('editor'),
           KeyL: () => this.game.go('library'),
           KeyM: () => this.toggleSound(),
@@ -158,24 +153,7 @@ export class MenuScreen implements Screen {
   /** Puts a track in the 3D view and frames it for the slow orbit. */
   private showTrack(t: Track): void {
     const v = this.game.view3d;
-    if (!v) return;
-    v.setTrack(t);
-    let x0 = Infinity;
-    let x1 = -Infinity;
-    let z0 = Infinity;
-    let z1 = -Infinity;
-    for (const p of t.center.points) {
-      x0 = Math.min(x0, p.x);
-      x1 = Math.max(x1, p.x);
-      z0 = Math.min(z0, p.y);
-      z1 = Math.max(z1, p.y);
-    }
-    const radius = Math.max(60, Math.hypot(x1 - x0, z1 - z0) / 2);
-    let hs = 0;
-    for (const hgt of t.center.height) hs += hgt;
-    this.target = { x: (x0 + x1) / 2, y: hs / t.center.points.length, z: (z0 + z1) / 2 };
-    this.dist = radius * 1.25;
-    v.setFog(this.dist * 1.1, this.dist * 4 + 600);
+    if (v) this.orbit.show(v, t);
   }
 
   private refresh(): void {
@@ -192,7 +170,6 @@ export class MenuScreen implements Screen {
       if (l) l.textContent = text;
       else b.append(h('span', { class: 'btn-label', text }));
     };
-    label(this.raceBtn, fmt(STR.menu.race, { n: t.options.laps }));
     label(this.soundBtn, audio.silent ? STR.buttons.soundOff : STR.buttons.soundOn);
     label(this.gfxBtn, `${STR.sidebar.graphics}: ${STR.sidebar.graphicsLevels[settings().graphics]}`);
     label(this.unitsBtn, STR.sidebar.unitNames[settings().units]);
@@ -206,8 +183,11 @@ export class MenuScreen implements Screen {
   private toggleGraphics(): void {
     const graphics = settings().graphics === 'full' ? 'fast' : 'full';
     updateSettings({ graphics });
-    this.game.view3d?.setQuality(graphics);
-    this.game.view3d?.setFog(this.dist * 1.1, this.dist * 4 + 600);
+    const v = this.game.view3d;
+    if (v) {
+      v.setQuality(graphics);
+      this.orbit.applyFog(v);
+    }
     this.refresh();
   }
 
@@ -218,18 +198,6 @@ export class MenuScreen implements Screen {
 
   frame(dt: number): void {
     const v = this.game.view3d;
-    if (!v) return;
-    this.yaw += dt * 0.07;
-    const t = this.target;
-    const pitch = 0.55;
-    const cam = v.camera;
-    cam.position.set(t.x + Math.sin(this.yaw) * Math.cos(pitch) * this.dist, t.y + Math.sin(pitch) * this.dist, t.z + Math.cos(this.yaw) * Math.cos(pitch) * this.dist);
-    cam.up.set(0, 1, 0);
-    cam.lookAt(t.x, t.y, t.z);
-    if (Math.abs(cam.fov - 55) > 0.01) {
-      cam.fov = 55;
-      cam.updateProjectionMatrix();
-    }
-    v.render();
+    if (v) this.orbit.frame(v, dt);
   }
 }

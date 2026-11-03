@@ -1,4 +1,5 @@
 import type { PaintId } from '../config/paint.ts';
+import type { RaceSetup } from './screen.ts';
 import { loadJSON, saveJSON } from '../platform/storage.ts';
 
 /** Player preferences, saved between visits. */
@@ -23,6 +24,8 @@ export interface Settings {
   cornerLabels: boolean;
   /** Editor sidebar section left open. */
   sidebarSection: number;
+  /** Race setup choices (laps come from each track). */
+  raceSetup: Omit<RaceSetup, 'laps'>;
 }
 
 const DEFAULTS: Settings = {
@@ -40,6 +43,7 @@ const DEFAULTS: Settings = {
   minimap: true,
   cornerLabels: true,
   sidebarSection: 0,
+  raceSetup: { mode: 'race', ghost: true, opponents: 3, difficulty: 50 },
 };
 const KEY = 'settings';
 

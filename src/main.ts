@@ -1,8 +1,10 @@
 import css from './ui/style.css?inline';
 import { audio } from './audio/audio.ts';
 import { STR } from './config/strings.ts';
-import type { DriveMode, GameContext, Screen, ScreenId } from './core/screen.ts';
-import { settings } from './core/settings.ts';
+import type { DriveMode, GameContext, RaceSetup, Screen, ScreenId } from './core/screen.ts';
+import { settings, updateSettings } from './core/settings.ts';
+import { AI } from './config/race.ts';
+import { clamp } from './core/math.ts';
 import { Surface2D } from './core/surface2d.ts';
 import { EditorScreen } from './editor/drawing.ts';
 import { getSampleTrack, trackFromCode } from './editor/pipeline.ts';
@@ -20,9 +22,12 @@ import type { Track } from './track/track.ts';
 import { h } from './ui/dom.ts';
 import { LibraryScreen } from './ui/libraryScreen.ts';
 import { MenuScreen } from './ui/menuScreen.ts';
+import { RaceSetupScreen } from './ui/raceSetupScreen.ts';
 
 /**
- * Main state machine:  RACE (boot) ⇄ EDITOR ⇄ RESULTS ⇄ LIBRARY
+ * Main state machine: MENU (boot) → SETUP → RACE → RESULTS, with EDITOR,
+ * PREVIEW and LIBRARY reachable from most of them. SETUP (the race setup
+ * menu) opens wherever you choose to race a track.
  */
 
 const style = document.createElement('style');
@@ -58,15 +63,27 @@ class Game implements GameContext {
   lastResult: RunResult | null = null;
   interrupted = false;
   preview: GameContext['preview'] = null;
-  mode: DriveMode = 'practice';
+  readonly setup: RaceSetup;
+  /** The track whose own lap count the setup's laps were last reset to. */
+  private lapsFor = '';
+  private setupBack: (() => void) | null = null;
   private readonly screens: Partial<Record<ScreenId, Screen>> = {};
   private current: Screen | null = null;
   private currentId: ScreenId | null = null;
 
   constructor(bootTrack: Track) {
     this.track = bootTrack;
+    const saved = settings().raceSetup;
+    this.setup = {
+      mode: saved?.mode === 'practice' ? 'practice' : 'race',
+      laps: bootTrack.options.laps,
+      ghost: saved?.ghost ?? true,
+      opponents: clamp(Math.round(saved?.opponents ?? 3), 0, AI.maxOpponents),
+      difficulty: clamp(Math.round(saved?.difficulty ?? 50), 1, 100),
+    };
     wipeOldLibraryOnce(this.library, this.records);
     this.screens.menu = new MenuScreen(this);
+    this.screens.setup = new RaceSetupScreen(this);
     this.screens.race = new RaceScreen(this);
     this.screens.editor = new EditorScreen(this);
     this.screens.results = new ResultsScreen(this);
@@ -82,10 +99,44 @@ class Game implements GameContext {
     (this.screens.race as RaceScreen | undefined)?.applyPaint();
   }
 
+  get mode(): DriveMode {
+    return this.setup.mode;
+  }
+
+  /** A new track starts with its own number of laps (the editor's "Laps per race"). */
+  private syncLaps(): void {
+    if (this.lapsFor === this.track.def.id) return;
+    this.lapsFor = this.track.def.id;
+    this.setup.laps = this.track.options.laps;
+  }
+
   drive(mode: DriveMode): void {
-    this.mode = mode;
+    this.start({ mode });
+  }
+
+  start(patch: Partial<RaceSetup> = {}): void {
+    this.syncLaps();
+    Object.assign(this.setup, patch);
+    const { mode, ghost, opponents, difficulty } = this.setup;
+    updateSettings({ raceSetup: { mode, ghost, opponents, difficulty } });
+    this.setupBack = null;
     if (this.currentId === 'race') (this.screens.race as RaceScreen).startRun();
     else this.go('race');
+  }
+
+  openSetup(opts: { back?: () => void; mode?: DriveMode } = {}): void {
+    this.syncLaps();
+    if (opts.mode) this.setup.mode = opts.mode;
+    const from = this.currentId;
+    this.setupBack = opts.back ?? (() => this.go(from && from !== 'setup' ? from : 'menu'));
+    this.go('setup');
+  }
+
+  closeSetup(): void {
+    const back = this.setupBack;
+    this.setupBack = null;
+    if (back) back();
+    else this.go('menu');
   }
 
   go(id: ScreenId): void {

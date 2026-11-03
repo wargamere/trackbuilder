@@ -13,6 +13,16 @@ export interface TrackRecord {
   author: number | null | undefined;
 }
 
+/** One car in a race's finishing order. */
+export interface Standing {
+  name: string;
+  you: boolean;
+  paint: number;
+  /** Race time from GO (s); an estimate if it was still racing when you finished. */
+  time: number;
+  estimated: boolean;
+}
+
 /** What the results screen shows about a finished run. */
 export interface RunResult {
   trackId: string;
@@ -38,6 +48,9 @@ export interface RunResult {
   unlockedPaints: PaintId[];
   /** The bot's lap on this track (medal targets), if known. */
   author: number | null;
+  /** Finishing order and your place in it, in a race with AI cars (else null). */
+  standings: Standing[] | null;
+  position: number | null;
 }
 
 /**

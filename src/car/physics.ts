@@ -164,15 +164,19 @@ export class CarPhysics {
     this.placeAt(-8);
   }
 
-  /** Puts the car at rest on the centre line, `s` metres along the track (negative = before the start line). */
-  placeAt(s: number): void {
+  /**
+   * Puts the car at rest facing along the track, `s` metres along it (negative
+   * = before the start line) and `lateral` metres left of the centre line.
+   */
+  placeAt(s: number, lateral = 0): void {
     const { p, t } = sampleAt(this.track.center, s);
+    const l = leftOf(t);
     const st = this.state;
     Object.assign(st, new CarState());
-    st.x = p.x;
-    st.z = p.y;
+    st.x = p.x + l.x * lateral;
+    st.z = p.y + l.y * lateral;
     st.heading = Math.atan2(t.y, t.x);
-    const pos = this.locator.locate(p);
+    const pos = this.locator.locate({ x: st.x, y: st.z });
     st.trackIndex = pos.index;
     st.s = pos.s;
     st.lateral = pos.lateral;

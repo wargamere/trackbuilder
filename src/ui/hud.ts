@@ -8,7 +8,7 @@ import { Minimap } from './minimap.ts';
 export interface HudActions {
   drawTrack(): void;
   pause(): void;
-  /** From practice: start a proper race. */
+  /** From practice: open the race setup to start a proper race. */
   startRace(): void;
 }
 
@@ -31,6 +31,8 @@ export class Hud {
   private readonly hint: HTMLElement;
   private readonly debug: HTMLElement;
   private readonly medals: HTMLElement;
+  private readonly pos: HTMLElement;
+  private readonly posValue: HTMLElement;
   private medalKey = '';
   readonly minimap = new Minimap();
   private lastSpeed = -1;
@@ -62,7 +64,10 @@ export class Hud {
     this.lastBest = h('div', { class: 'lap-sub' });
     this.split = h('div', { class: 'hud-split' });
     this.medals = h('div', { class: 'hud-medals' });
-    const timer = h('div', { class: 'hud-timer' }, this.lapLabel, this.time, this.lastBest, this.medals, this.split);
+    this.posValue = h('span', { class: 'pos-value' });
+    this.pos = h('div', { class: 'hud-pos' }, h('span', { class: 'pos-label', text: STR.race.position }), this.posValue);
+    this.pos.hidden = true;
+    const timer = h('div', { class: 'hud-timer' }, this.pos, this.lapLabel, this.time, this.lastBest, this.medals, this.split);
     this.center = h('div', { class: 'hud-center' });
     this.speedValue = h('span', { class: 'speed-value', text: '0' });
     this.speedUnit = h('span', { class: 'speed-unit', text: STR.race.speedUnit });
@@ -129,11 +134,17 @@ export class Hud {
     if (this.speedUnit.textContent !== unit) this.speedUnit.textContent = unit;
   }
 
-  /** Practice shows a "Start race" button; a race doesn't. */
-  setMode(mode: 'practice' | 'race', laps: number): void {
+  /** Practice shows a "Start a race" button; a race doesn't. */
+  setMode(mode: 'practice' | 'race'): void {
     this.raceBtn.hidden = mode !== 'practice';
-    const label = this.raceBtn.querySelector('.btn-label');
-    if (label) label.textContent = fmt(STR.buttons.startRaceLaps, { n: laps });
+  }
+
+  /** Race position against the AI cars ("2/4"), or null to hide it. */
+  setPosition(pos: number | null, of = 0): void {
+    this.pos.hidden = pos === null;
+    if (pos === null) return;
+    const t = fmt(STR.race.positionValue, { pos, n: of });
+    if (this.posValue.textContent !== t) this.posValue.textContent = t;
   }
 
   /** Shows or hides the minimap (Display settings). */
