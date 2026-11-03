@@ -1736,3 +1736,122 @@ body {
   font-size: 0.8rem;
   white-space: nowrap;
 }
+
+/* ------------------------------------------------------------ main menu */
+
+.main-menu {
+  background: linear-gradient(90deg, rgba(14, 18, 28, 0.45), rgba(14, 18, 28, 0) 60%);
+  justify-content: flex-start;
+  padding-left: clamp(0.8rem, 5vw, 4rem);
+}
+
+.main-menu .panel {
+  width: min(24rem, 92vw);
+  max-height: 94%;
+  overflow-y: auto;
+  text-align: left;
+}
+
+.menu-title {
+  margin: 0;
+  font-size: 2.1rem;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  color: var(--ink);
+}
+
+.menu-tagline {
+  margin: 0.1rem 0 0.8rem;
+  font-weight: 600;
+  color: #4a5270;
+}
+
+.menu-track {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 0.8rem;
+  padding: 0.5rem 0.6rem;
+  border: 1.5px solid rgba(27, 58, 138, 0.18);
+  border-radius: 0.7rem;
+  background: #fff;
+}
+
+.menu-track-text {
+  flex: 1;
+  min-width: 0;
+  text-align: center;
+  line-height: 1.25;
+}
+
+.menu-track-name {
+  font-weight: 900;
+  font-size: 1.1rem;
+  color: #14182a;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.menu-track-info,
+.menu-track-best {
+  font-size: 0.8rem;
+  color: #5a6280;
+  font-variant-numeric: tabular-nums;
+}
+
+.main-menu .menu {
+  align-items: stretch;
+}
+
+.menu-choice {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.menu-choice .btn {
+  justify-content: center;
+}
+
+.menu-hint {
+  font-size: 0.75rem;
+  color: #5a6280;
+  text-align: center;
+}
+
+.main-menu .menu.row .btn {
+  flex: 1;
+  justify-content: center;
+}
+
+.main-menu .settings {
+  margin-top: 0.7rem;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.menu-keys {
+  margin: 0.6rem 0 0;
+  font-size: 0.7rem;
+  color: #7a8098;
+  text-align: center;
+}
+
+@media (pointer: coarse) {
+  .menu-keys {
+    display: none;
+  }
+}
+
+.hud-top .race-btn {
+  background: #fff7d6;
+}
+
+.main-menu .settings .btn.small {
+  flex: 1 1 auto;
+  justify-content: center;
+  min-height: max(2rem, 28px);
+  padding: 0.25em 0.5em;
+  font-size: 0.8rem;
+}

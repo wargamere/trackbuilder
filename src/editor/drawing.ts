@@ -153,7 +153,8 @@ export class EditorScreen implements Screen {
     this.game = game;
     this.ui = new EditorUI(
       {
-        back: () => this.game.go('race'),
+        back: () => this.game.go('menu'),
+        practice: () => this.race('practice'),
         undo: () => this.undo(),
         redo: () => this.redo(),
         clear: () => this.clear(),
@@ -418,7 +419,8 @@ export class EditorScreen implements Screen {
     this.share.open(this.currentDef(contentId(this.dots, this.options)), this.game.ui);
   }
 
-  private race(): void {
+  /** Races (or practises on) the track as it is now. */
+  private race(mode: 'race' | 'practice' = 'race'): void {
     this.rebuild();
     if (!this.built?.ok || !this.closed) return;
     const def = this.currentDef('');
@@ -427,7 +429,7 @@ export class EditorScreen implements Screen {
     def.id = same && b ? b.id : contentId(def.control, def.options);
     if (same) def.builtIn = b?.builtIn;
     this.game.setTrack(buildTrack(def));
-    this.game.go('race');
+    this.game.drive(mode);
   }
 
   // -------------------------------------------------------------- heights
@@ -1126,7 +1128,7 @@ export class EditorScreen implements Screen {
       Escape: () => {
         if (this.ui.overlayOpen) this.ui.closeOverlay();
         else if (this.selected >= 0) this.selected = -1;
-        else this.game.go('race');
+        else this.game.go('menu');
       },
     };
     const action = actions[e.code];

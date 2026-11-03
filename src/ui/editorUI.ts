@@ -16,6 +16,7 @@ export interface EditorActions {
   redo(): void;
   clear(): void;
   race(): void;
+  practice(): void;
   preview(): void;
   setMode(m: EditorMode): void;
   setSmoothing(s: SmoothingLevel): void;
@@ -125,6 +126,7 @@ export class EditorUI {
   private readonly undoBtn: HTMLButtonElement;
   private readonly redoBtn: HTMLButtonElement;
   private readonly raceBtn: HTMLButtonElement;
+  private readonly practiceBtn: HTMLButtonElement;
   private readonly zoomBox: HTMLElement;
   private readonly sections: Section[] = [];
   private open: number;
@@ -394,6 +396,7 @@ export class EditorUI {
     });
 
     this.raceBtn = button(STR.buttons.raceIt, actions.race, { key: k.race, icon: '▶', class: 'primary race' });
+    this.practiceBtn = button(STR.buttons.practice, actions.practice, { icon: '⟳', class: 'compact', title: STR.menu.practiceHint });
     const foot = h(
       'div',
       { class: 'side-foot' },
@@ -404,6 +407,7 @@ export class EditorUI {
         button(STR.buttons.share, actions.share, { icon: '⧉', class: 'compact', title: STR.buttons.share }),
         button(S.save, actions.save, { icon: '⬇', class: 'compact', title: S.save }),
         button(STR.buttons.myTracks, actions.myTracks, { icon: '☰', class: 'compact', title: STR.buttons.myTracks }),
+        this.practiceBtn,
       ),
       this.raceBtn,
     );
@@ -571,6 +575,7 @@ export class EditorUI {
     this.undoBtn.disabled = !s.canUndo;
     this.redoBtn.disabled = !s.canRedo;
     this.raceBtn.disabled = !s.canRace;
+    this.practiceBtn.disabled = !s.canRace;
     c.mode.set(s.mode);
     c.heightTools.hidden = s.mode !== 'height';
     c.smoothing.set(s.smoothing);

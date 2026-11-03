@@ -5,7 +5,10 @@ import type { Track } from '../track/track.ts';
 import type { Surface2D } from './surface2d.ts';
 
 /** States of the main state machine (see main.ts). */
-export type ScreenId = 'race' | 'editor' | 'results' | 'library' | 'preview';
+export type ScreenId = 'menu' | 'race' | 'editor' | 'results' | 'library' | 'preview';
+
+/** How the race screen runs: free practice laps, or a timed race with a countdown and results. */
+export type DriveMode = 'practice' | 'race';
 
 export interface Screen {
   /** Which canvas the screen draws on; main.ts shows that one and hides the other. */
@@ -28,6 +31,10 @@ export interface GameContext {
   /** Overlay element that screens put their DOM UI into. */
   readonly ui: HTMLElement;
   go(id: ScreenId): void;
+  /** Drives the current track in practice or race mode (restarting the run if already driving). */
+  drive(mode: DriveMode): void;
+  /** The mode the race screen runs in. */
+  readonly mode: DriveMode;
   /** Personal bests and ghosts per track. */
   readonly records: RecordBook;
   /** Saved tracks ("My tracks"). */

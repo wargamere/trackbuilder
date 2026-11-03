@@ -1,4 +1,4 @@
-import { STR } from '../config/strings.ts';
+import { STR, fmt } from '../config/strings.ts';
 import { settings } from '../core/settings.ts';
 import { MEDALS, type MedalTimes } from '../race/medals.ts';
 import { formatTime } from '../race/session.ts';
@@ -8,6 +8,8 @@ import { Minimap } from './minimap.ts';
 export interface HudActions {
   drawTrack(): void;
   pause(): void;
+  /** From practice: start a proper race. */
+  startRace(): void;
 }
 
 export type FlashKind = 'info' | 'good' | 'bad' | 'big';
@@ -33,6 +35,7 @@ export class Hud {
   readonly minimap = new Minimap();
   private lastSpeed = -1;
   private readonly speedUnit: HTMLElement;
+  private readonly raceBtn: HTMLButtonElement;
   private lastTime = '';
   private hintTimer = 0;
   private centerTimer = 0;
@@ -40,6 +43,7 @@ export class Hud {
 
   constructor(actions: HudActions) {
     this.info = h('div', { class: 'hud-info' });
+    this.raceBtn = button(STR.buttons.startRace, actions.startRace, { icon: '🏁', class: 'draw race-btn' });
     const pause = button('', actions.pause, { icon: 'Ⅱ', class: 'icon-btn' });
     pause.title = STR.buttons.pause;
     pause.setAttribute('aria-label', STR.buttons.pause);
@@ -47,6 +51,7 @@ export class Hud {
       'div',
       { class: 'hud-top' },
       button(STR.buttons.drawTrack, actions.drawTrack, { icon: '✎', class: 'draw' }),
+      this.raceBtn,
       this.info,
       h('div', { class: 'spacer' }),
       pause,
@@ -113,6 +118,13 @@ export class Hud {
     }
     const unit = mph ? STR.race.speedUnitMph : STR.race.speedUnit;
     if (this.speedUnit.textContent !== unit) this.speedUnit.textContent = unit;
+  }
+
+  /** Practice shows a "Start race" button; a race doesn't. */
+  setMode(mode: 'practice' | 'race', laps: number): void {
+    this.raceBtn.hidden = mode !== 'practice';
+    const label = this.raceBtn.querySelector('.btn-label');
+    if (label) label.textContent = fmt(STR.buttons.startRaceLaps, { n: laps });
   }
 
   /** Shows or hides the minimap (Display settings). */

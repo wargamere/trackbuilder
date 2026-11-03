@@ -63,6 +63,8 @@ export class ResultsScreen implements Screen {
               { class: 'menu row secondary' },
               button(STR.buttons.shareTrack, () => this.share.open(this.game.track.def, this.game.ui), { icon: '⧉' }),
               button(STR.buttons.myTracks, () => this.leave('library'), { icon: '☰' }),
+              button(STR.buttons.practice, () => this.game.drive('practice'), { icon: '⟳', key: 'P' }),
+              button(STR.buttons.mainMenu, () => this.leave('menu'), { icon: '⌂' }),
             ),
           ),
         ),
@@ -162,7 +164,7 @@ export class ResultsScreen implements Screen {
     this.game.view3d?.resize(s.w, s.h);
   }
 
-  private leave(to: 'editor' | 'library'): void {
+  private leave(to: 'editor' | 'library' | 'menu'): void {
     if (!this.busy) this.game.go(to);
   }
 

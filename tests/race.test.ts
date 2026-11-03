@@ -168,3 +168,24 @@ test('a figure-eight: driving straight over the crossroads keeps the car on its 
   assert.ok(!events.some((e) => e.type === 'lapInvalid'), 'no lap was thrown away at the crossing');
   assert.equal(grassTicks, 0);
 });
+
+test('practice: no countdown, lap after lap, never finished, bests still kept', () => {
+  const L = 1000;
+  const session = new RaceSession(L, null, Infinity, 12, 0);
+  assert.equal(session.phase, 'racing');
+  assert.ok(session.canDrive, 'drive straight away');
+  const events: RaceEvent[] = [];
+  let s = L - 8;
+  const speed = 40;
+  // About eight laps.
+  for (let k = 0; k < Math.round(((8 * L) / speed) * HANDLING.tickRate); k++) {
+    const prev: Progress = { s, lateral: 0, along: speed };
+    s = (s + speed * DT) % L;
+    session.step(prev, { s, lateral: 0, along: speed }, events);
+  }
+  assert.ok(!events.some((e) => e.type === 'count' || e.type === 'go'), 'no countdown');
+  assert.ok(session.laps.length >= 7, `${session.laps.length} laps`);
+  assert.notEqual(session.phase, 'finished');
+  assert.ok(!events.some((e) => e.type === 'finished'));
+  assert.ok(session.best && Math.abs(session.best.time - L / speed) < 0.01);
+});

@@ -1,7 +1,7 @@
 import css from './ui/style.css?inline';
 import { audio } from './audio/audio.ts';
 import { STR } from './config/strings.ts';
-import type { GameContext, Screen, ScreenId } from './core/screen.ts';
+import type { DriveMode, GameContext, Screen, ScreenId } from './core/screen.ts';
 import { settings } from './core/settings.ts';
 import { Surface2D } from './core/surface2d.ts';
 import { EditorScreen } from './editor/drawing.ts';
@@ -18,6 +18,7 @@ import { TrackLibrary } from './track/library.ts';
 import type { Track } from './track/track.ts';
 import { h } from './ui/dom.ts';
 import { LibraryScreen } from './ui/libraryScreen.ts';
+import { MenuScreen } from './ui/menuScreen.ts';
 
 /**
  * Main state machine:  RACE (boot) ⇄ EDITOR ⇄ RESULTS ⇄ LIBRARY
@@ -56,12 +57,14 @@ class Game implements GameContext {
   lastResult: RunResult | null = null;
   interrupted = false;
   preview: GameContext['preview'] = null;
+  mode: DriveMode = 'practice';
   private readonly screens: Partial<Record<ScreenId, Screen>> = {};
   private current: Screen | null = null;
   private currentId: ScreenId | null = null;
 
   constructor(bootTrack: Track) {
     this.track = bootTrack;
+    this.screens.menu = new MenuScreen(this);
     this.screens.race = new RaceScreen(this);
     this.screens.editor = new EditorScreen(this);
     this.screens.results = new ResultsScreen(this);
@@ -75,6 +78,12 @@ class Game implements GameContext {
 
   refreshPaint(): void {
     (this.screens.race as RaceScreen | undefined)?.applyPaint();
+  }
+
+  drive(mode: DriveMode): void {
+    this.mode = mode;
+    if (this.currentId === 'race') (this.screens.race as RaceScreen).startRun();
+    else this.go('race');
   }
 
   go(id: ScreenId): void {
@@ -128,8 +137,9 @@ function installCommonFixes(): void {
 
 /**
  * Boot: initialise the platform (CrazyGames SDK) first, because saved data
- * lives in the SDK's data module; then straight into the race on the boot track,
- * no clicks needed. Loading is reported from SDK init to the first rendered frame.
+ * lives in the SDK's data module; then the main menu over the boot track in 3D
+ * (one tap or key to start driving). Loading is reported from SDK init to the
+ * first rendered frame.
  */
 async function boot(): Promise<void> {
   installCommonFixes();
@@ -151,7 +161,7 @@ async function boot(): Promise<void> {
       game.interrupted = false;
     },
   });
-  game.go('race');
+  game.go('menu');
 
   if (CAPS.orientationPrompt) {
     const prompt = h('div', { class: 'rotate-prompt' }, h('div', { class: 'rotate-icon', text: '📱' }), h('p', { text: STR.rotate }));

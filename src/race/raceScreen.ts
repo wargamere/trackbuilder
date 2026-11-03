@@ -73,7 +73,11 @@ export class RaceScreen implements Screen {
 
   constructor(game: GameContext) {
     this.game = game;
-    this.hud = new Hud({ drawTrack: () => this.game.go('editor'), pause: () => this.setPaused(true) });
+    this.hud = new Hud({
+      drawTrack: () => this.game.go('editor'),
+      pause: () => this.setPaused(true),
+      startRace: () => this.game.drive('race'),
+    });
     this.pauseMenu = new PauseMenu({
       resume: () => this.setPaused(false),
       resetCar: () => {
@@ -81,6 +85,8 @@ export class RaceScreen implements Screen {
         this.setPaused(false);
       },
       restart: () => this.startRun(),
+      switchMode: () => this.game.drive(this.game.mode === 'practice' ? 'race' : 'practice'),
+      mainMenu: () => this.game.go('menu'),
       drawTrack: () => this.game.go('editor'),
       myTracks: () => this.game.go('library'),
       toggleSound: () => this.toggleSound(),
@@ -156,8 +162,11 @@ export class RaceScreen implements Screen {
     this.game.view3d?.resize(s.w, s.h);
   }
 
-  /** New run: car on the grid, countdown, fresh session (bests carry over). */
-  private startRun(): void {
+  /**
+   * New run: car on the grid and a fresh session (bests carry over). A race has
+   * a countdown and a set number of laps; practice starts at once and never ends.
+   */
+  startRun(): void {
     const car = this.car;
     if (!car) return;
     const def = this.game.track.def;
@@ -167,7 +176,12 @@ export class RaceScreen implements Screen {
     car.placeAt(-8);
     const rec = this.game.records.get(this.game.track.def.id);
     const t = this.game.track;
-    this.session = new RaceSession(t.center.length, rec.best, t.options.laps, t.center.width);
+    const practice = this.game.mode === 'practice';
+    this.session = practice
+      ? new RaceSession(t.center.length, rec.best, Infinity, t.center.width, 0)
+      : new RaceSession(t.center.length, rec.best, t.options.laps, t.center.width);
+    this.hud.setMode(this.game.mode, t.options.laps);
+    this.pauseMenu.setMode(this.game.mode, t.options.laps);
     this.ghost = rec.ghost;
     if (rec.author === undefined && this.author?.id !== def.id) this.author = { id: def.id, lap: new AuthorLap(this.game.track) };
     this.ghostIndex = -1;
@@ -180,6 +194,7 @@ export class RaceScreen implements Screen {
     this.touch.release();
     this.rig.snap(car.state);
     this.hud.clearFlash();
+    if (practice) this.hud.flash(STR.race.practiceGo, 'info', 1.8);
     if (this.ghostModel) this.ghostModel.root.visible = false;
     audio.setEngine(true);
   }
@@ -375,7 +390,9 @@ export class RaceScreen implements Screen {
     const s = this.session!;
     const rec = this.game.records.get(this.game.track.def.id);
     this.hud.setMedals(rec.author ? medalTimes(rec.author) : null, rec.best?.time ?? null);
-    if (s.lapStart === null) this.hud.setLap(s.phase === 'countdown' ? '' : STR.race.warmup);
+    if (this.game.mode === 'practice') {
+      this.hud.setLap(s.lapStart === null ? STR.race.practice : fmt(STR.race.practiceLap, { n: s.laps.length + 1 }));
+    } else if (s.lapStart === null) this.hud.setLap(s.phase === 'countdown' ? '' : STR.race.warmup);
     else this.hud.setLap(fmt(STR.race.lap, { n: Math.min(s.laps.length + 1, s.lapsToRun), total: s.lapsToRun }));
     this.hud.setTime(formatTime(s.lapTime(alpha) ?? 0));
     const parts: string[] = [];

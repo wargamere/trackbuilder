@@ -48,13 +48,15 @@ src/
   race/       raceScreen.ts (fixed-step loop, interpolation, pause), session.ts
               (countdown, checkpoints, lap timing, splits), ghost.ts, records.ts,
               resultsScreen.ts, bot.ts (test driver), medals.ts (medal times)
-  ui/         dom helpers, editor overlay, HUD, minimap, pause menu, touch controls,
+  ui/         dom helpers, menuScreen.ts (main menu), editor overlay, HUD, minimap,
+              pause menu, touch controls,
               libraryScreen.ts (My tracks), shareDialog.ts, style.css
   audio/      audio.ts (synthesised engine, tyre squeal, grass rumble, beeps)
   platform/   platform.ts (PLATFORM flag + CAPS), services.ts (what the game calls:
               loading/gameplay events, ads, user, device), crazygames.ts (SDK wrapper),
               storage.ts (key-value store), web.ts (share links, rotate prompt)
-  main.ts     state machine: RACE (boot) ⇄ EDITOR ⇄ RESULTS ⇄ LIBRARY
+  main.ts     state machine: MENU (boot) ⇄ RACE (practice or race) ⇄ EDITOR ⇄
+              PREVIEW, RESULTS, LIBRARY
 ```
 
 ### 3D scene
@@ -142,9 +144,19 @@ The **3D view** (V, or the ◈ button) shows the track being edited from an orbi
 
 Freehand pipeline: raw stroke → lazy pen → merge points closer than 2 m → trim any overshoot, or close the gap → resample every 6 m → Taubin de-jitter → open up corners tighter than the smoothing level's radius → Douglas-Peucker to editable dots (1.6 m tolerance, at most 70 m apart) → round to 0.5 m.
 
-### Time trial
+### Menu, practice and races
 
-3-2-1-GO, then 3 laps. The timer starts when you cross the line. Ten checkpoints sit around the lap, and a lap counts only if you pass them in order, driving along the track. A jump of more than 3 m along the track in one physics tick (cutting across the grass to another stretch, or a reset) never passes a checkpoint. Lap times are interpolated within the 120 Hz tick. Each checkpoint shows a split against your best lap, and driving backwards shows "Wrong way!".
+The game boots to the **main menu**, with the current track turning slowly in 3D behind it. From there:
+- pick a track with ‹ › (or ← →): the samples, then your saved tracks;
+- **Practice** (Enter): drive straight away, no countdown, as many laps as you like. Lap times, splits, the ghost and personal bests work as in a race, but there's no lap limit and no results screen. The HUD and the pause menu have "Race · N laps" to start a proper race on the same track;
+- **Race** (R): the timed race below, ending on the results screen;
+- **Draw a track** (E), **My tracks** (L), and sound / graphics / units toggles.
+
+The pause menu switches between practice and race and has Main menu; the editor's ✕ (and Esc) and My tracks' Back return to the menu. The results screen also offers Practice and Main menu.
+
+### Races
+
+3-2-1-GO, then 3 laps (1, 3 or 5, set per track). The timer starts when you cross the line. Ten checkpoints sit around the lap, and a lap counts only if you pass them in order, driving along the track. A jump of more than 3 m along the track in one physics tick (cutting across the grass to another stretch, or a reset) never passes a checkpoint. Lap times are interpolated within the 120 Hz tick. Each checkpoint shows a split against your best lap, and driving backwards shows "Wrong way!".
 
 Your best lap is recorded tick by tick and replayed as a translucent ghost. The results screen shows the total time, each lap, the best lap and a score: average speed on your best lap × ink multiplier × 10.
 

@@ -89,7 +89,7 @@ export class LibraryScreen implements Screen {
       h(
         'div',
         { class: 'library-head' },
-        button(STR.buttons.back, () => this.game.go('race'), { icon: '✕', key: 'Esc', class: 'compact' }),
+        button(STR.buttons.back, () => this.game.go('menu'), { icon: '✕', key: 'Esc', class: 'compact' }),
         h('h2', { text: STR.library.title }),
         h('div', { class: 'spacer' }),
         button(STR.buttons.newTrack, () => this.game.go('editor'), { icon: '✎', class: 'primary' }),
@@ -116,7 +116,7 @@ export class LibraryScreen implements Screen {
       (e) => {
         if (e.key === 'Escape' && !this.share.isOpen && !(e.target instanceof HTMLInputElement)) {
           e.preventDefault();
-          this.game.go('race');
+          this.game.go('menu');
         }
       },
       { signal: this.abort.signal },
@@ -163,7 +163,7 @@ export class LibraryScreen implements Screen {
 
   private race(def: TrackDef): void {
     this.game.setTrack(def.builtIn ? getSampleTrack(sampleIndexOf(def)) : buildTrack(def));
-    this.game.go('race');
+    this.game.drive('race');
   }
 
   private edit(def: TrackDef): void {

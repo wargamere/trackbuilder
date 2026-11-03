@@ -64,12 +64,17 @@ export class RaceSession {
   /** How far from the centre line a checkpoint still counts. */
   private readonly reach: number;
 
-  constructor(length: number, best: BestLap | null = null, laps: number = RACE.laps, roadWidth = 12) {
+  /**
+   * `laps` may be Infinity (practice: lap after lap, never finished), and
+   * `countdown` 0 (practice: drive straight away).
+   */
+  constructor(length: number, best: BestLap | null = null, laps: number = RACE.laps, roadWidth = 12, countdown: number = RACE.countdown) {
     this.length = length;
     this.reach = roadWidth / 2 + RACE.checkpointMargin;
     this.best = best;
     this.lapsToRun = laps;
-    this.countdownTicks = Math.round(RACE.countdown * HANDLING.tickRate);
+    this.countdownTicks = Math.round(countdown * HANDLING.tickRate);
+    if (this.countdownTicks <= 0) this.phase = 'racing';
     this.checkpoints = [];
     for (let k = 1; k < RACE.checkpoints; k++) this.checkpoints.push((length * k) / RACE.checkpoints);
   }

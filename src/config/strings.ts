@@ -36,6 +36,26 @@ export const STR = {
     close: 'Close',
     soundOn: 'Sound: on',
     soundOff: 'Sound: off',
+    startRace: 'Start race',
+    startRaceLaps: 'Race · {n} laps',
+    practice: 'Practice',
+    backToGrid: 'Back to the grid',
+    mainMenu: 'Main menu',
+  },
+
+  menu: {
+    practice: 'Practice',
+    practiceHint: 'Free laps: no countdown, no pressure.',
+    race: 'Race · {n} laps',
+    raceHint: '3-2-1-GO, then timed laps for a score.',
+    draw: 'Draw a track',
+    myTracks: 'My tracks',
+    trackInfo: '{len} km · ×{mult}',
+    best: 'Best lap {time}',
+    noBest: 'No lap yet',
+    prev: 'Previous track',
+    next: 'Next track',
+    keys: 'Enter practice · R race · E draw · ← → change track',
   },
 
   editor: {
@@ -207,6 +227,9 @@ export const STR = {
 
   race: {
     gantry: 'START · FINISH',
+    practice: 'PRACTICE',
+    practiceLap: 'PRACTICE · LAP {n}',
+    practiceGo: 'Practice — drive when ready',
     trackInfo: '{name} · {len} m · ×{mult}',
     speedUnit: 'km/h',
     speedUnitMph: 'mph',
