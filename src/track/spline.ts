@@ -246,3 +246,29 @@ export function sampleOpenCatmullRom(dots: readonly Dot[], step = 2): Dot[] {
   out.push({ ...b });
   return out;
 }
+
+/**
+ * Half-widths of the road on each side. On the inside of a hairpin tighter than
+ * half the road width the inner edge would fold back on itself, so it is pulled
+ * in to just inside the corner's radius (the road narrows slightly there).
+ */
+export function edgeOffsets(c: Centerline): { left: Float32Array; right: Float32Array } {
+  const n = c.points.length;
+  const hw = c.width / 2;
+  const left = new Float32Array(n).fill(hw);
+  const right = new Float32Array(n).fill(hw);
+  const win = 3;
+  for (let i = 0; i < n; i++) {
+    let kMax = 0; // tightest signed curvature nearby
+    for (let o = -win; o <= win; o++) {
+      const k = c.curvature[wrap(i + o, n)];
+      if (Math.abs(k) > Math.abs(kMax)) kMax = k;
+    }
+    const limit = 0.9 / Math.max(Math.abs(kMax), 1e-6);
+    if (limit >= hw) continue;
+    // Positive curvature = right-hander: the inside is the right edge.
+    if (kMax > 0) right[i] = Math.max(0.5, limit);
+    else left[i] = Math.max(0.5, limit);
+  }
+  return { left, right };
+}

@@ -10,7 +10,7 @@ import { getSampleTrack, SAMPLE_COUNT, trackFromControl, trackFromStroke } from 
 import { crossingKind, findCrossings } from '../src/editor/validation.ts';
 import { botInput } from '../src/race/bot.ts';
 import { decodeTrack, encodeTrack } from '../src/track/code.ts';
-import { leftOf, surfaceY } from '../src/track/spline.ts';
+import { edgeOffsets, leftOf, surfaceY } from '../src/track/spline.ts';
 import { surfaceFor, terrainHeight } from '../src/track/surface.ts';
 import { buildTrack, contentId, type Track } from '../src/track/track.ts';
 
@@ -177,6 +177,45 @@ test('the ground never pokes through the road, on any sample with random hills',
           assert.ok(above <= 0.01, `${base.def.name} seed ${seed}: ground ${above.toFixed(2)} m above the road at ${i}`);
         }
       }
+    }
+  }
+});
+
+test('big hills with steep banking and barriers leave no holes beside the road', () => {
+  for (let si = 0; si < SAMPLE_COUNT; si++) {
+    for (const seed of [1, 2, 3]) {
+      const base = getSampleTrack(si);
+      const L = base.center.length;
+      const hs = rollingHeights(
+        dotFractions(base).map((u) => u * L),
+        L,
+        rng(seed * 31 + si),
+        [14, 28],
+      );
+      const t = buildTrack({ id: `holes-${si}-${seed}`, name: 'h', control: withHeights(base.def.control, hs), options: { banking: 2, walls: true } });
+      const surf = surfaceFor(t);
+      const c = t.center;
+      const n = c.points.length;
+      const { left, right } = edgeOffsets(c);
+      for (let i = 0; i < n; i++) {
+        // Ground right beside the road edge stays close under it (the earth skirt covers 1.6 m).
+        if (!surf.deck[i]) {
+          const l = leftOf(c.tangents[i]);
+          for (const side of [1, -1]) {
+            const e = side > 0 ? left[i] : right[i];
+            const lat = (e + 0.3) * side;
+            const drop = surfaceY(c, i, e * side) - terrainHeight(surf.terrain, c.points[i].x + l.x * lat, c.points[i].y + l.y * lat);
+            assert.ok(drop < 1.2, `${base.def.name} seed ${seed}: ground ${drop.toFixed(2)} m below the road edge at ${i}`);
+          }
+        }
+        // No barrier on the inside of a corner tighter than the barrier line (it would fold over).
+        const r = 1 / Math.max(1e-6, Math.abs(c.curvature[i]));
+        const inner = c.curvature[i] > 0 ? surf.wallR[i] : surf.wallL[i];
+        if (r < c.wallOffset + 1.5) assert.equal(inner, 0, `${base.def.name}: inner barrier on a ${r.toFixed(1)} m corner`);
+      }
+      // With no other road near it, a raised road never turns into a bridge by accident.
+      const decks = Array.from(surf.deck).reduce((a, b) => a + b, 0);
+      assert.equal(decks, 0, `${base.def.name} seed ${seed}: ${decks} deck samples without any crossing`);
     }
   }
 });

@@ -3,38 +3,14 @@ import { TRACK } from '../config/track.ts';
 import { wrap } from '../core/math.ts';
 import { QuadBuilder } from '../render/geom.ts';
 import { pitLayout } from './pits.ts';
-import { leftOf, sampleAt, surfaceY, type Centerline } from './spline.ts';
+import { edgeOffsets, leftOf, sampleAt, surfaceY, type Centerline } from './spline.ts';
 import { terrainHeight, type TrackSurface } from './surface.ts';
 import type { Track } from './track.ts';
 
 /** Height of the road surface above the ground it sits on. */
 export const ROAD_Y = 0.02;
 
-/**
- * Half-widths of the road on each side. On the inside of a hairpin tighter than
- * half the road width the inner edge would fold back on itself, so it is pulled
- * in to just inside the corner's radius (the road narrows slightly there).
- */
-export function edgeOffsets(c: Centerline): { left: Float32Array; right: Float32Array } {
-  const n = c.points.length;
-  const hw = c.width / 2;
-  const left = new Float32Array(n).fill(hw);
-  const right = new Float32Array(n).fill(hw);
-  const win = 3;
-  for (let i = 0; i < n; i++) {
-    let kMax = 0; // tightest signed curvature nearby
-    for (let o = -win; o <= win; o++) {
-      const k = c.curvature[wrap(i + o, n)];
-      if (Math.abs(k) > Math.abs(kMax)) kMax = k;
-    }
-    const limit = 0.9 / Math.max(Math.abs(kMax), 1e-6);
-    if (limit >= hw) continue;
-    // Positive curvature = right-hander: the inside is the right edge.
-    if (kMax > 0) right[i] = Math.max(0.5, limit);
-    else left[i] = Math.max(0.5, limit);
-  }
-  return { left, right };
-}
+export { edgeOffsets } from './spline.ts';
 
 /**
  * Extrudes the road ribbon along the closed centre line, following its height
@@ -162,6 +138,7 @@ const CONCRETE_DARK = 0x9ea2aa;
 const WALL_RED = 0xd8342c;
 const WALL_WHITE = 0xf2f2ee;
 const TYRE = 0x2a2c31;
+const SKIRT = 0x57503f;
 const TYRE_DARK = 0x1d1f23;
 const TYRE_BAND = [0xd8342c, 0xf2f2ee, 0x2f6fd8, 0xf2f2ee] as const;
 
@@ -200,7 +177,43 @@ export function buildWallGeometry(track: Track, surf: TrackSurface): BufferGeome
       p.quad(at(i, outer, -1.2), at(j, outer, -1.2), at(j, outer, hgt), at(i, outer, hgt), tyre ? TYRE_DARK : CONCRETE_DARK);
       p.quad(at(i, inner, hgt), at(j, inner, hgt), at(j, outer, hgt), at(i, outer, hgt), top);
     }
+    // Close the ends where a barrier stops (gaps at crossings, the inside of hairpins).
+    for (let i = 0; i < n; i++) {
+      const prev = flags[(i - 1 + n) % n];
+      const next = flags[(i + 1) % n];
+      if (!flags[i] || (prev && next)) continue;
+      if (!prev && !next) continue; // a lone sample draws no barrier at all
+      const inner = off * side;
+      const outer = (off + thick) * side;
+      p.quad(at(i, inner, -1.2), at(i, outer, -1.2), at(i, outer, hgt), at(i, inner, hgt), tyres && !surf.deck[i] ? TYRE_DARK : CONCRETE_DARK);
+    }
   }
+  // A short earth skirt down from the outer edge of the road surface (kerb or
+  // run-off included), so where the ground falls away there is never a gap under it.
+  const { left, right } = edgeOffsets(c);
+  const kerbSide = new Int8Array(n);
+  if (track.options.kerbs !== 'none') {
+    for (const k of track.kerbs) for (let o = -3; o < k.count + 3; o++) kerbSide[wrap(k.start + o, n)] = k.sign > 0 ? 1 : -1;
+  }
+  const outerEdge = (i: number, side: 1 | -1) => {
+    const e = side === 1 ? left[i] : right[i];
+    if (track.options.runoff !== 'grass') {
+      const k = Math.abs(c.curvature[i]);
+      const inside = (c.curvature[i] > 0 && side === -1) || (c.curvature[i] < 0 && side === 1);
+      return inside ? Math.max(e, Math.min(c.wallOffset + 0.4, 0.9 / Math.max(1e-6, k))) : c.wallOffset + 0.4;
+    }
+    return kerbSide[i] === side ? e + TRACK.kerbWidth : e;
+  };
+  for (const side of [1, -1] as const) {
+    for (let i = 0; i < n; i++) {
+      const j = (i + 1) % n;
+      if (surf.deck[i] || surf.deck[j]) continue;
+      const ei = outerEdge(i, side) * side;
+      const ej = outerEdge(j, side) * side;
+      p.quad(at(i, ei, ROAD_Y), at(j, ej, ROAD_Y), at(j, ej, -1.6), at(i, ei, -1.6), SKIRT);
+    }
+  }
+
   // Decks: a concrete shoulder from the road edge to the rails, the slab's edge and its underside.
   const hw = c.width / 2;
   for (let i = 0; i < n; i++) {
@@ -227,8 +240,8 @@ export function buildRunoffGeometry(track: Track, surf: TrackSurface): BufferGeo
   if (track.options.runoff === 'grass') return null;
   const c = track.center;
   const n = c.points.length;
-  const inner = c.width / 2 - 0.1;
-  const outer = c.wallOffset + 0.4;
+  const { left, right } = edgeOffsets(c);
+  const outerMax = c.wallOffset + 0.4;
   const pos: number[] = [];
   const uv: number[] = [];
   const idx: number[] = [];
@@ -238,6 +251,11 @@ export function buildRunoffGeometry(track: Track, surf: TrackSurface): BufferGeo
       const i = r % n;
       const p = c.points[i];
       const l = leftOf(c.tangents[i]);
+      // On the inside of a tight corner the strip stops short of the corner's centre.
+      const k = c.curvature[i];
+      const insideHere = (k > 0 && side === -1) || (k < 0 && side === 1);
+      const inner = (side === 1 ? left[i] : right[i]) - 0.1;
+      const outer = insideHere ? Math.max(inner, Math.min(outerMax, 0.9 / Math.max(1e-6, Math.abs(k)))) : outerMax;
       for (const lat of [inner, outer]) {
         const x = p.x + l.x * lat * side;
         const z = p.y + l.y * lat * side;

@@ -1,7 +1,7 @@
 import { TRACK, WORLD } from '../config/track.ts';
 import { wrap } from '../core/math.ts';
 import { pitLayout, type PitLayout } from './pits.ts';
-import { leftOf, sampleAt, surfaceY, type Centerline } from './spline.ts';
+import { edgeOffsets, leftOf, sampleAt, surfaceY, type Centerline } from './spline.ts';
 import type { Track } from './track.ts';
 
 /**
@@ -126,8 +126,11 @@ function nearestPerPass(c: Centerline, x: number, z: number, idx: number[], maxD
   });
 }
 
-/** Ground height that one pass of the road asks for at (x, z). */
-function passHeight(c: Centerline, i: number, x: number, z: number): number {
+/**
+ * Ground height that one pass of the road asks for at (x, z), and how far the
+ * point is beyond that pass's shoulder (0 = on the road or its shoulder).
+ */
+function passHeight(c: Centerline, i: number, x: number, z: number): { h: number; away: number } {
   const p = c.points[i];
   const t = c.tangents[i];
   const l = leftOf(t);
@@ -138,8 +141,8 @@ function passHeight(c: Centerline, i: number, x: number, z: number): number {
   const band = c.wallOffset + 0.5;
   const edge = Math.max(-band, Math.min(band, lateral));
   const roadH = surfaceY(c, i, edge) + c.grade[i] * along - 0.1;
-  const away = Math.max(0, Math.abs(lateral) - band);
-  return roadH * (1 - smoothstep(0, BLEND, away));
+  const away = Math.max(0, Math.abs(lateral) - band, Math.abs(along) - c.spacing);
+  return { h: roadH * (1 - smoothstep(0, BLEND, away)), away };
 }
 
 function buildTerrain(c: Centerline, grid: SampleGrid): Terrain {
@@ -156,10 +159,21 @@ function buildTerrain(c: Centerline, grid: SampleGrid): Terrain {
       const z = z0 + j * step;
       const passes = nearestPerPass(c, x, z, grid.near(x, z, reach, tmp), reach);
       if (!passes.length) continue;
-      // The lowest pass wins, so a bridge's ground follows the road underneath it.
-      let y = Infinity;
-      for (const ps of passes) y = Math.min(y, passHeight(c, ps.i, x, z));
-      h[j * nx + i] = y;
+      // On a road's own shoulder, that road decides (so a road on a hill keeps its
+      // embankment even next to a lower stretch). Where shoulders overlap (under a
+      // bridge) the lowest wins, so the ground follows the road underneath. Between
+      // roads the ground slopes from one to the other.
+      let own = Infinity;
+      let sum = 0;
+      let wsum = 0;
+      for (const ps of passes) {
+        const q = passHeight(c, ps.i, x, z);
+        if (q.away <= 0) own = Math.min(own, q.h);
+        const w = 1 / (1 + q.away) ** 2;
+        sum += q.h * w;
+        wsum += w;
+      }
+      h[j * nx + i] = own < Infinity ? own : sum / wsum;
     }
   }
   return { x0, z0, step, nx, nz, h };
@@ -167,12 +181,15 @@ function buildTerrain(c: Centerline, grid: SampleGrid): Terrain {
 
 /**
  * Makes sure the ground never pokes through the road: checks points across the
- * road (kerbs included) every half sample, and wherever the interpolated ground
- * comes up through the surface, lowers the four grid corners around it.
+ * road every half sample, out to its real edges (pulled in on the inside of
+ * hairpins) and over the kerbs on the side that has them, and wherever the
+ * interpolated ground comes up through the surface, lowers the four grid
+ * corners around it. Checking only where there really is road keeps it from
+ * digging pits inside tight banked corners.
  */
-function pressUnderRoad(t: Terrain, c: Centerline): void {
+function pressUnderRoad(t: Terrain, c: Centerline, kerbSide: Int8Array): void {
   const n = c.points.length;
-  const hw = c.width / 2 + TRACK.kerbWidth;
+  const { left, right } = edgeOffsets(c);
   const margin = 0.04;
   for (let pass = 0; pass < 3; pass++) {
     let changed = false;
@@ -182,8 +199,10 @@ function pressUnderRoad(t: Terrain, c: Centerline): void {
       for (const f of [0, 0.5]) {
         const cx = c.points[i].x + (c.points[j].x - c.points[i].x) * f;
         const cz = c.points[i].y + (c.points[j].y - c.points[i].y) * f;
-        for (let k = -4; k <= 4; k++) {
-          const lat = (hw * k) / 4;
+        const lo = -(Math.min(right[i], right[j]) + (kerbSide[i] === -1 ? TRACK.kerbWidth : 0));
+        const hi = Math.min(left[i], left[j]) + (kerbSide[i] === 1 ? TRACK.kerbWidth : 0);
+        for (let k = 0; k <= 8; k++) {
+          const lat = lo + ((hi - lo) * k) / 8;
           const x = cx + l.x * lat;
           const z = cz + l.y * lat;
           const road = surfaceY(c, i, lat) * (1 - f) + surfaceY(c, j, lat) * f - margin;
@@ -247,7 +266,12 @@ export function surfaceFor(track: Track): TrackSurface {
   const terrain = buildTerrain(c, grid);
   const pits = pitLayout(track);
   if (pits) padForPits(terrain, c, pits);
-  pressUnderRoad(terrain, c);
+  // Which side of each sample has a kerb (the outside of corners).
+  const kerbSide = new Int8Array(n);
+  if (track.options.kerbs !== 'none') {
+    for (const k of track.kerbs) for (let o = -3; o < k.count + 3; o++) kerbSide[wrap(k.start + o, n)] = k.sign > 0 ? 1 : -1;
+  }
+  pressUnderRoad(terrain, c, kerbSide);
 
   // Raised decks: road well above the ground below it.
   const deck = new Uint8Array(n);
@@ -281,10 +305,18 @@ export function surfaceFor(track: Track): TrackSurface {
     }
     return false;
   };
+  // The inside of a corner tighter than the barrier line has no room for a barrier (it would fold over).
+  const tight = new Int8Array(n);
+  for (let i = 0; i < n; i++) {
+    for (let o = -3; o <= 3; o++) {
+      const k = c.curvature[wrap(i + o, n)];
+      if (Math.abs(k) * (c.wallOffset + 1.5) > 1) tight[i] = k > 0 ? -1 : 1;
+    }
+  }
   for (let i = 0; i < n; i++) {
     const want = track.options.walls || deckW[i] === 1;
-    wallL[i] = want && !blocked(i, 1) ? 1 : 0;
-    wallR[i] = want && !blocked(i, -1) ? 1 : 0;
+    wallL[i] = want && tight[i] !== 1 && !blocked(i, 1) ? 1 : 0;
+    wallR[i] = want && tight[i] !== -1 && !blocked(i, -1) ? 1 : 0;
   }
   // Grow gaps a little so cars can drive straight through crossings.
   for (const w of [wallL, wallR]) {
