@@ -49,8 +49,8 @@ test('road texture V ends on a whole number of tiles, so the loop has no seam', 
   assert.equal(uv.getY(0), 0);
 });
 
-test('kerbs sit on the outside of corners', () => {
-  // A small clockwise circle (all right-handers): every kerb vertex must be outside it.
+test('kerbs sit on the outside of corners and on the inside at the apex, never on the road', () => {
+  // A small clockwise circle (all right-handers).
   const r = 40;
   const control = Array.from({ length: 32 }, (_, i) => ({
     x: r * Math.cos((i / 32) * Math.PI * 2),
@@ -61,10 +61,15 @@ test('kerbs sit on the outside of corners', () => {
   const g = buildKerbGeometry(t);
   assert.ok(g);
   const pos = g.getAttribute('position');
+  let outside = 0;
+  let inside = 0;
   for (let i = 0; i < pos.count; i++) {
     const d = Math.hypot(pos.getX(i), pos.getZ(i));
-    assert.ok(d > r + TRACK.roadWidth / 2 - 0.5, `kerb vertex at radius ${d.toFixed(2)}`);
+    if (d > r + TRACK.roadWidth / 2 - 0.5) outside++;
+    else if (d < r - TRACK.roadWidth / 2 + 0.5) inside++;
+    else assert.fail(`kerb vertex on the road, at radius ${d.toFixed(2)}`);
   }
+  assert.ok(outside > 0 && inside > 0, `outside ${outside}, inside ${inside}`);
 });
 
 test('a straight-ish track gets no kerbs', () => {

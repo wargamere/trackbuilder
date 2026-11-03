@@ -1,5 +1,6 @@
 import { TRACK, WORLD } from '../config/track.ts';
 import { wrap } from '../core/math.ts';
+import { kerbAt, kerbLayout, type KerbLayout } from './kerbs.ts';
 import { pitLayout, type PitLayout } from './pits.ts';
 import { edgeOffsets, leftOf, sampleAt, surfaceY, type Centerline } from './spline.ts';
 import type { Track } from './track.ts';
@@ -140,7 +141,8 @@ function passHeight(c: Centerline, i: number, x: number, z: number): { h: number
   // The shoulder out to the barrier line follows the road's bank; beyond it the ground blends away.
   const band = c.wallOffset + 0.5;
   const edge = Math.max(-band, Math.min(band, lateral));
-  const roadH = surfaceY(c, i, edge) + c.grade[i] * along - 0.1;
+  // Just under the road surface, so the road sits flush in the ground.
+  const roadH = surfaceY(c, i, edge) + c.grade[i] * along - 0.03;
   const away = Math.max(0, Math.abs(lateral) - band, Math.abs(along) - c.spacing);
   return { h: roadH * (1 - smoothstep(0, BLEND, away)), away };
 }
@@ -187,11 +189,11 @@ function buildTerrain(c: Centerline, grid: SampleGrid): Terrain {
  * corners around it. Checking only where there really is road keeps it from
  * digging pits inside tight banked corners.
  */
-function pressUnderRoad(t: Terrain, c: Centerline, kerbSide: Int8Array): void {
+function pressUnderRoad(t: Terrain, c: Centerline, kerbs: KerbLayout): void {
   const n = c.points.length;
   const { left, right } = edgeOffsets(c);
-  const margin = 0.04;
-  for (let pass = 0; pass < 3; pass++) {
+  const margin = 0.03;
+  for (let pass = 0; pass < 6; pass++) {
     let changed = false;
     for (let i = 0; i < n; i++) {
       const j = (i + 1) % n;
@@ -199,8 +201,8 @@ function pressUnderRoad(t: Terrain, c: Centerline, kerbSide: Int8Array): void {
       for (const f of [0, 0.5]) {
         const cx = c.points[i].x + (c.points[j].x - c.points[i].x) * f;
         const cz = c.points[i].y + (c.points[j].y - c.points[i].y) * f;
-        const lo = -(Math.min(right[i], right[j]) + (kerbSide[i] === -1 ? TRACK.kerbWidth : 0));
-        const hi = Math.min(left[i], left[j]) + (kerbSide[i] === 1 ? TRACK.kerbWidth : 0);
+        const lo = -Math.max(Math.min(right[i], right[j]), kerbAt(kerbs, i, -1)?.[1] ?? 0);
+        const hi = Math.max(Math.min(left[i], left[j]), kerbAt(kerbs, i, 1)?.[1] ?? 0);
         for (let k = 0; k <= 8; k++) {
           const lat = lo + ((hi - lo) * k) / 8;
           const x = cx + l.x * lat;
@@ -208,11 +210,19 @@ function pressUnderRoad(t: Terrain, c: Centerline, kerbSide: Int8Array): void {
           const road = surfaceY(c, i, lat) * (1 - f) + surfaceY(c, j, lat) * f - margin;
           const excess = terrainHeight(t, x, z) - road;
           if (excess <= 0) continue;
-          const gi = Math.floor((x - t.x0) / t.step);
-          const gj = Math.floor((z - t.z0) / t.step);
+          const fx = (x - t.x0) / t.step;
+          const fz = (z - t.z0) / t.step;
+          const gi = Math.floor(fx);
+          const gj = Math.floor(fz);
           if (gi < 0 || gj < 0 || gi >= t.nx - 1 || gj >= t.nz - 1) continue;
+          // Lower each corner by its share (the smallest change that gets this point under
+          // the road), so grid points well away from the road hardly move: no trough beside it.
+          const u = fx - gi;
+          const v = fz - gj;
+          const w = [(1 - u) * (1 - v), u * (1 - v), (1 - u) * v, u * v];
+          const w2 = w[0] * w[0] + w[1] * w[1] + w[2] * w[2] + w[3] * w[3];
           const base = gj * t.nx + gi;
-          for (const o of [0, 1, t.nx, t.nx + 1]) t.h[base + o] -= excess;
+          [0, 1, t.nx, t.nx + 1].forEach((o, k) => (t.h[base + o] -= (excess * w[k]) / w2 + 0.001));
           changed = true;
         }
       }
@@ -266,12 +276,7 @@ export function surfaceFor(track: Track): TrackSurface {
   const terrain = buildTerrain(c, grid);
   const pits = pitLayout(track);
   if (pits) padForPits(terrain, c, pits);
-  // Which side of each sample has a kerb (the outside of corners).
-  const kerbSide = new Int8Array(n);
-  if (track.options.kerbs !== 'none') {
-    for (const k of track.kerbs) for (let o = -3; o < k.count + 3; o++) kerbSide[wrap(k.start + o, n)] = k.sign > 0 ? 1 : -1;
-  }
-  pressUnderRoad(terrain, c, kerbSide);
+  pressUnderRoad(terrain, c, kerbLayout(track));
 
   // Raised decks: road well above the ground below it.
   const deck = new Uint8Array(n);

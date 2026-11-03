@@ -8,8 +8,12 @@ export type RaceEvent =
   | { type: 'go' }
   | { type: 'lapStart' }
   | { type: 'split'; index: number; time: number; delta: number | null }
-  | { type: 'lap'; lap: number; time: number; best: boolean }
+  /** A lap was completed; `valid` is false if the car broke track limits on it. */
+  | { type: 'lap'; lap: number; time: number; best: boolean; valid: boolean }
+  /** A checkpoint was missed: the lap doesn't count at all and a new one starts. */
   | { type: 'lapInvalid' }
+  /** The whole car went past the track edge: this lap's time won't count. */
+  | { type: 'trackLimits' }
   | { type: 'finished' }
   | { type: 'wrongWay'; on: boolean };
 
@@ -21,6 +25,8 @@ export interface Progress {
   lateral: number;
   /** Velocity along the track direction (negative = going the wrong way). */
   along: number;
+  /** The whole car is past the track edge (kerbs count as track). */
+  offTrack?: boolean;
 }
 
 /** Best lap so far on this track, carried between runs. */
@@ -49,6 +55,11 @@ export class RaceSession {
   /** Session time the run ended. */
   runEnd: number | null = null;
   readonly laps: number[] = [];
+  /** Per completed lap: false if track limits were broken on it. */
+  readonly lapValid: boolean[] = [];
+  /** Track limits were broken on the lap being driven. */
+  cut = false;
+  private offTicks = 0;
   lastLap: number | null = null;
   best: BestLap | null;
   /** True when the best lap was set during this run. */
@@ -130,6 +141,12 @@ export class RaceSession {
     }
 
     if (this.phase !== 'racing') return;
+    // Track limits: off the track for a moment invalidates the lap being driven.
+    this.offTicks = now.offTrack ? this.offTicks + 1 : 0;
+    if (this.lapStart !== null && !this.cut && this.offTicks >= Math.round(RACE.trackLimitSeconds * HANDLING.tickRate)) {
+      this.cut = true;
+      out.push({ type: 'trackLimits' });
+    }
     const L = this.length;
     const ds = (now.s - prev.s + L) % L; // forward progress this tick
     if (ds <= 0 || ds > RACE.maxProgressPerTick) return; // not moving forward along the track, or a jump
@@ -160,6 +177,7 @@ export class RaceSession {
     if (this.lapStart === null) {
       this.lapStart = tf;
       this.runStart = tf;
+      this.cut = false;
       out.push({ type: 'lapStart' });
       return;
     }
@@ -168,14 +186,17 @@ export class RaceSession {
       out.push({ type: 'lapInvalid' });
     } else {
       const lapTime = tf - this.lapStart;
+      const valid = !this.cut;
       this.laps.push(lapTime);
+      this.lapValid.push(valid);
       this.lastLap = lapTime;
-      const isBest = !this.best || lapTime < this.best.time;
+      // Only clean laps can be bests (and so ghosts, medals and the score).
+      const isBest = valid && (!this.best || lapTime < this.best.time);
       if (isBest) {
         this.best = { time: lapTime, splits: [...this.splits] };
         this.newBest = true;
       }
-      out.push({ type: 'lap', lap: this.laps.length, time: lapTime, best: isBest });
+      out.push({ type: 'lap', lap: this.laps.length, time: lapTime, best: isBest, valid });
       if (this.laps.length >= this.lapsToRun) {
         this.phase = 'finished';
         this.runEnd = tf;
@@ -186,6 +207,13 @@ export class RaceSession {
     this.lapStart = tf;
     this.nextCheckpoint = 0;
     this.splits = [];
+    this.cut = false;
+  }
+
+  /** Fastest clean lap of this run, or null if every lap broke track limits. */
+  bestOfRun(): number | null {
+    const clean = this.laps.filter((_, i) => this.lapValid[i]);
+    return clean.length ? Math.min(...clean) : null;
   }
 }
 

@@ -44,6 +44,8 @@ export class CarState {
   slip = 0;
   /** How rough the ground under the wheels is: 0 on the road, 0.5 one side on grass, 1 all on grass (more on gravel). */
   grass = 0;
+  /** The whole car is past the track edge (kerbs count as track): a track-limits breach. */
+  offTrack = false;
   longAccel = 0;
   latAccel = 0;
   /** Nearest centre-line segment and position along / across the track. */
@@ -209,6 +211,9 @@ export class CarPhysics {
     const surfaceAt = (w: number) => (w <= edgeL && w >= edgeR ? H.road : Math.abs(w) <= runoffEdge ? runoff : H.grass);
     const a = surfaceAt(pos.lateral + H.halfTrack);
     const b = surfaceAt(pos.lateral - H.halfTrack);
+    // Track limits: both wheel tracks beyond the same edge, with a little grace.
+    const grace = 0.25;
+    st.offTrack = pos.lateral - H.halfTrack > edgeL + grace || pos.lateral + H.halfTrack < edgeR - grace;
     /** Rough-ground amount (for sound and camera shake), 0 on tarmac. */
     const grass = (a.rough + b.rough) / 2;
     const grip = (a.gripFactor + b.gripFactor) / 2;

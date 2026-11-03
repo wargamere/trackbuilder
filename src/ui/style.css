@@ -1914,3 +1914,9 @@ body {
   justify-content: space-between;
   gap: 0.6rem;
 }
+
+.lap-time.cut {
+  color: #ff6b5e;
+  text-decoration: line-through;
+  text-decoration-thickness: 0.12em;
+}

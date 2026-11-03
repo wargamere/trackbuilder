@@ -18,10 +18,13 @@ export interface RunResult {
   trackId: string;
   trackName: string;
   laps: number[];
+  /** Per lap: false if it broke track limits (its time doesn't count). */
+  lapValid: boolean[];
   total: number;
-  bestLap: number;
-  /** Best lap of all time on this track (may be from an earlier run). */
-  recordLap: number;
+  /** Fastest clean lap of the run, or null if every lap broke track limits. */
+  bestLap: number | null;
+  /** Best lap of all time on this track (may be from an earlier run), if any. */
+  recordLap: number | null;
   newRecord: boolean;
   avgSpeedKmh: number;
   multiplier: number;

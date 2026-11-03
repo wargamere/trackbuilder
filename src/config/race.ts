@@ -14,6 +14,8 @@ export const RACE = {
   maxProgressPerTick: 3,
   /** ...and only if the car is at most this far beyond the road's edge. */
   checkpointMargin: 8,
+  /** Track limits: the whole car past the edge this long (s) invalidates the lap. */
+  trackLimitSeconds: 0.12,
   /** Driving backwards along the track this fast for this long shows "Wrong way". */
   wrongWaySpeed: 3,
   wrongWaySeconds: 1,

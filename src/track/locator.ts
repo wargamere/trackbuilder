@@ -1,6 +1,6 @@
-import { TRACK } from '../config/track.ts';
 import { wrap, type Vec2 } from '../core/math.ts';
 import { leftOf, type Centerline } from './spline.ts';
+import { kerbAt, kerbLayout, type KerbLayout } from './kerbs.ts';
 import type { Track } from './track.ts';
 
 /** Where a point is relative to the track. */
@@ -20,21 +20,16 @@ export interface TrackPos {
  */
 export class TrackLocator {
   readonly center: Centerline;
-  /**
-   * For each centre-line sample: +1 if the left edge has a kerb, -1 the right
-   * edge, 0 none. Kerbs count as road for grip.
-   */
-  readonly kerbSide: Int8Array;
+  /** For each centre-line sample, which edges have a kerb (KERB_LEFT | KERB_RIGHT). Kerbs count as road. */
+  readonly kerbSide: Uint8Array;
+  private readonly kerbs: KerbLayout;
 
   constructor(track: Track) {
     this.center = track.center;
     const n = track.center.points.length;
-    this.kerbSide = new Int8Array(n);
-    if (track.options.kerbs !== 'none') {
-      for (const k of track.kerbs) {
-        for (let j = -3; j < k.count + 3; j++) this.kerbSide[wrap(k.start + j, n)] = k.sign > 0 ? 1 : -1;
-      }
-    }
+    this.kerbs = kerbLayout(track);
+    this.kerbSide = this.kerbs.sides;
+    void n;
   }
 
   /** Projection of `p` onto segment `i`. */
@@ -81,8 +76,8 @@ export class TrackLocator {
 
   /** How far the road (including any kerb) reaches on one side at sample `i`. */
   edge(i: number, side: 1 | -1): number {
-    const hw = this.center.width / 2;
-    return this.kerbSide[i] === side ? hw + TRACK.kerbWidth : hw + 0.2;
+    const k = kerbAt(this.kerbs, i, side);
+    return k ? k[1] : this.center.width / 2 + 0.2;
   }
 }
 

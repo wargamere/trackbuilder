@@ -1,5 +1,6 @@
 import { TRACK, WORLD } from '../config/track.ts';
 import { wrap, type Dot, type Vec2 } from '../core/math.ts';
+import { kerbAt, kerbLayout } from '../track/kerbs.ts';
 import { pitLayout } from '../track/pits.ts';
 import { leftOf, sampleAt } from '../track/spline.ts';
 import type { Track } from '../track/track.ts';
@@ -259,18 +260,19 @@ export function drawTrack(ctx: CanvasRenderingContext2D, v: View, track: Track, 
 function drawKerbs(ctx: CanvasRenderingContext2D, v: View, track: Track): void {
   const c = track.center;
   const n = c.points.length;
-  const off = c.width / 2 + TRACK.kerbWidth * 0.25;
+  const layout = kerbLayout(track);
   ctx.lineWidth = Math.max(2, TRACK.kerbWidth * 1.6 * v.scale);
   ctx.lineCap = 'butt';
   const stripe = 2; // samples per stripe (~5 m)
-  for (const k of track.kerbs) {
-    // Outside of a right-hander is the left side.
-    const side = k.sign > 0 ? 1 : -1;
+  for (const k of layout.runs) {
+    const side = k.side;
     for (let j = 0; j < k.count; j += stripe) {
       ctx.strokeStyle = (j / stripe) % 2 === 0 ? PAPER.kerbRed : PAPER.kerbWhite;
       ctx.beginPath();
       for (let m = 0; m <= stripe && j + m <= k.count; m++) {
-        const i = (k.start + j + m) % n;
+        const i = (((k.from + j + m) % n) + n) % n;
+        const e = kerbAt(layout, i, side);
+        const off = e ? e[0] + (e[1] - e[0]) * 0.4 : c.width / 2;
         const l = leftOf(c.tangents[i]);
         const p = { x: c.points[i].x + l.x * off * side, y: c.points[i].y + l.y * off * side };
         const x = v.ox + p.x * v.scale;

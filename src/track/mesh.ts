@@ -1,7 +1,9 @@
 import { BufferGeometry, Color, Float32BufferAttribute, Uint32BufferAttribute, Vector3 } from 'three';
+import { THEMES } from '../config/themes.ts';
 import { TRACK } from '../config/track.ts';
 import { wrap } from '../core/math.ts';
 import { QuadBuilder } from '../render/geom.ts';
+import { kerbAt, kerbLayout } from './kerbs.ts';
 import { pitLayout } from './pits.ts';
 import { edgeOffsets, leftOf, sampleAt, surfaceY, type Centerline } from './spline.ts';
 import { terrainHeight, type TrackSurface } from './surface.ts';
@@ -66,44 +68,42 @@ const KERB_RED = 0xd8342c;
 const KERB_WHITE = 0xf4f4f0;
 /** Centre-line samples per kerb stripe (~2.5 m). */
 const STRIPE = 1;
-/** Extra samples of kerb before and after each corner run. */
-const KERB_EXTEND = 3;
 
 /**
- * Red/white kerbs on the outside edge of every corner in `track.kerbs`, sitting
- * on the (possibly banked, raised) road: road edge -> crown -> outer edge.
- * Raised kerbs have a crown; flat ones are just painted on.
+ * Red/white kerbs along the outside of every corner and on the inside around
+ * the apex (see kerbLayout), sitting on the (possibly banked, raised) road:
+ * road edge -> crown -> outer edge. Raised kerbs have a crown; flat ones are
+ * just painted on.
  */
 export function buildKerbGeometry(track: Track): BufferGeometry | null {
   if (track.options.kerbs === 'none') return null;
   const c = track.center;
   const n = c.points.length;
-  const hw = c.width / 2;
-  const kw = TRACK.kerbWidth;
+  const layout = kerbLayout(track);
   const q = new QuadBuilder();
   const crown = track.options.kerbs === 'raised' ? 0.11 : ROAD_Y + 0.015;
-  // Lateral offsets and lift above the road surface of the profile's three edges.
-  const profile = [
-    { off: hw - 0.15, lift: ROAD_Y + 0.01 },
-    { off: hw + kw * 0.45, lift: crown },
-    { off: hw + kw, lift: 0.025 },
-  ];
-  const at = (i: number, side: number, k: number) => {
+  // Lift above the road surface of the profile's three edges (inner, crown, outer).
+  const lifts = [ROAD_Y + 0.01, crown, 0.025];
+  const at = (i: number, side: 1 | -1, k: number): Vector3 | null => {
+    const e = kerbAt(layout, i, side);
+    if (!e) return null;
+    const off = k === 0 ? e[0] : k === 1 ? e[0] + (e[1] - e[0]) * 0.5 : e[1];
     const p = c.points[i];
     const l = leftOf(c.tangents[i]);
-    const e = profile[k];
-    return new Vector3(p.x + l.x * e.off * side, surfaceY(c, i, e.off * side) + e.lift, p.y + l.y * e.off * side);
+    return new Vector3(p.x + l.x * off * side, surfaceY(c, i, off * side) + lifts[k], p.y + l.y * off * side);
   };
-
-  for (const corner of track.kerbs) {
-    const side = corner.sign > 0 ? 1 : -1; // outside of a right-hander is on the left
-    const from = -KERB_EXTEND;
-    const to = Math.min(corner.count + KERB_EXTEND, n - 1);
-    for (let j = from; j < to; j++) {
-      const i0 = wrap(corner.start + j, n);
-      const i1 = wrap(corner.start + j + 1, n);
-      const hex = Math.floor((j - from) / STRIPE) % 2 === 0 ? KERB_RED : KERB_WHITE;
-      for (let k = 0; k < 2; k++) q.quad(at(i0, side, k), at(i1, side, k), at(i1, side, k + 1), at(i0, side, k + 1), hex);
+  for (const run of layout.runs) {
+    for (let j = 0; j < run.count; j++) {
+      const i0 = wrap(run.from + j, n);
+      const i1 = wrap(run.from + j + 1, n);
+      const hex = Math.floor(j / STRIPE) % 2 === 0 ? KERB_RED : KERB_WHITE;
+      for (let k = 0; k < 2; k++) {
+        const a = at(i0, run.side, k);
+        const b = at(i1, run.side, k);
+        const cc = at(i1, run.side, k + 1);
+        const d = at(i0, run.side, k + 1);
+        if (a && b && cc && d) q.quad(a, b, cc, d, hex);
+      }
     }
   }
   return q.empty ? null : q.build();
@@ -138,7 +138,6 @@ const CONCRETE_DARK = 0x9ea2aa;
 const WALL_RED = 0xd8342c;
 const WALL_WHITE = 0xf2f2ee;
 const TYRE = 0x2a2c31;
-const SKIRT = 0x57503f;
 const TYRE_DARK = 0x1d1f23;
 const TYRE_BAND = [0xd8342c, 0xf2f2ee, 0x2f6fd8, 0xf2f2ee] as const;
 
@@ -191,10 +190,9 @@ export function buildWallGeometry(track: Track, surf: TrackSurface): BufferGeome
   // A short earth skirt down from the outer edge of the road surface (kerb or
   // run-off included), so where the ground falls away there is never a gap under it.
   const { left, right } = edgeOffsets(c);
-  const kerbSide = new Int8Array(n);
-  if (track.options.kerbs !== 'none') {
-    for (const k of track.kerbs) for (let o = -3; o < k.count + 3; o++) kerbSide[wrap(k.start + o, n)] = k.sign > 0 ? 1 : -1;
-  }
+  const kerbs = kerbLayout(track);
+  // The skirt takes the colour of the ground, so where it shows it looks like the bank of earth.
+  const skirt = new Color(THEMES[track.options.theme].ground.base).multiplyScalar(0.72).getHex();
   const outerEdge = (i: number, side: 1 | -1) => {
     const e = side === 1 ? left[i] : right[i];
     if (track.options.runoff !== 'grass') {
@@ -202,7 +200,7 @@ export function buildWallGeometry(track: Track, surf: TrackSurface): BufferGeome
       const inside = (c.curvature[i] > 0 && side === -1) || (c.curvature[i] < 0 && side === 1);
       return inside ? Math.max(e, Math.min(c.wallOffset + 0.4, 0.9 / Math.max(1e-6, k))) : c.wallOffset + 0.4;
     }
-    return kerbSide[i] === side ? e + TRACK.kerbWidth : e;
+    return kerbAt(kerbs, i, side)?.[1] ?? e;
   };
   for (const side of [1, -1] as const) {
     for (let i = 0; i < n; i++) {
@@ -210,7 +208,7 @@ export function buildWallGeometry(track: Track, surf: TrackSurface): BufferGeome
       if (surf.deck[i] || surf.deck[j]) continue;
       const ei = outerEdge(i, side) * side;
       const ej = outerEdge(j, side) * side;
-      p.quad(at(i, ei, ROAD_Y), at(j, ej, ROAD_Y), at(j, ej, -1.6), at(i, ei, -1.6), SKIRT);
+      p.quad(at(i, ei, ROAD_Y), at(j, ej, ROAD_Y), at(j, ej, -1.6), at(i, ei, -1.6), skirt);
     }
   }
 

@@ -189,3 +189,50 @@ test('practice: no countdown, lap after lap, never finished, bests still kept', 
   assert.ok(!events.some((e) => e.type === 'finished'));
   assert.ok(session.best && Math.abs(session.best.time - L / speed) < 0.01);
 });
+
+test('track limits: going fully off the track voids that lap, not the others', () => {
+  const L = 1000;
+  const session = new RaceSession(L, null, 3, 12, 0);
+  const events: RaceEvent[] = [];
+  let s = L - 8;
+  const speed = 40;
+  const lapTicks = (L / speed) * HANDLING.tickRate;
+  for (let k = 0; k < Math.round(3.3 * lapTicks); k++) {
+    const prev: Progress = { s, lateral: 0, along: speed };
+    s = (s + speed * DT) % L;
+    // During the second lap, cut across for half a second.
+    const lap = (k * speed * DT - 8) / L;
+    const offTrack = lap > 1.4 && lap < 1.4 + (0.5 * speed) / L;
+    session.step(prev, { s, lateral: offTrack ? 14 : 0, along: speed, offTrack }, events);
+  }
+  assert.equal(events.filter((e) => e.type === 'trackLimits').length, 1);
+  assert.deepEqual(session.lapValid, [true, false, true]);
+  const laps = events.filter((e): e is Extract<RaceEvent, { type: 'lap' }> => e.type === 'lap');
+  assert.equal(laps[1].valid, false);
+  assert.equal(laps[1].best, false);
+  assert.equal(session.phase, 'finished', 'an invalid lap still counts towards the race distance');
+  assert.ok(session.bestOfRun() !== null);
+  // A blip shorter than the grace time doesn't count.
+  const blip = new RaceSession(L, null, 3, 12, 0);
+  const ev2: RaceEvent[] = [];
+  let s2 = L - 8;
+  for (let k = 0; k < Math.round(1.5 * lapTicks); k++) {
+    const prev: Progress = { s: s2, lateral: 0, along: speed };
+    s2 = (s2 + speed * DT) % L;
+    blip.step(prev, { s: s2, lateral: 0, along: speed, offTrack: k === Math.round(lapTicks) }, ev2);
+  }
+  assert.ok(!ev2.some((e) => e.type === 'trackLimits'));
+});
+
+test('the bot drives clean laps (no track-limit breaches) on every sample', () => {
+  for (let i = 0; i < 3; i++) {
+    const t = getSampleTrack(i);
+    const car = new CarPhysics(t);
+    let off = 0;
+    for (let k = 0; k < HANDLING.tickRate * 60; k++) {
+      car.step(botInput(car.state, t));
+      if (car.state.offTrack) off++;
+    }
+    assert.equal(off, 0, `${t.def.name}: off track for ${off} ticks`);
+  }
+});

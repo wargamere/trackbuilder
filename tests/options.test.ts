@@ -229,3 +229,17 @@ test('nothing is saved unless you save it; clear empties My tracks', () => {
   assert.equal(lib.list().length, 0);
   assert.equal(lib.has(contentId(def.control, def.options)), false);
 });
+
+test('off track means the whole car past the edge; kerbs count as track', () => {
+  const t = stadium({ walls: false });
+  const place = (lateral: number) => {
+    const car = new CarPhysics(t);
+    Object.assign(car.state, { x: -700, z: -300 - lateral, heading: 0, vx: 10, vz: 0, trackIndex: -1 });
+    car.step({ throttle: 0, brake: 0, steer: 0, handbrake: false });
+    return car.state.offTrack;
+  };
+  assert.equal(place(0), false);
+  assert.equal(place(6.5), false, 'two wheels off is not off track');
+  assert.equal(place(7.8), true, 'the whole car past the edge');
+  assert.equal(place(-7.8), true);
+});

@@ -96,9 +96,10 @@ export class ResultsScreen implements Screen {
           'div',
           { class: 'stats' },
           row(STR.results.total, formatTime(r.total)),
-          row(STR.results.bestLap, formatTime(r.bestLap), r.newRecord ? STR.results.newRecord : undefined),
-          r.newRecord ? null : row(STR.results.record, formatTime(r.recordLap)),
-          row(STR.results.laps, r.laps.map((t) => formatTime(t)).join('  ·  ')),
+          row(STR.results.bestLap, r.bestLap === null ? STR.results.noCleanLap : formatTime(r.bestLap), r.newRecord ? STR.results.newRecord : undefined),
+          r.newRecord || r.recordLap === null ? null : row(STR.results.record, formatTime(r.recordLap)),
+          row(STR.results.laps, r.laps.map((t, i) => (r.lapValid[i] === false ? `${formatTime(t)} ✗` : formatTime(t))).join('  ·  ')),
+          r.lapValid.some((v) => !v) ? h('p', { class: 'score-hint warn', text: STR.results.cutNote }) : null,
           row(
             STR.results.avgSpeed,
             settings().units === 'mph' ? fmt(STR.results.mph, { v: (r.avgSpeedKmh / 1.609344).toFixed(1) }) : fmt(STR.results.kmh, { v: r.avgSpeedKmh.toFixed(1) }),
@@ -154,8 +155,9 @@ export class ResultsScreen implements Screen {
   }
 
   /** The medal the run's best lap won, and the time for the next one up. */
-  private medalRow(bestLap: number, author: number | null): HTMLElement | null {
+  private medalRow(bestLap: number | null, author: number | null): HTMLElement | null {
     if (!author) return null;
+    if (bestLap === null) bestLap = Infinity;
     const m = medalTimes(author);
     const won = medalFor(bestLap, m);
     const next = nextMedal(won);

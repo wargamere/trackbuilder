@@ -34,6 +34,7 @@ export class Hud {
   private medalKey = '';
   readonly minimap = new Minimap();
   private lastSpeed = -1;
+  private cut = false;
   private readonly speedUnit: HTMLElement;
   private readonly raceBtn: HTMLButtonElement;
   private lastTime = '';
@@ -103,6 +104,14 @@ export class Hud {
       this.time.textContent = text;
       this.lastTime = text;
     }
+  }
+
+  /** Marks the lap being driven as invalid (track limits). */
+  setCut(on: boolean): void {
+    if (this.cut === on) return;
+    this.cut = on;
+    this.time.classList.toggle('cut', on);
+    this.time.title = on ? STR.race.trackLimitsShort : '';
   }
 
   setLastBest(text: string): void {

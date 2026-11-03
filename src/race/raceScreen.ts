@@ -247,7 +247,7 @@ export class RaceScreen implements Screen {
   private progress(): Progress {
     const st = this.car!.state;
     const tan = this.game.track.center.tangents[Math.max(0, st.trackIndex)];
-    return { s: st.s, lateral: st.lateral, along: st.vx * tan.x + st.vz * tan.y };
+    return { s: st.s, lateral: st.lateral, along: st.vx * tan.x + st.vz * tan.y, offTrack: st.offTrack };
   }
 
   /** One fixed physics tick: input -> car -> race rules -> ghost recording. */
@@ -296,9 +296,10 @@ export class RaceScreen implements Screen {
           this.game.records.save(this.game.track.def.id);
         }
         if (e.best) [880, 1110, 1320].forEach((f, i) => audio.beep(f, 0.16, 0.2, i * 0.11));
-        else audio.beep(880, 0.18);
+        else audio.beep(e.valid ? 880 : 300, 0.18);
         if (s.phase === 'finished') this.hud.flash(STR.race.finished, 'big', 0);
         else if (e.best) this.hud.flash(STR.race.newBest, 'good');
+        else if (!e.valid) this.hud.flash(fmt(STR.race.lapCut, { n: e.lap, time: formatTime(e.time) }), 'bad', 2.2);
         else this.hud.flash(fmt(STR.race.lapTime, { n: e.lap, time: formatTime(e.time) }), 'info');
         if (s.phase !== 'finished' && s.laps.length === s.lapsToRun - 1) this.hud.flash(STR.race.finalLap, e.best ? 'good' : 'info');
         if (s.phase !== 'finished') lapStarted();
@@ -308,6 +309,11 @@ export class RaceScreen implements Screen {
         this.hud.flash(STR.race.lapInvalid, 'bad', 2.2);
         audio.beep(180, 0.35, 0.25);
         lapStarted();
+        break;
+      case 'trackLimits':
+        this.hud.flash(STR.race.trackLimits, 'bad', 2);
+        audio.beep(220, 0.25, 0.22);
+        audio.beep(180, 0.3, 0.22, 0.18);
         break;
       case 'finished':
         this.finishedFor = 0;
@@ -324,8 +330,9 @@ export class RaceScreen implements Screen {
     const s = this.session!;
     const t = this.game.track;
     const rec = this.game.records.get(t.def.id);
-    const bestOfRun = Math.min(...s.laps);
-    const { avg, score } = scoreFor(t.center.length, bestOfRun, t.ink.multiplier);
+    // Only clean laps score; a run with none scores nothing.
+    const bestOfRun = s.bestOfRun();
+    const { avg, score } = bestOfRun === null ? { avg: 0, score: 0 } : scoreFor(t.center.length, bestOfRun, t.ink.multiplier);
     const newBestScore = score > rec.bestScore;
     if (newBestScore) {
       rec.bestScore = score;
@@ -338,6 +345,7 @@ export class RaceScreen implements Screen {
       trackId: t.def.id,
       trackName: t.def.name,
       laps: [...s.laps],
+      lapValid: [...s.lapValid],
       total: s.totalTime() ?? 0,
       bestLap: bestOfRun,
       recordLap: rec.best?.time ?? bestOfRun,
@@ -394,6 +402,7 @@ export class RaceScreen implements Screen {
     } else if (s.lapStart === null) this.hud.setLap(s.phase === 'countdown' ? '' : STR.race.warmup);
     else this.hud.setLap(fmt(STR.race.lap, { n: Math.min(s.laps.length + 1, s.lapsToRun), total: s.lapsToRun }));
     this.hud.setTime(formatTime(s.lapTime(alpha) ?? 0));
+    this.hud.setCut(s.cut && s.lapStart !== null && s.phase === 'racing');
     const parts: string[] = [];
     if (s.lastLap !== null) parts.push(`${STR.race.last} ${formatTime(s.lastLap)}`);
     if (s.best) parts.push(`${STR.race.best} ${formatTime(s.best.time)}`);
