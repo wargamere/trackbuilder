@@ -14,7 +14,9 @@ import { placeTrees } from '../src/track/placement.ts';
 import { buildCenterline } from '../src/track/spline.ts';
 import { trackStats } from '../src/track/stats.ts';
 import { surfaceFor } from '../src/track/surface.ts';
-import { buildTrack, type Track } from '../src/track/track.ts';
+import { buildTrack, contentId, type Track } from '../src/track/track.ts';
+import { decodeTrack, encodeTrack } from '../src/track/code.ts';
+import { TrackLibrary } from '../src/track/library.ts';
 
 /** Stadium: two straights (±`half` m) joined by half circles of radius `gap`. */
 function stadium(options: Partial<TrackOptions> = {}, gap = 300, half = 800): Track {
@@ -29,7 +31,7 @@ function stadium(options: Partial<TrackOptions> = {}, gap = 300, half = 800): Tr
 const with_ = (t: Track, options: Partial<TrackOptions>) => buildTrack({ ...t.def, id: `${t.def.id}+${JSON.stringify(options)}`, options: { ...t.def.options, ...options } });
 
 test('road width changes the road, the barrier line and how close stretches may be', () => {
-  for (const width of [10, 12, 15] as const) {
+  for (const width of [8, 10, 12, 13.5, 15, 20]) {
     const t = with_(getSampleTrack(0), { width });
     assert.equal(t.center.width, width);
     assert.ok(Math.abs(t.center.wallOffset - (width / 2 + 2.8)) < 1e-9);
@@ -157,4 +159,73 @@ test('rotate, mirror and resize keep the track on the paper and undo cleanly', (
   for (let k = 0; k < 6; k++) g = transformDots(g, 'grow');
   assert.ok(inside(g));
   assert.ok(trackFromControl({ id: 'grown', name: 'g', control: g }).track);
+});
+
+test('any road width from 8 to 20 m, and per-corner banking, survive a track code; v3 codes still load', () => {
+  const dots: Dot[] = [{ x: -100, y: -50, h: 4, b: 22 }, { x: 0, y: -80 }, { x: 100, y: -50, b: 0 }, { x: 120, y: 40 }, { x: 0, y: 70 }, { x: -120, y: 40 }];
+  for (const width of [8, 9.5, 13.5, 20]) {
+    const d = decodeTrack(encodeTrack('w', dots, { width }));
+    assert.ok(d.ok);
+    if (d.ok) {
+      assert.equal(d.options.width, width);
+      assert.deepEqual(d.dots, dots);
+    }
+  }
+  // Written by the version with preset widths and no per-corner banking.
+  const v3 = decodeTrack('IC1.AwdWMyBjb2Rl1YEEBjj_nP8IkAN3D5ADeABQ6AIA3wN4AN8DdwCz');
+  assert.ok(v3.ok);
+  if (v3.ok) {
+    assert.equal(v3.options.width, 15);
+    assert.equal(v3.options.kerbs, 'flat');
+    assert.equal(v3.options.laps, 5);
+    assert.equal(v3.options.theme, 'snow');
+    assert.ok(v3.dots.every((d) => d.b === undefined));
+  }
+  // Bank overrides are part of a track's identity; none keeps the old id.
+  const plain = dots.map(({ b: _b, ...d }) => d);
+  assert.notEqual(contentId(dots), contentId(plain));
+  assert.equal(contentId(plain), contentId(plain.map((d) => ({ ...d }))));
+});
+
+test('a corner can be banked on its own; other corners keep the track level', () => {
+  const base = getSampleTrack(2);
+  const t0 = with_(base, { banking: 1 });
+  const k = t0.kerbs[0];
+  const other = t0.kerbs[t0.kerbs.length - 1];
+  const n = t0.center.points.length;
+  // Give the first corner's dots a 30° override.
+  const inCorner = (d: Dot) => {
+    let best = 0;
+    let bd = Infinity;
+    t0.center.points.forEach((p, i) => {
+      const dd = (p.x - d.x) ** 2 + (p.y - d.y) ** 2;
+      if (dd < bd) {
+        bd = dd;
+        best = i;
+      }
+    });
+    return (best - (k.start - 4) + n) % n <= k.count + 8;
+  };
+  const control = base.def.control.map((d) => (inCorner(d) ? { ...d, b: 30 } : { ...d }));
+  assert.ok(control.some((d) => d.b !== undefined), 'the corner has dots');
+  const t1 = buildTrack({ ...base.def, id: 'bank-one', control, options: { banking: 1 } });
+  const deg = (t: Track, i: number) => (Math.abs(t.center.bank[i]) * 180) / Math.PI;
+  assert.ok(deg(t1, k.apex) > deg(t0, k.apex) + 8, `apex ${deg(t0, k.apex).toFixed(1)} -> ${deg(t1, k.apex).toFixed(1)}`);
+  assert.ok(Math.abs(deg(t1, other.apex) - deg(t0, other.apex)) < 0.5, 'another corner is unchanged');
+  // Banking 0 everywhere else, but this corner still banks.
+  const off = buildTrack({ ...base.def, id: 'bank-one-off', control, options: { banking: 0 } });
+  assert.ok(deg(off, k.apex) > 10 && deg(off, other.apex) < 0.01);
+});
+
+test('nothing is saved unless you save it; clear empties My tracks', () => {
+  const lib = new TrackLibrary();
+  lib.clear();
+  assert.equal(lib.list().length, 0);
+  const def = { ...getSampleTrack(0).def, id: 'mine', name: 'Mine', builtIn: undefined, control: getSampleTrack(0).def.control.map((d, i) => (i === 1 ? { ...d, x: d.x + 3 } : d)) };
+  assert.equal(lib.has(contentId(def.control, def.options)), false);
+  lib.save(def);
+  assert.equal(lib.has(contentId(def.control, def.options)), true);
+  lib.clear();
+  assert.equal(lib.list().length, 0);
+  assert.equal(lib.has(contentId(def.control, def.options)), false);
 });

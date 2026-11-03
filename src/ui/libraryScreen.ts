@@ -79,7 +79,7 @@ export class LibraryScreen implements Screen {
     this.input.autocomplete = 'off';
     this.input.addEventListener('keydown', (e) => {
       e.stopPropagation();
-      if (e.key === 'Enter') this.importCode();
+      if (e.key === 'Enter') this.importCode(false);
     });
     this.message = h('div', { class: 'library-message' });
     this.list = h('div', { class: 'library-list' });
@@ -98,7 +98,13 @@ export class LibraryScreen implements Screen {
         'div',
         { class: 'library-import' },
         h('span', { class: 'label', text: STR.library.importLabel }),
-        h('div', { class: 'row' }, this.input, button(STR.buttons.load, () => this.importCode(), { icon: '⤓' })),
+        h(
+          'div',
+          { class: 'row' },
+          this.input,
+          button(STR.library.loadRace, () => this.importCode(false), { icon: '▶' }),
+          button(STR.library.saveCode, () => this.importCode(true), { icon: '⬇' }),
+        ),
         this.message,
       ),
       this.list,
@@ -143,7 +149,8 @@ export class LibraryScreen implements Screen {
     this.message.className = `library-message ${kind}`;
   }
 
-  private importCode(): void {
+  /** Races a pasted code, or (with `save`) adds it to My tracks. */
+  private importCode(save: boolean): void {
     const text = this.input.value;
     if (!text.trim()) return;
     const res = trackFromCode(text);
@@ -156,7 +163,13 @@ export class LibraryScreen implements Screen {
       this.say(msg, 'error');
       return;
     }
-    this.game.library.save(res.track.def);
+    if (save) {
+      this.game.library.save(res.track.def);
+      this.say(STR.library.saved, 'ok');
+      this.input.value = '';
+      this.render();
+      return;
+    }
     this.say(STR.library.loaded, 'ok');
     this.race(res.track.def);
   }
@@ -231,8 +244,27 @@ export class LibraryScreen implements Screen {
     else grid.append(h('p', { class: 'help', text: STR.library.empty }));
     const builtIns = h('div', { class: 'card-grid' });
     for (let i = 0; i < SAMPLE_COUNT; i++) builtIns.append(this.card(getSampleTrack(i).def, false));
+    // "Delete all" needs a second tap to confirm.
+    let armed = false;
+    const delAll = button(
+      STR.library.deleteAll,
+      () => {
+        if (!armed) {
+          armed = true;
+          delAll.classList.add('danger');
+          delAll.querySelector('.btn-label')!.textContent = fmt(STR.library.confirmDeleteAll, { n: mine.length });
+          return;
+        }
+        for (const e of mine) this.game.records.forget(e.def.id);
+        this.game.library.clear();
+        this.say(STR.library.allDeleted, 'ok');
+        this.render();
+      },
+      { icon: '🗑', class: 'compact' },
+    );
+    delAll.hidden = mine.length === 0;
     this.list.replaceChildren(
-      h('div', { class: 'label', text: `${STR.library.yours} (${mine.length})` }),
+      h('div', { class: 'label-row' }, h('div', { class: 'label', text: `${STR.library.yours} (${mine.length})` }), delAll),
       grid,
       h('div', { class: 'label', text: STR.library.builtIn }),
       builtIns,

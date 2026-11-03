@@ -54,7 +54,8 @@ export function newTrackId(): string {
  * defaults, so flat default tracks keep the ids they had before elevation existed.
  */
 export function contentId(control: readonly Dot[], options?: Partial<TrackOptions>): string {
-  const dots = control.map((p) => (p.h ? `${p.x},${p.y},${p.h}` : `${p.x},${p.y}`)).join(';');
+  // Heights and bank overrides only appear when set, so older tracks keep their ids.
+  const dots = control.map((p) => (p.h ? `${p.x},${p.y},${p.h}` : `${p.x},${p.y}`) + (p.b !== undefined ? `/${p.b}` : '')).join(';');
   const o = { ...DEFAULT_OPTIONS, ...options };
   const extra = (Object.keys(DEFAULT_OPTIONS) as (keyof TrackOptions)[])
     .filter((k) => o[k] !== DEFAULT_OPTIONS[k])

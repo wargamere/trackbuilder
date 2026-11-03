@@ -1,5 +1,5 @@
 import { STR, fmt } from '../config/strings.ts';
-import type { SmoothingLevel, TrackOptions } from '../config/track.ts';
+import { TRACK, type SmoothingLevel, type TrackOptions } from '../config/track.ts';
 import type { Settings } from '../core/settings.ts';
 import type { InkStats } from '../track/ink.ts';
 import type { TrackStats } from '../track/stats.ts';
@@ -37,6 +37,13 @@ export interface EditorActions {
   transform(how: 'grow' | 'shrink' | 'rotate' | 'mirror'): void;
   zoom(how: 'in' | 'out' | 'fit'): void;
   focusCorner(i: number): void;
+  /** Slider drags: change without an undo step each time, then commit once on release. */
+  previewOptions(o: Partial<TrackOptions>): void;
+  commitLive(): void;
+  /** Bank of numbered corner `i` at its apex (degrees), or null for the track's level. */
+  cornerBank(i: number, deg: number | null): void;
+  /** Slides the start line along the road (metres; negative = back). */
+  moveStart(metres: number): void;
 }
 
 /** One numbered corner, for the Corners section. */
@@ -45,6 +52,8 @@ export interface CornerInfo {
   radius: number;
   /** Bank angle at the apex (degrees). */
   bank: number;
+  /** The corner has its own bank (not the track's level). */
+  custom: boolean;
 }
 
 /** Everything the editor overlay shows; set every frame (DOM is only touched on change). */
@@ -63,6 +72,8 @@ export interface EditorViewState {
   corners: CornerInfo[];
   /** Pits are switched on but there is no room for them. */
   pitsNoRoom: boolean;
+  /** The track as it is now is in My tracks. */
+  saved: boolean;
 }
 
 interface Choice<T> {
@@ -83,6 +94,43 @@ function segmented<T extends string | number | boolean>(items: [T, string, strin
     el,
     set(v: T) {
       for (const [k, b] of btns) b.classList.toggle('on', k === v);
+    },
+  };
+}
+
+interface Slider {
+  el: HTMLElement;
+  /** Shows a value (ignored while the slider is being dragged). */
+  set(v: number): void;
+}
+
+/** A range slider with its value beside it; `onInput` while dragging, `onDone` when let go. */
+function slider(min: number, max: number, step: number, onInput: (v: number) => void, onDone: () => void, format: (v: number) => string): Slider {
+  const input = h('input', { class: 'range' });
+  input.type = 'range';
+  input.min = String(min);
+  input.max = String(max);
+  input.step = String(step);
+  input.tabIndex = -1;
+  const value = h('span', { class: 'range-value' });
+  let dragging = false;
+  input.addEventListener('input', () => {
+    dragging = true;
+    value.textContent = format(Number(input.value));
+    onInput(Number(input.value));
+  });
+  input.addEventListener('change', () => {
+    dragging = false;
+    onDone();
+  });
+  input.addEventListener('keydown', (e) => e.stopPropagation()); // arrows move the slider, not the editor
+  return {
+    el: h('div', { class: 'range-row' }, input, value),
+    set(v: number) {
+      if (dragging) return;
+      if (input.value !== String(v)) input.value = String(v);
+      const t = format(v);
+      if (value.textContent !== t) value.textContent = t;
     },
   };
 }
@@ -127,6 +175,7 @@ export class EditorUI {
   private readonly redoBtn: HTMLButtonElement;
   private readonly raceBtn: HTMLButtonElement;
   private readonly practiceBtn: HTMLButtonElement;
+  private readonly saveBtn: HTMLButtonElement;
   private readonly zoomBox: HTMLElement;
   private readonly sections: Section[] = [];
   private open: number;
@@ -139,7 +188,7 @@ export class EditorUI {
     snap: HTMLInputElement;
     soft: HTMLInputElement;
     heightTools: HTMLElement;
-    width: Choice<number>;
+    width: Slider;
     terrain: Choice<Terrain>;
     banking: Choice<number>;
     cornerList: HTMLElement;
@@ -158,6 +207,8 @@ export class EditorUI {
     cornerLabels: HTMLInputElement;
   };
   private cornerKey = '';
+  private cornerActions: EditorActions | null = null;
+  private cornerRows: { slider: Slider; auto: HTMLElement; label: HTMLElement }[] = [];
 
   constructor(actions: EditorActions, sampleNames: readonly string[], openSection = 0) {
     const k = STR.editor.keys;
@@ -223,14 +274,7 @@ export class EditorUI {
     );
     const samples = h('div', { class: 'row wrap' }, ...sampleNames.map((n, i) => button(n, () => actions.sample(i), { icon: '★' })));
 
-    const width = segmented<number>(
-      [
-        [10, S.widths[10]],
-        [12, S.widths[12]],
-        [15, S.widths[15]],
-      ],
-      (w) => opt({ width: w as TrackOptions['width'] }),
-    );
+    const width = slider(TRACK.minWidth, TRACK.maxWidth, 0.5, (w) => actions.previewOptions({ width: w }), actions.commitLive, (w) => fmt(S.widthValue, { w: w.toFixed(1) }));
     const terrain = segmented<Terrain>(
       [
         ['flat', S.terrains.flat],
@@ -249,9 +293,17 @@ export class EditorUI {
     );
     const cornerList = h('div', { class: 'corner-list' });
     cornerList.addEventListener('click', (e) => {
-      const row = (e.target as HTMLElement).closest<HTMLElement>('[data-corner]');
-      if (row) actions.focusCorner(Number(row.dataset.corner));
+      const el = e.target as HTMLElement;
+      const auto = el.closest<HTMLElement>('[data-auto]');
+      if (auto) {
+        actions.cornerBank(Number(auto.dataset.auto), null);
+        actions.commitLive();
+        return;
+      }
+      const row = el.closest<HTMLElement>('[data-focus]');
+      if (row) actions.focusCorner(Number(row.dataset.focus));
     });
+    this.cornerActions = actions;
     const laps = segmented<number>(
       [
         [1, '1'],
@@ -344,6 +396,7 @@ export class EditorUI {
         S.sections.shape,
         [
           field(S.roadWidth, width.el),
+          h('div', { class: 'row wrap' }, ...[10, 12, 15].map((w) => button(fmt(S.widthValue, { w }), () => opt({ width: w }), { class: 'compact' }))),
           field(
             S.resize,
             h(
@@ -366,8 +419,17 @@ export class EditorUI {
           field(S.laps, laps.el),
           field(S.pits, pits.el),
           pitsNote,
-          h('div', { class: 'row wrap' }, button(STR.buttons.reverse, actions.reverse, { icon: '⇄', key: 'R' })),
+          field(
+            S.startLine,
+            h(
+              'div',
+              { class: 'row wrap' },
+              button(S.startBack, () => actions.moveStart(-10), { icon: '◀' }),
+              button(S.startOn, () => actions.moveStart(10), { icon: '▶' }),
+            ),
+          ),
           h('p', { class: 'help', text: S.startHelp }),
+          h('div', { class: 'row wrap' }, button(STR.buttons.reverse, actions.reverse, { icon: '⇄', key: 'R' })),
         ],
       ],
       [S.sections.edges, [field(S.kerbs, kerbs.el), field(S.runoff, runoff.el), field(S.barrier, barrier.el), h('p', { class: 'help', text: S.edgesHelp })]],
@@ -396,6 +458,7 @@ export class EditorUI {
     });
 
     this.raceBtn = button(STR.buttons.raceIt, actions.race, { key: k.race, icon: '▶', class: 'primary race' });
+    this.saveBtn = button(S.save, actions.save, { icon: '⬇', class: 'compact save', title: S.save });
     this.practiceBtn = button(STR.buttons.practice, actions.practice, { icon: '⟳', class: 'compact', title: STR.menu.practiceHint });
     const foot = h(
       'div',
@@ -405,7 +468,7 @@ export class EditorUI {
         { class: 'row' },
         button(S.preview, actions.preview, { icon: '◈', class: 'compact', title: `${S.preview} (V)` }),
         button(STR.buttons.share, actions.share, { icon: '⧉', class: 'compact', title: STR.buttons.share }),
-        button(S.save, actions.save, { icon: '⬇', class: 'compact', title: S.save }),
+        this.saveBtn,
         button(STR.buttons.myTracks, actions.myTracks, { icon: '☰', class: 'compact', title: STR.buttons.myTracks }),
         this.practiceBtn,
       ),
@@ -576,6 +639,11 @@ export class EditorUI {
     this.redoBtn.disabled = !s.canRedo;
     this.raceBtn.disabled = !s.canRace;
     this.practiceBtn.disabled = !s.canRace;
+    this.saveBtn.disabled = !s.canRace || s.saved;
+    const saveLabel = this.saveBtn.querySelector('.btn-label');
+    const saveText = s.saved ? `${STR.sidebar.savedTick} ✓` : STR.sidebar.save;
+    if (saveLabel && saveLabel.textContent !== saveText) saveLabel.textContent = saveText;
+    this.saveBtn.classList.toggle('unsaved', s.canRace && !s.saved);
     c.mode.set(s.mode);
     c.heightTools.hidden = s.mode !== 'height';
     c.smoothing.set(s.smoothing);
@@ -616,23 +684,37 @@ export class EditorUI {
       if (el.textContent !== t) el.textContent = t;
     });
 
-    // Corner list (rebuilt only when it changes).
-    const key = s.corners.map((k) => `${k.dir}${Math.round(k.radius)}/${Math.round(k.bank)}`).join(',');
+    // Corner list: rebuilt when the corners change, bank sliders updated in place.
+    const key = s.corners.map((k) => `${k.dir}${Math.round(k.radius)}`).join(',');
     if (key !== this.cornerKey) {
       this.cornerKey = key;
+      const a = this.cornerActions;
+      this.cornerRows = [];
       c.cornerList.replaceChildren(
-        ...(s.corners.length
-          ? s.corners.map((k, i) =>
-              h(
-                'button',
-                { class: 'corner-row', 'data-corner': String(i) },
-                h('span', { class: 'corner-num', text: String(i + 1) }),
-                h('span', { text: fmt(S.cornerRow, { dir: k.dir === 'L' ? S.left : S.right, r: Math.round(k.radius), bank: Math.round(k.bank) }) }),
-              ),
-            )
+        ...(s.corners.length && a
+          ? s.corners.map((_, i) => {
+              const sl = slider(0, 30, 1, (v) => a.cornerBank(i, v), a.commitLive, (v) => `${Math.round(v)}°`);
+              const auto = h('button', { class: 'corner-auto', 'data-auto': String(i), text: S.auto, title: S.autoTitle });
+              const label = h('span', { class: 'corner-text' });
+              this.cornerRows.push({ slider: sl, auto, label });
+              return h(
+                'div',
+                { class: 'corner-row' },
+                h('button', { class: 'corner-head', 'data-focus': String(i), title: S.zoomCorner }, h('span', { class: 'corner-num', text: String(i + 1) }), label),
+                h('div', { class: 'corner-bank' }, sl.el, auto),
+              );
+            })
           : [h('p', { class: 'help', text: S.noCorners })]),
       );
     }
+    s.corners.forEach((k, i) => {
+      const row = this.cornerRows[i];
+      if (!row) return;
+      const t = fmt(S.cornerRow, { dir: k.dir === 'L' ? S.left : S.right, r: Math.round(k.radius) });
+      if (row.label.textContent !== t) row.label.textContent = t;
+      row.slider.set(Math.round(k.bank));
+      row.auto.hidden = !k.custom;
+    });
 
     // Stats strip.
     const v = this.statCells;

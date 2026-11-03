@@ -171,7 +171,6 @@ export class RaceScreen implements Screen {
     if (!car) return;
     const def = this.game.track.def;
     this.applyPaint();
-    this.game.library.save(def); // built-in samples are skipped
     if (CAPS.links) writeHashCode(encodeTrack(def.name, def.control, def.options));
     car.placeAt(-8);
     const rec = this.game.records.get(this.game.track.def.id);

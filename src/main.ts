@@ -9,6 +9,7 @@ import { getSampleTrack, trackFromCode } from './editor/pipeline.ts';
 import { PreviewScreen } from './editor/preview.ts';
 import { CAPS, PLATFORM } from './platform/platform.ts';
 import { platform, sdkEventLog } from './platform/services.ts';
+import { loadJSON, saveJSON } from './platform/storage.ts';
 import { installOrientationPrompt, readHashCode } from './platform/web.ts';
 import { RaceScreen } from './race/raceScreen.ts';
 import { RecordBook, type RunResult } from './race/records.ts';
@@ -64,6 +65,7 @@ class Game implements GameContext {
 
   constructor(bootTrack: Track) {
     this.track = bootTrack;
+    wipeOldLibraryOnce(this.library, this.records);
     this.screens.menu = new MenuScreen(this);
     this.screens.race = new RaceScreen(this);
     this.screens.editor = new EditorScreen(this);
@@ -109,6 +111,19 @@ class Game implements GameContext {
     surface.resize();
     this.current?.resize();
   }
+}
+
+/**
+ * Tracks used to be saved automatically every time you raced one. Now only
+ * tracks you save yourself are kept, so the old auto-saved list (and the
+ * records of those tracks) is cleared once.
+ */
+function wipeOldLibraryOnce(library: TrackLibrary, records: RecordBook): void {
+  const FLAG = 'library.manualOnly';
+  if (loadJSON<boolean>(FLAG, false)) return;
+  for (const e of library.list()) records.forget(e.def.id);
+  library.clear();
+  saveJSON(FLAG, true);
 }
 
 /** Web build: a share link (#track=…) boots straight into that track. */

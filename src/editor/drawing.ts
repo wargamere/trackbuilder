@@ -28,12 +28,13 @@ import {
   drawPenString,
   drawProblem,
   drawReplaced,
+  drawStartLine,
   drawStroke,
   drawTrack,
   flagRect,
   toScreen,
 } from './render2d.ts';
-import { reverseDots, rotateDots, snapDot } from './smoothing.ts';
+import { quantizeBank, reverseDots, rotateDots, snapDot } from './smoothing.ts';
 import { nearestSample, planSection, spliceSection } from './splice.ts';
 import { crossingKind, crossingsOf, type TrackIssue } from './validation.ts';
 import { Viewport, ZOOM } from './viewport.ts';
@@ -146,6 +147,10 @@ export class EditorScreen implements Screen {
   private pointerType = 'mouse';
   /** Set when leaving for the 3D view, so coming back keeps the edit. */
   private keepState = false;
+  /** State before a slider drag started (undone as one step). */
+  private liveBefore: Snapshot | null = null;
+  /** The corner whose bank slider is being dragged, its dots, and its bank = a0 + slope × override. */
+  private cornerEdit: { corner: number; dots: number[]; a0: number; slope: number } | null = null;
   /** Track position highlighted by the profile cursor (Height mode). */
   private cursor: number | null = null;
 
@@ -185,6 +190,10 @@ export class EditorScreen implements Screen {
         transform: (how) => this.transform(how),
         focusCorner: (i) => this.focusCorner(i),
         setDisplay: (d) => this.setDisplay(d),
+        previewOptions: (o) => this.previewOptions(o),
+        commitLive: () => this.commitLive(),
+        cornerBank: (i, deg) => this.setCornerBank(i, deg),
+        moveStart: (m) => this.moveStartBy(m),
       },
       Array.from({ length: SAMPLE_COUNT }, (_, i) => getSampleTrack(i).def.name),
       settings().sidebarSection,
@@ -561,11 +570,16 @@ export class EditorScreen implements Screen {
     const t = this.built?.track;
     if (!t) return [];
     const c = t.center;
-    return t.kerbs.map((k) => ({
-      dir: k.sign > 0 ? 'R' : 'L',
-      radius: 1 / Math.max(1e-6, Math.abs(c.curvature[k.apex])),
-      bank: (Math.abs(c.bank[k.apex]) * 180) / Math.PI,
-    }));
+    const n = c.points.length;
+    return t.kerbs.map((k) => {
+      const custom = this.dotSamples.some((s, j) => this.dots[j]?.b !== undefined && (s - (k.start - 4) + n) % n <= k.count + 8);
+      return {
+        dir: k.sign > 0 ? 'R' : 'L',
+        radius: 1 / Math.max(1e-6, Math.abs(c.curvature[k.apex])),
+        bank: (Math.abs(c.bank[k.apex]) * 180) / Math.PI,
+        custom,
+      };
+    });
   }
 
   // ------------------------------------------------------------- derived
@@ -633,8 +647,10 @@ export class EditorScreen implements Screen {
     return { x: clamp(p.x, -WORLD.width / 2, WORLD.width / 2), y: clamp(p.y, -WORLD.height / 2, WORLD.height / 2) };
   }
 
-  private placeDot(w: Vec2, h?: number): Dot {
-    return snapDot(h ? { x: w.x, y: w.y, h } : w, this.snapOn ? DOTS.snap : 0);
+  private placeDot(w: Vec2, h?: number, b?: number): Dot {
+    const d: Dot = h ? { x: w.x, y: w.y, h } : { x: w.x, y: w.y };
+    if (b !== undefined) d.b = b;
+    return snapDot(d, this.snapOn ? DOTS.snap : 0);
   }
 
   /** How close to the road centre a point must be to count as "on the road" (m). */
@@ -667,10 +683,15 @@ export class EditorScreen implements Screen {
     return best;
   }
 
+  /** True over the start flag, or the start/finish line itself on the road. */
   private onFlag(sx: number, sy: number): boolean {
     if (!this.closed || !this.dots.length) return false;
     const r = flagRect(this.view, this.dots[0]);
-    return sx >= r.x && sx <= r.x + r.w && sy >= r.y && sy <= r.y + r.h;
+    if (sx >= r.x && sx <= r.x + r.w && sy >= r.y && sy <= r.y + r.h) return true;
+    const t = this.built?.track;
+    if (!t) return false;
+    const s = toScreen(this.view, t.center.points[0]);
+    return Math.hypot(sx - s.x, sy - s.y) <= Math.max(9, (t.center.width / 2) * this.view.scale);
   }
 
   /** If the screen point is on the road, the dot index to insert before, else -1. */
@@ -874,22 +895,14 @@ export class EditorScreen implements Screen {
       if (!d.moved && Math.hypot(x - d.sx, y - d.sy) < 4) return;
       d.moved = true;
       const weights = e.shiftKey ? null : d.weights;
-      if (d.kind === 'dot') this.moveDots(d, this.placeDot(this.worldAt(x, y), d.orig[d.index].h), weights);
+      if (d.kind === 'dot') this.moveDots(d, this.placeDot(this.worldAt(x, y), d.orig[d.index].h, d.orig[d.index].b), weights);
       else this.raiseDots(d, -(y - d.sy) * d.perPx, weights);
       this.selected = d.index;
       this.dirty = true;
     } else if (d?.kind === 'flag') {
-      const w = this.worldAt(x, y);
-      let best = 0;
-      let bestD = Infinity;
-      this.dots.forEach((p, i) => {
-        const dd = dist2(p, w);
-        if (dd < bestD) {
-          bestD = dd;
-          best = i;
-        }
-      });
-      d.target = best;
+      // The start line slides along the road to wherever the pointer is nearest.
+      const t = this.built?.track;
+      if (t) d.target = nearestSample(t.center, this.worldAt(x, y)).index;
     }
   }
 
@@ -911,7 +924,9 @@ export class EditorScreen implements Screen {
       const wgt = j === d.index ? 1 : weights ? weights[j] : 0;
       if (wgt <= 0.001) return { ...p };
       const h = clampHeight((p.h ?? 0) + dh * wgt);
-      return h ? { x: p.x, y: p.y, h } : { x: p.x, y: p.y };
+      const r: Dot = h ? { x: p.x, y: p.y, h } : { x: p.x, y: p.y };
+      if (p.b !== undefined) r.b = p.b;
+      return r;
     });
   }
 
@@ -975,9 +990,133 @@ export class EditorScreen implements Screen {
         this.lastTap = { index: d.index, time: performance.now() };
       }
     } else if (d?.kind === 'flag' && d.target > 0) {
-      this.dots = rotateDots(this.dots, d.target);
-      this.commit(d.before, { text: STR.editor.startMoved, kind: 'ok' });
+      this.moveStartTo(d.target, d.before);
     }
+  }
+
+  /**
+   * Inserts a dot on the centre line at sample `i` (at the road's height there,
+   * with the bank override of its neighbours if both have one) and returns its
+   * index, or the index of a dot already within a few metres.
+   */
+  private dotAtSample(i: number): number {
+    this.rebuild();
+    const t = this.built?.track;
+    if (!t || this.dotSamples.length !== this.dots.length) return -1;
+    const c = t.center;
+    const n = c.points.length;
+    let near = -1;
+    let nearD = Infinity;
+    this.dotSamples.forEach((s, j) => {
+      const d = Math.min(Math.abs(s - i), n - Math.abs(s - i));
+      if (d < nearD) {
+        nearD = d;
+        near = j;
+      }
+    });
+    if (near >= 0 && nearD * c.spacing <= 4) return near;
+    // After the last dot at or before sample i.
+    let after = this.dots.length - 1;
+    let bestGap = Infinity;
+    this.dotSamples.forEach((s, j) => {
+      const gap = (i - s + n) % n;
+      if (gap < bestGap) {
+        bestGap = gap;
+        after = j;
+      }
+    });
+    const a = this.dots[after];
+    const b = this.dots[(after + 1) % this.dots.length];
+    const bank = a.b !== undefined && b.b !== undefined ? (a.b + b.b) / 2 : undefined;
+    const h = c.height[i];
+    this.dots.splice(after + 1, 0, snapDot(bank !== undefined ? { x: c.points[i].x, y: c.points[i].y, h, b: bank } : { x: c.points[i].x, y: c.points[i].y, h }));
+    this.dirty = true;
+    return after + 1;
+  }
+
+  /** Moves the start/finish line to centre-line sample `i` (adding a dot there if needed). */
+  private moveStartTo(i: number, before: Snapshot = this.snapshot()): void {
+    const k = this.dotAtSample(i);
+    if (k <= 0) {
+      if (k === 0) this.restore(before);
+      return;
+    }
+    this.dots = rotateDots(this.dots, k);
+    this.selected = -1;
+    this.commit(before, { text: STR.editor.startMoved, kind: 'ok' });
+  }
+
+  /** Sidebar buttons: slides the start line `metres` along the road (negative = back). */
+  private moveStartBy(metres: number): void {
+    this.rebuild();
+    const t = this.built?.track;
+    if (!t || !this.closed) return;
+    const n = t.center.points.length;
+    const i = (((Math.round(metres / t.center.spacing)) % n) + n) % n;
+    if (i) this.moveStartTo(i);
+  }
+
+  // -------------------------------------------------------- live sliders
+
+  /** Changes options while a slider is being dragged (one undo step when it's let go). */
+  private previewOptions(o: Partial<TrackOptions>): void {
+    this.liveBefore ??= this.snapshot();
+    this.options = { ...this.options, ...o };
+    this.dirty = true;
+  }
+
+  /** Ends a slider drag: records the undo step. */
+  private commitLive(): void {
+    this.cornerEdit = null;
+    if (!this.liveBefore) return;
+    this.commit(this.liveBefore);
+    this.liveBefore = null;
+  }
+
+  /**
+   * Sets numbered corner `i` to bank `deg` degrees at its apex (null = back to
+   * the track's banking level). The override lives on the corner's dots (one is
+   * added at the apex if the corner has none). The apex angle is linear in the
+   * override, so two quick probes give the exact value to store.
+   */
+  private setCornerBank(i: number, deg: number | null): void {
+    this.rebuild();
+    const t = this.built?.track;
+    if (!t) return;
+    if (!this.cornerEdit || this.cornerEdit.corner !== i) {
+      const k = t.kerbs[i];
+      if (!k) return;
+      this.liveBefore ??= this.snapshot();
+      const n = t.center.points.length;
+      const inCorner = (s: number) => {
+        const off = (s - (k.start - 4) + n) % n;
+        return off <= k.count + 8;
+      };
+      let dots = this.dotSamples.map((s, j) => (inCorner(s) ? j : -1)).filter((j) => j >= 0);
+      if (!dots.length) {
+        dots = [this.dotAtSample(k.apex)];
+        this.rebuild();
+      }
+      // Probe: apex bank with the override at 0 and at 30 degrees.
+      const probe = (b: number) => {
+        const ds = this.dots.map((d, j) => (dots.includes(j) ? { ...d, b } : d));
+        const c = buildTrack({ id: 'probe', name: '', control: ds, options: this.options }).center;
+        return (Math.abs(c.bank[k.apex]) * 180) / Math.PI;
+      };
+      const a0 = probe(0);
+      const a30 = probe(30);
+      this.cornerEdit = { corner: i, dots, a0, slope: (a30 - a0) / 30 };
+    }
+    const e = this.cornerEdit;
+    const b = deg === null ? undefined : quantizeBank(e.slope > 1e-4 ? (deg - e.a0) / e.slope : deg);
+    this.dots = this.dots.map((d, j) => {
+      if (!e.dots.includes(j)) return d;
+      const r = { ...d };
+      if (b === undefined) delete r.b;
+      else r.b = b;
+      return r;
+    });
+    this.dirty = true;
   }
 
   private releasePointer(): void {
@@ -1156,6 +1295,7 @@ export class EditorScreen implements Screen {
       stats: this.closed && t ? trackStats(t) : null,
       corners: this.closed && t ? this.cornerInfo() : [],
       pitsNoRoom: !!t && this.closed && this.options.pits && !pitLayout(t),
+      saved: this.closed && !!t && this.game.library.has(contentId(this.dots, this.options)),
     });
 
     if (this.stroke && !this.section) {
@@ -1256,8 +1396,12 @@ export class EditorScreen implements Screen {
       if (this.built && !this.built.ok && this.built.at) drawProblem(ctx, v, this.built.at, time);
       const d = this.drag;
       const startPreview = d?.kind === 'flag' ? d.target : -1;
-      drawDots(ctx, v, this.dots, { r: dotR, hover: this.hover, selected: this.selected, startPreview });
-      drawFlag(ctx, v, this.dots[startPreview >= 0 ? startPreview : 0]);
+      drawDots(ctx, v, this.dots, { r: dotR, hover: this.hover, selected: this.selected });
+      if (startPreview > 0) {
+        drawStartLine(ctx, v, t.center.points[startPreview], t.center.tangents[startPreview], t.center.width);
+        drawMarker(ctx, v, t.center.points[startPreview]);
+      }
+      drawFlag(ctx, v, startPreview > 0 ? t.center.points[startPreview] : this.dots[0]);
       if (heights) {
         if (this.cursor !== null) drawMarker(ctx, v, sampleAt(t.center, this.cursor).p);
         drawHeightTags(ctx, v, this.dots, this.taggedDots());

@@ -8,7 +8,10 @@ export interface Vec2 {
 
 /** A track dot: ground position plus an optional height above the base ground, in metres. */
 export interface Dot extends Vec2 {
+  /** Height (m). */
   h?: number;
+  /** Bank angle override for the corner around this dot (degrees); unset = the track's banking level. */
+  b?: number;
 }
 
 export const vec = (x: number, y: number): Vec2 => ({ x, y });

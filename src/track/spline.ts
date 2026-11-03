@@ -79,11 +79,14 @@ export function sampleClosedCatmullRom(ctrl: readonly Dot[], step = 1): Dot[] {
         const b2 = b2a * a2 + b2b * a3;
         return ca * b1 + cb * b2;
       };
-      out.push({
+      const d: Dot = {
         x: lerp3(p0.x, p1.x, p2.x, p3.x),
         y: lerp3(p0.y, p1.y, p2.y, p3.y),
         h: lerp3(h0, h1, h2, h3),
-      });
+      };
+      // Bank overrides blend linearly from dot to dot.
+      if (p1.b !== undefined && p2.b !== undefined) d.b = p1.b + ((p2.b - p1.b) * s) / steps;
+      out.push(d);
     }
   }
   return out;
@@ -108,7 +111,9 @@ export function resampleClosed(pts: readonly Dot[], spacing: number): { points: 
     const t = segLen > 1e-9 ? (target - cum[seg]) / segLen : 0;
     const ha = a.h ?? 0;
     const hb = b.h ?? 0;
-    points.push({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t, h: ha + (hb - ha) * t });
+    const q: Dot = { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t, h: ha + (hb - ha) * t };
+    if (a.b !== undefined && b.b !== undefined) q.b = a.b + (b.b - a.b) * t;
+    points.push(q);
   }
   return { points, length };
 }
@@ -164,7 +169,12 @@ export const wallOffsetFor = (width: number): number => width / 2 + TRACK.kerbWi
 
 /** Builds the evenly sampled centre line through a closed loop of dots. `banking` is 0 (off), 1 or 2. */
 export function buildCenterline(ctrl: readonly Dot[], banking = 0, spacing: number = TRACK.centerSpacing, width: number = TRACK.roadWidth): Centerline {
-  const dense = sampleClosedCatmullRom(ctrl, 1);
+  // Per-corner bank overrides: every dot gets a value (the level's angle where unset) so they blend.
+  const levelBank = BANK_LEVELS[Math.max(0, Math.min(2, banking))];
+  const custom = ctrl.some((d) => d.b !== undefined);
+  const levelDeg = (levelBank * 180) / Math.PI;
+  const src = custom ? ctrl.map((d) => ({ ...d, b: d.b ?? levelDeg })) : ctrl;
+  const dense = sampleClosedCatmullRom(src, 1);
   const { points: pts, length } = resampleClosed(dense, spacing);
   const n = pts.length;
   const realSpacing = length / n;
@@ -194,14 +204,18 @@ export function buildCenterline(ctrl: readonly Dot[], banking = 0, spacing: numb
     grade[i] = (height[wrap(i + 1, n)] - height[wrap(i - 1, n)]) / (2 * realSpacing);
     distArr[i] = i * realSpacing;
   }
-  // Banking: leans into corners in proportion to curvature, smoothed so it rolls in and out.
-  const maxBank = BANK_LEVELS[Math.max(0, Math.min(2, banking))];
+  // Banking: leans into corners in proportion to curvature, smoothed so it rolls in
+  // and out. The full angle is the track's level, or a corner's own override.
   const rawBank = new Float32Array(n);
-  if (maxBank > 0) {
-    for (let i = 0; i < n; i++) rawBank[i] = Math.sign(curvature[i]) * maxBank * Math.min(1, Math.abs(curvature[i]) * TRACK.bankRadius);
+  const banked = custom || levelBank > 0;
+  if (banked) {
+    for (let i = 0; i < n; i++) {
+      const max = custom ? ((pts[i].b ?? levelDeg) * Math.PI) / 180 : levelBank;
+      rawBank[i] = Math.sign(curvature[i]) * max * Math.min(1, Math.abs(curvature[i]) * TRACK.bankRadius);
+    }
   }
   const r = Math.max(1, Math.round(12 / realSpacing));
-  const bank = maxBank > 0 ? smoothLoop(smoothLoop(rawBank, r), r) : rawBank;
+  const bank = banked ? smoothLoop(smoothLoop(rawBank, r), r) : rawBank;
   return { points, tangents, curvature, height, grade, eased, bank, dist: distArr, length, spacing: realSpacing, width, wallOffset: wallOffsetFor(width) };
 }
 

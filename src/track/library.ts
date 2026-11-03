@@ -17,7 +17,8 @@ const KEY = 'library';
 const MAX_TRACKS = 60;
 
 /**
- * "My tracks": every track you race is saved here automatically (built-in
+ * "My tracks": the tracks you save (from the editor, the results screen or a
+ * pasted code; nothing is saved automatically, and built-in
  * samples aren't). Stored as track codes, newest first.
  */
 export class TrackLibrary {
@@ -45,6 +46,22 @@ export class TrackLibrary {
     this.items.unshift({ code, savedAt: Date.now() });
     if (this.items.length > MAX_TRACKS) this.items.length = MAX_TRACKS;
     saveJSON(KEY, this.items);
+    this.ids = null;
+  }
+
+  private ids: Set<string> | null = null;
+
+  /** True if a track with this id is saved (cheap: the ids are cached). */
+  has(id: string): boolean {
+    this.ids ??= new Set(this.list().map((e) => e.def.id));
+    return this.ids.has(id);
+  }
+
+  /** Forgets every saved track. */
+  clear(): void {
+    this.items = [];
+    saveJSON(KEY, this.items);
+    this.ids = null;
   }
 
   remove(id: string): void {
@@ -53,5 +70,6 @@ export class TrackLibrary {
       return d.ok && contentId(d.dots, d.options) !== id;
     });
     saveJSON(KEY, this.items);
+    this.ids = null;
   }
 }

@@ -10,8 +10,10 @@ export const WORLD = {
 } as const;
 
 export const TRACK = {
-  /** Default road width; each track can be narrow, normal or wide (TrackOptions.width). */
+  /** Default road width; each track sets its own (TrackOptions.width) in this range. */
   roadWidth: 12,
+  minWidth: 8,
+  maxWidth: 20,
   /** Spacing of the final evenly sampled centreline. */
   centerSpacing: 2.5,
   /** A freehand stroke is resampled to this spacing before smoothing. */
@@ -54,7 +56,8 @@ export const TRACK = {
 
 /** Per-track options, stored with the track. */
 export type ThemeId = 'meadow' | 'desert' | 'snow';
-export type RoadWidth = 10 | 12 | 15;
+/** Road width (m): any value from TRACK.minWidth to TRACK.maxWidth in 0.5 m steps. */
+export type RoadWidth = number;
 export type KerbStyle = 'raised' | 'flat' | 'none';
 export type RunoffId = 'grass' | 'gravel' | 'tarmac';
 export type BarrierStyle = 'concrete' | 'tyres';

@@ -30,9 +30,11 @@ export class ResultsScreen implements Screen {
   private paintNote: { text: string; kind: 'ok' | 'warn' } | null = null;
   private abort: AbortController | null = null;
   private readonly share = new ShareDialog();
+  private readonly saveBtn: HTMLButtonElement;
 
   constructor(game: GameContext) {
     this.game = game;
+    this.saveBtn = button(STR.buttons.saveTrack, () => this.saveTrack(), { icon: '⬇' });
     this.body = h('div', { class: 'results-body' });
     this.paint = h('div', { class: 'paint-shop' });
     this.blocker = h('div', { class: 'ad-blocker' }, h('div', { class: 'spinner' }), h('span', { text: STR.ads.loading }));
@@ -61,6 +63,7 @@ export class ResultsScreen implements Screen {
             h(
               'div',
               { class: 'menu row secondary' },
+              this.saveBtn,
               button(STR.buttons.shareTrack, () => this.share.open(this.game.track.def, this.game.ui), { icon: '⧉' }),
               button(STR.buttons.myTracks, () => this.leave('library'), { icon: '☰' }),
               button(STR.buttons.practice, () => this.game.drive('practice'), { icon: '⟳', key: 'P' }),
@@ -111,6 +114,7 @@ export class ResultsScreen implements Screen {
       }
     }
     this.renderPaint();
+    this.updateSave();
     this.game.ui.append(this.root);
     this.angle = 0;
     this.busy = false;
@@ -132,6 +136,21 @@ export class ResultsScreen implements Screen {
     );
     // Check for an ad blocker in the background so the paint offer can say so.
     if (platform.adsEnabled) void platform.hasAdblock().then(() => this.renderPaint());
+  }
+
+  /** Saves the raced track to My tracks (built-in tracks are always there). */
+  private saveTrack(): void {
+    const def = this.game.track.def;
+    if (!def.builtIn) this.game.library.save(def);
+    this.updateSave();
+  }
+
+  private updateSave(): void {
+    const def = this.game.track.def;
+    const saved = !!def.builtIn || this.game.library.has(def.id);
+    this.saveBtn.disabled = saved;
+    const l = this.saveBtn.querySelector('.btn-label');
+    if (l) l.textContent = saved ? `${STR.buttons.savedTrack} ✓` : STR.buttons.saveTrack;
   }
 
   /** The medal the run's best lap won, and the time for the next one up. */

@@ -63,11 +63,11 @@ src/
 
 Everything static is merged or instanced, which comes to about 15 draw calls for a whole track: sky, terrain, outer ground, hills, road, bridge decks, kerbs, barriers, pillars, the gantry frame, one atlas mesh for the banner and start line, two instanced prop meshes and instanced cones. All textures are drawn on small canvases at startup. Lambert materials, no shadows. In dev builds (`npm run dev`) the race HUD shows fps, draw calls and triangles.
 
-**Elevation.** Every dot has a height (0–40 m, in 0.5 m steps) and the spline carries it round the loop. The road banks into corners (off / 7° / 15°, scaled by how tight the corner is). `track/surface.ts` builds the ground from the road: a 5 m heightfield that follows the road, with the shoulders tilted like the road, and fades back to flat 55 m away. Where two stretches are near each other the lower one wins, so the ground runs under bridges. A final pass pushes the ground down anywhere it would show through the road. Road above the ground there becomes a **bridge deck** with concrete sides, rails and pillars, and no pillar stands on a road below.
+**Elevation.** Every dot has a height (0–40 m, in 0.5 m steps) and the spline carries it round the loop. The road banks into corners (off / 7° / 15°, scaled by how tight the corner is). Any corner can have its own angle instead: the override is stored on that corner's dots (`Dot.b`) and blends to the neighbours'. `track/surface.ts` builds the ground from the road: a 5 m heightfield that follows the road, with the shoulders tilted like the road, and fades back to flat 55 m away. On a road's own shoulder that road decides the height, so a raised road keeps its embankment next to a lower stretch; where two shoulders overlap (under a bridge) the lower road wins, and between roads the ground slopes from one to the other. A final pass pushes the ground down wherever it would show through the road (only where there really is road, so it digs no pits inside hairpins), and a short earth skirt hangs under the road's outer edge. Road above the ground there becomes a **bridge deck** with concrete sides, rails and pillars, and no pillar stands on a road below.
 
 **Barriers** (optional per track, always on decks) run along both edges, with gaps where another stretch at the same level comes through. They are either concrete (red and white on top) or tyre walls.
 
-**Track edges and width.** Roads are 10, 12 or 15 m wide; the barriers, kerbs, run-off, gantry and the "too close" check all follow the width.
+**Track edges and width.** Roads are any width from 8 to 20 m (0.5 m steps); the barriers, kerbs, run-off, gantry and the "too close" check all follow the width.
 - Kerbs are raised (a bump), flat (painted) or off.
 - Run-off out to the barrier line is grass, gravel (slower than grass) or tarmac (no penalty). Beyond it is always grass.
 
@@ -104,9 +104,9 @@ A track is a closed loop of **dots** with a smooth spline through them (`TrackDe
 | Section | What's in it |
 |---|---|
 | 1 Draw | Freehand / Dots / Height tool, hill tools in Height mode, freehand smoothing, snap to grid, soft editing, sample tracks |
-| 2 Size & shape | Road width (10 / 12 / 15 m), smaller / bigger / rotate / mirror the whole track, terrain (flat / rolling / hilly random hills, smooth) |
-| 3 Corners | Banking (off / normal / steep), list of numbered corners with direction, radius and bank (tap to zoom to one) |
-| 4 Start & pits | Laps per race (1 / 3 / 5), pit building on/off, reverse direction |
+| 2 Size & shape | Road width slider (8–20 m, with 10 / 12 / 15 m shortcuts), smaller / bigger / rotate / mirror the whole track, terrain (flat / rolling / hilly random hills, smooth) |
+| 3 Corners | Banking level for the whole track (off / normal / steep), and a bank slider (0–30°) for every numbered corner, with Auto to go back to the level; tap a corner's number to zoom to it |
+| 4 Start & pits | Laps per race (1 / 3 / 5), pit building on/off, move the start/finish line 10 m back or on, reverse direction |
 | 5 Track edges | Kerbs (raised / flat / none), run-off (grass / gravel / tarmac), barriers (none / concrete / tyres) |
 | 6 Scenery & world | Meadow / Desert / Snow, day / sunset, few / normal / lots of trees |
 | 7 Display | Graphics full / fast, km/h or mph, minimap in the race, corner numbers on the map (player settings, not part of the track) |
@@ -127,7 +127,7 @@ The **3D view** (V, or the ◈ button) shows the track being edited from an orbi
 - **All modes:**
   - drag any dot to reshape the track. **Soft editing** (on by default) moves the neighbouring dots part of the way too, so curves and hills stay smooth; hold Shift to move just one dot;
   - right-click or double-tap a dot to delete it;
-  - drag the start flag to move the start line;
+  - drag the start flag, or the start/finish line itself, anywhere along the road to move it (a dot is added there if needed);
   - **zoom and pan:** mouse wheel or pinch to zoom (up to 8×), drag with two fingers, the middle button or Space held to move around, and buttons for +, − and fit (+ / − / F);
   - Undo (Z) and Redo (Y / Shift+Z), Clear (C), switch mode (M), Reverse direction (R);
   - O opens or closes the sidebar section; the track name is at the top of the sidebar.
@@ -172,12 +172,13 @@ A **minimap** in the top-right corner shows the track (bridges drawn on top), yo
 
   If storage itself is blocked (private mode, sandboxed iframe), values live in memory for the session.
 
-  What's saved: your tracks, best lap and splits, best score and the best-lap ghost per track (40 most recent tracks), and settings (sound, camera, editor mode, smoothing, snap, display settings, the open sidebar section). Ghosts are stored at 30 samples/s as int16 (5 cm), about 11 KB per 45 s lap.
-- **Track codes** (`track/code.ts`): `IC1.` + base64url of the dots, delta-encoded as zig-zag varints in 0.5 m steps, plus their heights, the options as a varint (banking, barriers, scenery, width, kerbs, run-off, barrier style, pits, time of day, laps, trees), the name and a checksum. That's about 100–250 characters. Older codes (v1 without heights, v2 with three options) still load with defaults for everything newer. Pasting a damaged code gives a clear error.
+  What's saved: the tracks you save, best lap and splits, best score and the best-lap ghost per track (40 most recent tracks), and settings (sound, camera, editor mode, smoothing, snap, display settings, the open sidebar section). Ghosts are stored at 30 samples/s as int16 (5 cm), about 11 KB per 45 s lap.
+- **Track codes** (`track/code.ts`): `IC1.` + base64url of the dots, delta-encoded as zig-zag varints in 0.5 m steps, plus their heights, the options as a varint (banking, barriers, scenery, kerbs, run-off, barrier style, pits, time of day, laps, trees), the road width, per-corner bank overrides when there are any, the name and a checksum. That's about 100–300 characters. Older codes (v1 without heights, v2 with three options, v3 with preset widths) still load with defaults for everything newer. Pasting a damaged code gives a clear error.
   - The web build also puts the current track's code in the URL hash (`#track=…`), so the address bar is a share link, and has a "Copy link" button.
   - The CrazyGames build never touches the URL or shows links.
 - **My tracks** (Pause → My tracks, Results, editor Options):
-  - every track you race is saved automatically;
+  - only tracks you save are kept: Save in the editor (it shows ✓ once the track as it is now is saved), Save track on the results screen, or Save next to a pasted code. Racing a track never saves it. (Older versions saved every raced track; that list is cleared once on the first start of this version.)
+  - Delete all (tap twice);
   - thumbnails, length, multiplier, best lap and score;
   - Race / Edit / Share / Delete (tap Delete twice to confirm);
   - a box to paste a friend's code.

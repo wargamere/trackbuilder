@@ -9,20 +9,23 @@ import type { Dot } from '../core/math.ts';
  * centre-line spline runs through) and options, so the code stores just those
  * plus the name:
  *   "IC1." + base64url(
- *     version (3), name length, name (UTF-8), options (varint), dot count (varint),
- *     first dot (2 × int16 + uint8 height), then each next dot as zig-zag
- *     varint deltas of x, y and height, checksum byte)
+ *     version (4), name length, name (UTF-8), options (varint), road width
+ *     (byte, 0.5 m steps), flags (bit 0: per-corner banking follows), dot count
+ *     (varint), first dot (2 × int16 + uint8 height), then each next dot as
+ *     zig-zag varint deltas of x, y and height, [one varint per dot: 0 = the
+ *     track's banking, else bank degrees + 1], checksum byte)
  * Positions and heights are in 0.5 m steps, so most deltas fit in a byte or
  * two. A 30-dot track is about 100-200 characters. Version 1 codes (no
- * heights or options) and version 2 codes (an options byte with just banking,
- * barriers and scenery) still decode.
+ * heights or options), version 2 codes (an options byte with just banking,
+ * barriers and scenery) and version 3 codes (preset widths, no per-corner
+ * banking) still decode.
  *
  * Options bits: banking 0-1, barriers on 2, theme 3-4, then each field of
  * OPTION_CHOICES in order (index 0 = the default), so older codes, whose
  * higher bits are all zero, get the defaults for everything newer.
  */
 export const CODE_PREFIX = 'IC1.';
-const VERSION = 3;
+const VERSION = 4;
 const THEMES: ThemeId[] = ['meadow', 'desert', 'snow'];
 const MAX_NAME_BYTES = 64;
 const MAX_DOTS = 2000;
@@ -87,7 +90,11 @@ export function encodeTrack(name: string, dots: readonly Dot[], options: Partial
   let nameBytes = new TextEncoder().encode(name);
   if (nameBytes.length > MAX_NAME_BYTES) nameBytes = nameBytes.slice(0, MAX_NAME_BYTES);
   out.push(nameBytes.length, ...nameBytes);
-  pushVarint(out, optionsBits({ ...DEFAULT_OPTIONS, ...options }));
+  const o = { ...DEFAULT_OPTIONS, ...options };
+  pushVarint(out, optionsBits(o));
+  out.push(Math.max(0, Math.min(255, Math.round(o.width * 2))));
+  const banks = dots.some((d) => d.b !== undefined);
+  out.push(banks ? 1 : 0);
   pushVarint(out, dots.length);
   let px = 0;
   let py = 0;
@@ -107,6 +114,7 @@ export function encodeTrack(name: string, dots: readonly Dot[], options: Partial
     py = y;
     ph = hgt;
   });
+  if (banks) for (const d of dots) pushVarint(out, d.b === undefined ? 0 : Math.max(0, Math.round(d.b)) + 1);
   out.push(checksum(out, out.length));
   return CODE_PREFIX + toBase64Url(Uint8Array.from(out));
 }
@@ -145,7 +153,7 @@ function decodeBody(code: string): DecodeResult {
     }
   };
   const version = byte();
-  if (version < 1 || version > 3) return { ok: false, error: 'format' };
+  if (version < 1 || version > 4) return { ok: false, error: 'format' };
   const nameLen = byte();
   if (nameLen < 0 || nameLen > MAX_NAME_BYTES || i + nameLen > end) return { ok: false, error: 'format' };
   const name = new TextDecoder().decode(bytes.slice(i, i + nameLen));
@@ -153,6 +161,14 @@ function decodeBody(code: string): DecodeResult {
   const rawOptions = version >= 3 ? varint() : version === 2 ? byte() : 0;
   if (rawOptions < 0) return { ok: false, error: 'format' };
   const options = version >= 2 ? optionsFrom(rawOptions) : { ...DEFAULT_OPTIONS };
+  let banks = false;
+  if (version >= 4) {
+    const w = byte();
+    const flags = byte();
+    if (w < 0 || flags < 0) return { ok: false, error: 'format' };
+    options.width = Math.max(TRACK.minWidth, Math.min(TRACK.maxWidth, w / 2));
+    banks = (flags & 1) !== 0;
+  }
   const count = varint();
   if (count < 3 || count > MAX_DOTS) return { ok: false, error: 'format' };
   const q = TRACK.quantize;
@@ -182,6 +198,13 @@ function decodeBody(code: string): DecodeResult {
     y += unzigzag(dy);
     hgt += unzigzag(dh);
     dots.push(dot(x, y, hgt));
+  }
+  if (banks) {
+    for (const d of dots) {
+      const v = varint();
+      if (v < 0) return { ok: false, error: 'format' };
+      if (v > 0) d.b = v - 1;
+    }
   }
   if (i !== end) return { ok: false, error: 'format' };
   return { ok: true, name, dots, options };

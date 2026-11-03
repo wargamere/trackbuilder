@@ -39,7 +39,9 @@ export const clampHeight = (h: number): number => Math.max(0, Math.min(TRACK.max
 export function withHeights(dots: readonly Dot[], hs: readonly number[]): Dot[] {
   return dots.map((d, i) => {
     const h = clampHeight(hs[i]);
-    return h ? { x: d.x, y: d.y, h } : { x: d.x, y: d.y };
+    const r: Dot = h ? { x: d.x, y: d.y, h } : { x: d.x, y: d.y };
+    if (d.b !== undefined) r.b = d.b;
+    return r;
   });
 }
 

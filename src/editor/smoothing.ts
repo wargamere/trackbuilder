@@ -119,6 +119,12 @@ export function relaxTightCorners(control: readonly Dot[], radius: number, maxIt
   return cur;
 }
 
+/** Most a corner may be banked (degrees). */
+export const MAX_BANK_DEG = 35;
+
+/** Rounds a corner bank override to whole degrees within range. */
+export const quantizeBank = (b: number): number => Math.max(0, Math.min(MAX_BANK_DEG, Math.round(b)));
+
 /** Rounds a height to the allowed range and step. */
 export const quantizeHeight = (h: number): number =>
   Math.max(0, Math.min(TRACK.maxHeight, Math.round(h / TRACK.heightStep) * TRACK.heightStep));
@@ -130,6 +136,7 @@ export function quantizeControl(control: readonly Dot[]): Dot[] {
   for (const p of control) {
     const h = quantizeHeight(p.h ?? 0);
     const r: Dot = h ? { x: Math.round(p.x / q) * q, y: Math.round(p.y / q) * q, h } : { x: Math.round(p.x / q) * q, y: Math.round(p.y / q) * q };
+    if (p.b !== undefined) r.b = quantizeBank(p.b);
     if (out.length === 0 || dist(out[out.length - 1], r) > 1e-6) out.push(r);
   }
   if (out.length > 1 && dist(out[0], out[out.length - 1]) < 1e-6) out.pop();
@@ -205,6 +212,7 @@ export function snapDot(p: Dot, grid = 0): Dot {
   const q = grid > 0 ? grid : TRACK.quantize;
   const r: Dot = { x: Math.round(p.x / q) * q, y: Math.round(p.y / q) * q };
   if (p.h) r.h = quantizeHeight(p.h);
+  if (p.b !== undefined) r.b = quantizeBank(p.b);
   return r;
 }
 
