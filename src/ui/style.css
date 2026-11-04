@@ -2114,14 +2114,15 @@ body {
   text-align: left;
 }
 
-/* Slipstream tag, just above the speedometer. */
+/* Slipstream tag, just above the speedometer: its fill shows how strong the tow is. */
 .hud-draft {
+  --draft: 0%;
   position: absolute;
   right: 0.8rem;
   bottom: 3.3rem;
   padding: 0.15em 0.6em;
   border-radius: 0.5em;
-  background: #3aa0ff;
+  background: linear-gradient(90deg, #3aa0ff var(--draft), #1d4f80 var(--draft));
   color: #fff;
   font-size: 0.75rem;
   font-weight: 900;

@@ -15,7 +15,7 @@ export const MEDALS: readonly { id: MedalId; factor: number }[] = [
 ];
 
 /** Bump when the physics or the bot change, so stored author times are recomputed. */
-export const AUTHOR_VERSION = 4;
+export const AUTHOR_VERSION = 5;
 
 export type MedalTimes = Record<MedalId, number>;
 
@@ -58,7 +58,7 @@ export class AuthorLap {
   result: number | null | undefined = undefined;
 
   constructor(track: Track, difficulty: number = AI.medalDifficulty) {
-    this.driver = new RacingDriver(track, aiPace(difficulty));
+    this.driver = new RacingDriver(track, aiPace(difficulty, track));
     this.car = new CarPhysics(track);
     this.length = track.center.length;
     this.prevS = this.car.state.s;

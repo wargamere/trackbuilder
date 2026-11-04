@@ -5,18 +5,60 @@ import { clamp } from '../core/math.ts';
 import { edgeOffsets } from '../track/spline.ts';
 import type { Track } from '../track/track.ts';
 import { RacingDriver } from './driver.ts';
-import type { Pace } from './racingLine.ts';
+import { planLapTime, racingLine, speedProfile, type Pace } from './racingLine.ts';
 import { RaceSession } from './session.ts';
 import { aiCars, TrafficPlanner } from './traffic.ts';
 
-/** How hard an AI with a difficulty from 0 to 1 drives (see AI.pace). */
-export function aiPace(difficulty: number): Pace {
+/** Linear interpolation in `knots` (evenly spaced over 0..1) at `f`. */
+function knotAt(knots: readonly number[], f: number): number {
+  const x = clamp(f, 0, 1) * (knots.length - 1);
+  const i = Math.min(knots.length - 2, Math.floor(x));
+  return knots[i] + (knots[i + 1] - knots[i]) * (x - i);
+}
+
+/**
+ * How hard an AI with a difficulty from 0 to 1 drives (see AI.pace). With a
+ * `track`, the pace is tuned to it so the lap is AI.lapRatio × the 100 % lap
+ * there (see trackDifficulty()).
+ */
+export function aiPace(difficulty: number, track?: Track): Pace {
+  const d = track ? trackDifficulty(track, difficulty) : difficulty;
   const knots = AI.pace;
-  const f = clamp(difficulty, 0, 1) * (knots.length - 1);
-  const i = Math.min(knots.length - 2, Math.floor(f));
-  const u = f - i;
-  const mix = (k: number) => knots[i][k] + (knots[i + 1][k] - knots[i][k]) * u;
+  const mix = (k: number) => knotAt(knots.map((p) => p[k]), d);
   return { grip: mix(0), maxSpeed: HANDLING.maxSpeed * mix(1), brake: mix(2) };
+}
+
+const tuned = new WeakMap<Track, Map<number, number>>();
+
+/**
+ * The raw difficulty (into AI.pace) that gives `difficulty`'s lap on `track`:
+ * the one whose planned lap is AI.lapRatio × the 100 % lap there. Without
+ * this a track that's flat out most of the way (where grip hardly matters)
+ * would make every difficulty nearly as fast as 100 %, and a twisty one would
+ * spread them out more. Worked out once per track and difficulty.
+ */
+export function trackDifficulty(track: Track, difficulty: number): number {
+  const d = clamp(difficulty, 0, 1);
+  if (d >= 1) return 1;
+  let m = tuned.get(track);
+  if (!m) tuned.set(track, (m = new Map()));
+  const key = Math.round(d * 1000);
+  const known = m.get(key);
+  if (known !== undefined) return known;
+  const line = racingLine(track);
+  const lap = (x: number) => planLapTime(line, speedProfile(track, line, aiPace(x)));
+  const want = lap(1) * knotAt(AI.lapRatio, d);
+  // Slower with a lower raw difficulty: find where the lap is the one we want.
+  let lo = 0;
+  let hi = 1;
+  if (lap(0) <= want) hi = 0;
+  for (let k = 0; k < 12; k++) {
+    const mid = (lo + hi) / 2;
+    if (lap(mid) > want) lo = mid;
+    else hi = mid;
+  }
+  m.set(key, hi);
+  return hi;
 }
 
 /**
@@ -90,8 +132,9 @@ export class AiDriver {
   readonly name: string;
   readonly paint: number;
   readonly difficulty: number;
-  /** Where it started (m along the track; negative = behind the line). */
+  /** Where it started (m along the track; negative = behind the line), and its grid slot. */
   readonly start: number;
+  private readonly slot: number;
   private readonly driver: RacingDriver;
   private readonly planner: TrafficPlanner;
   private readonly inp: DriveInput = { ...NO_INPUT };
@@ -108,12 +151,13 @@ export class AiDriver {
     this.name = opts.name;
     this.paint = opts.paint;
     this.difficulty = opts.difficulty;
-    this.driver = new RacingDriver(track, aiPace(opts.difficulty));
+    this.driver = new RacingDriver(track, aiPace(opts.difficulty, track));
     this.planner = new TrafficPlanner(this.driver, track, opts.difficulty);
     this.car = new CarPhysics(track);
     aiCars.set(this.car.state, opts.difficulty);
     const g = gridPlace(track, opts.slot);
     this.start = g.s;
+    this.slot = opts.slot;
     this.car.placeAt(g.s, g.lateral);
     // Off the grid it keeps its slot's offset from the line until the planner sees room to move over.
     this.lane = g.lateral - this.driver.lateralAt(g.s);
@@ -134,9 +178,9 @@ export class AiDriver {
       this.planIn = TRAFFIC.planEvery;
       this.planner.plan(st, cars, this.lane);
     }
-    const want = this.planner.choice.offset;
     // Move across smoothly: ease into the move and out of it (a kink at speed would unsettle
     // the car), at most laneRate sideways.
+    const want = this.planner.choice.offset;
     const T = TRAFFIC;
     const accel = clamp(T.laneStiff * (want - this.lane) - 2 * Math.sqrt(T.laneStiff) * this.laneVel, -T.laneAccel, T.laneAccel);
     this.laneVel = clamp(this.laneVel + accel * dt, -T.laneRate, T.laneRate);
@@ -151,16 +195,24 @@ export class AiDriver {
     // Speed: the plan, held back to keep a gap behind the car in our way.
     const cap = this.planner.followSpeed(st, cars, this.lane, dt);
     // After the finish it carries on a little slower (not parked on the line for others to hit);
-    // letting a quicker car by, it eases off a touch.
-    const pace = finished ? AI.afterFinishPace : this.planner.lettingBy ? TRAFFIC.letByEase : 1;
-    const inp = this.driver.drive(st, this.lane, this.inp, pace, cap);
+    // letting a quicker car by, it eases off (but not in the middle of a tight bend).
+    let pace = finished ? AI.afterFinishPace : this.planner.lettingBy && !this.planner.inBend ? TRAFFIC.letByEase : 1;
+    // Off the line at the start, the field strings out a little (each slot back a touch
+    // slower for the first stretch), so the pack isn't three wide into the first bend.
+    const run = s.raceDistance(st.s);
+    this.planner.started = run >= TRAFFIC.letByFrom;
+    if (run < AI.startStretch) pace *= 1 - AI.startSpread * this.slot;
+    // Close to another car, a touch of caution.
+    if (this.planner.crowded) pace *= 1 - TRAFFIC.crowdEase;
+    const inp = this.driver.drive(st, this.lane, this.inp, pace, cap, this.car.draft);
     // Sliding (knocked, or ran wide): off the throttle until it gathers itself. No braking,
     // which would only surprise the car behind. (Being off its path is already taken care of:
     // the speed then comes from the path it's really on.)
     this.recover = st.slip > TRAFFIC.recoverSlip ? TRAFFIC.recoverTime : Math.max(0, this.recover - dt);
-    // Backing out of a side-by-side it can't win: coast, don't brake. Letting a quicker car
-    // by, once it's pulled out beside us: lift a little, even while accelerating.
-    if (this.recover > 0 || this.planner.yielding) inp.throttle = 0;
+    // (Backing out of a side-by-side it can't win is in the cap: a touch slower than the other
+    // car.) Letting a quicker car by, once it's pulled out beside us: lift a little, even while
+    // accelerating.
+    if (this.recover > 0) inp.throttle = 0;
     else if (this.planner.liftForPass) inp.throttle = Math.min(inp.throttle, TRAFFIC.letByThrottle);
     // Closing much too fast on it anyway (it braked hard, or spun): brake now.
     const need = this.planner.brakeNeed;

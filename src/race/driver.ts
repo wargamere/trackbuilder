@@ -252,11 +252,12 @@ export class RacingDriver {
     return clamp(lat, line - this.at(this.line.roomRight, s), line + this.at(this.line.roomLeft, s));
   }
 
-  /** Input for the next tick; `lane` drives that far left (+) of the line, at `pace` × the planned speed, at most `cap`. */
-  drive(st: CarState, lane = 0, out?: DriveInput, pace = 1, cap = Infinity): DriveInput {
+  /** Input for the next tick; `lane` drives that far left (+) of the line, at `pace` × the planned speed, at most `cap`, `tow` = how much of a slipstream it is in. */
+  drive(st: CarState, lane = 0, out?: DriveInput, pace = 1, cap = Infinity, tow = 0): DriveInput {
     const H = HANDLING;
     const o = out ?? { throttle: 0, brake: 0, steer: 0, handbrake: false };
     const v = Math.max(0, st.speed);
+    const path = (x: number) => this.lateralAt(x, lane);
 
     // Steering: aim for a point on the line a little way ahead (further at speed): the arc
     // through the car and that point needs curvature 2 sin(a) / distance. Add part of the
@@ -268,7 +269,7 @@ export class RacingDriver {
     // Off the line, it's the bend of the path being driven (beside the line, or along the road's
     // edge) that the wheels should follow, not the line's.
     const sk = st.s + v * DRIVER.curvaturePreview;
-    const kAhead = Math.abs(lane) > DRIVER.offLine ? this.pathCurvature(sk, (x) => this.lateralAt(x, lane)) : this.at(this.line.curvature, sk);
+    const kAhead = Math.abs(lane) > DRIVER.offLine ? this.pathCurvature(sk, path) : this.at(this.line.curvature, sk);
     const k = (2 * Math.sin(alpha)) / dist + DRIVER.curvatureFeed * kAhead;
     const lock = H.maxSteerAngle / (1 + Math.abs(st.speed) / H.steerFalloff);
     o.steer = clamp(Math.atan(k * H.wheelBase) / lock, -1, 1);
@@ -284,16 +285,19 @@ export class RacingDriver {
     if (Math.abs(lane) > DRIVER.offLine) limit = Math.min(this.laneLimitAt(sp, lane), this.laneLimitAt(st.s + 2, lane));
     // Well away from where it means to be (knocked, or still moving across): the limit of the
     // path it will really drive, from where it is now blending onto the one it wants.
-    if (Math.abs(lat0 - this.lateralAt(st.s, lane)) > DRIVER.farOff) {
+    if (Math.abs(lat0 - path(st.s)) > DRIVER.farOff) {
       const s0 = st.s;
       const conv = DRIVER.converge;
-      const path = (x: number) => {
+      const blend = (x: number) => {
         const u = clamp((x - s0) / conv, 0, 1);
         const b = u * u * (3 - 2 * u);
-        return lat0 + (this.lateralAt(x, lane) - lat0) * b;
+        return lat0 + (path(x) - lat0) * b;
       };
-      limit = Math.min(limit, this.pathLimit(s0, path, false) * DRIVER.offLineSpeed);
+      limit = Math.min(limit, this.pathLimit(s0, blend, false) * DRIVER.offLineSpeed);
     }
+    // In a tow it may go past its own top speed, as the tow lets the car (where the bends allow).
+    const top = this.pace.maxSpeed;
+    if (tow > 0 && limit >= top - 0.5) limit = top * (1 + HANDLING.slipstreamTopSpeed * tow);
     const target = Math.min(cap, limit * pace);
     // The plan already assumes full throttle out of corners and firm braking into them,
     // so drive it hard: flat out below the target, brake firmly above it.

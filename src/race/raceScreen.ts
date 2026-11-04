@@ -2,7 +2,7 @@ import { type PerspectiveCamera, Vector3 } from 'three';
 import { audio } from '../audio/audio.ts';
 import { CameraRig } from '../car/camera.ts';
 import { collideCars } from '../car/contact.ts';
-import { slipstream } from '../car/slipstream.ts';
+import { carriedTow, slipstream } from '../car/slipstream.ts';
 import { InputManager, type InputAction } from '../car/input.ts';
 import { CarModel } from '../car/model.ts';
 import { currentPaintHex, recordFinishedRun } from '../car/paint.ts';
@@ -484,8 +484,9 @@ export class RaceScreen implements Screen {
     const session = this.session!;
     if (this.opponents.length) {
       slipstream(this.states, this.game.track.center.length, this.drafts);
-      car.draft = this.drafts[0];
-      this.opponents.forEach((o, k) => (o.ai.car.draft = this.drafts[k + 1]));
+      const dt = 1 / HANDLING.tickRate;
+      car.draft = carriedTow(car.draft, this.drafts[0], dt);
+      this.opponents.forEach((o, k) => (o.ai.car.draft = carriedTow(o.ai.car.draft, this.drafts[k + 1], dt)));
     } else car.draft = 0;
     const inp = session.phase === 'racing' ? this.input.sample(this.tickInput) : session.phase === 'finished' ? BRAKE : NO_INPUT;
     const prev = this.progress();
@@ -555,16 +556,16 @@ export class RaceScreen implements Screen {
           else this.hud.flash(pos >= 0 ? fmt(STR.race.finishedPos, { pos: STR.results.ordinals[pos] }) : STR.race.finished, 'big', 0);
         }
         else if (e.best) this.hud.flash(STR.race.newBest, 'good');
+        else if (e.missed) this.hud.flash(fmt(STR.race.lapMissed, { n: e.lap, time: formatTime(e.time) }), 'bad', 2.2);
         else if (!e.valid) this.hud.flash(fmt(STR.race.lapCut, { n: e.lap, time: formatTime(e.time) }), 'bad', 2.2);
         else this.hud.flash(fmt(STR.race.lapTime, { n: e.lap, time: formatTime(e.time) }), 'info');
         if (s.phase !== 'finished' && s.laps.length === s.lapsToRun - 1) this.hud.flash(STR.race.finalLap, e.best ? 'good' : 'info');
         if (s.phase !== 'finished') lapStarted();
         break;
       }
-      case 'lapInvalid':
-        this.hud.flash(STR.race.lapInvalid, 'bad', 2.2);
-        audio.beep(180, 0.35, 0.25);
-        lapStarted();
+      case 'missedCheckpoint':
+        this.hud.flash(STR.race.missedCheckpoint, 'bad', 2);
+        audio.beep(220, 0.25, 0.22);
         break;
       case 'trackLimits':
         this.hud.flash(STR.race.trackLimits, 'bad', 2);
@@ -713,7 +714,7 @@ export class RaceScreen implements Screen {
     } else if (s.lapStart === null && !this.opponents.length) this.hud.setLap(s.phase === 'countdown' ? '' : STR.race.warmup);
     else this.hud.setLap(fmt(STR.race.lap, { n: Math.min(s.laps.length + 1, s.lapsToRun), total: s.lapsToRun }));
     this.hud.setTime(formatTime(s.lapTime(alpha) ?? 0));
-    this.hud.setCut(s.cut && s.lapStart !== null && s.phase === 'racing');
+    this.hud.setCut(s.lapSpoilt && s.lapStart !== null && s.phase === 'racing');
     const parts: string[] = [];
     if (s.lastLap !== null) parts.push(`${STR.race.last} ${formatTime(s.lastLap)}`);
     if (s.best) parts.push(`${STR.race.best} ${formatTime(s.best.time)}`);
@@ -780,7 +781,7 @@ export class RaceScreen implements Screen {
     if (this.stage === 'qualifying') this.runQualifyingSims();
     v.render();
     this.hud.setSpeed(this.view.speed);
-    this.hud.setSlipstream(car.draft > SLIPSTREAM.show);
+    this.hud.setSlipstream(car.draft, SLIPSTREAM.show);
     this.updateHud(alpha);
     this.hud.tick(dt);
 

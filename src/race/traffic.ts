@@ -1,4 +1,5 @@
 import type { CarState } from '../car/physics.ts';
+import { towStrength } from '../car/slipstream.ts';
 import { CONTACT, TRAFFIC } from '../config/race.ts';
 import { leftOf } from '../track/spline.ts';
 import type { Track } from '../track/track.ts';
@@ -85,6 +86,8 @@ export class TrafficPlanner {
   private letByWait = 0;
   private letByFor = 0;
   private letBySide = 1;
+  /** The field is under way (past the start, strung out): set by the driver. */
+  started = false;
   /** The car we're letting by, and the lane we're keeping to meanwhile. */
   private letByCar: CarState | null = null;
   private letByLane = 0;
@@ -96,15 +99,23 @@ export class TrafficPlanner {
   private aside = false;
   /** Letting a quicker car by, and it's clear of us across the road (so we can lift without it running into us). */
   get liftForPass(): boolean {
-    return this.lettingBy && this.passerClear;
+    return this.lettingBy && this.passerClear && !this.inBend;
   }
+  /** In, or right at, a tight bend (set by plan()). */
+  inBend = false;
+  /** Another car is close by (set by plan()). */
+  crowded = false;
+  /** Extra room across the road wanted in the bend we're in (m) (set by plan()). */
+  private bendRoom = 0;
+
   private passerClear = false;
   /** The car beside us that every lane would squeeze into (set by cost()). */
   private squeezer: Near | null = null;
   /** Backing out of a side-by-side we can't win: for how much longer. */
   private yieldFor = 0;
+  private yieldTo: CarState | null = null;
 
-  /** Backing out of a side-by-side (coasting, to drop behind). */
+  /** Backing out of a side-by-side (dropping in a little slower than the car we give way to). */
   get yielding(): boolean {
     return this.yieldFor > 0;
   }
@@ -152,7 +163,7 @@ export class TrafficPlanner {
     return o.lat + o.vlat * tau * (1 - Math.exp(-t / tau));
   }
 
-  /** My lateral `t` seconds ahead in lane `c`, moving from `off0` (my offset now) at the lane-change rate. */
+  /** My lateral `t` seconds ahead in lane `c`, at `s`, moving from `off0` (my offset now) at the lane-change rate. */
   private myLat(c: LaneChoice, s: number, off0: number, t: number): number {
     const r = laneReach(t);
     const off = off0 + Math.max(-r, Math.min(r, c.offset - off0));
@@ -167,7 +178,7 @@ export class TrafficPlanner {
   private cost(me: CarState, c: LaneChoice, v: number, off0: number): number {
     const dt = TRAFFIC.step;
     const reachS = 2 * CONTACT.halfLength + TRAFFIC.marginAlong;
-    const reachL = 2 * CONTACT.halfWidth + TRAFFIC.marginSide;
+    const reachL0 = 2 * CONTACT.halfWidth + TRAFFIC.marginSide;
     let cost = 0;
     // Off the line: the time its lane loses over the stretch ahead, against the line.
     const offset = c.offset;
@@ -176,6 +187,8 @@ export class TrafficPlanner {
     // Play it forward.
     let worst = 0;
     for (const o of this.near) {
+      // In a bend, more room across the road (tails swing out), except passing in a let-by.
+      const reachL = reachL0 + (this.cooperating(me, o.car) ? 0 : this.bendRoom);
       if (o.ds >= reachS) {
         worst = Math.max(worst, this.aheadCost(me, c, off0, o, reachS, reachL));
         continue;
@@ -184,10 +197,14 @@ export class TrafficPlanner {
       // moving away, or keeping our distance, is fine (but being this close still counts
       // against a lane).
       const gapNow = Math.abs(me.lateral - o.lat);
+      // A car behind: judged against the speed we're really doing (not the one we'd like), and
+      // drawing up on us faster if it's in our slipstream.
+      const vMe = o.ds < 0 ? Math.max(0, me.speed) : v;
+      const vO = o.ds < 0 ? o.v * (1 + TRAFFIC.towGain * towStrength(-o.ds - 2 * CONTACT.halfLength, gapNow, o.v)) : o.v;
       for (let t = 0; t <= TRAFFIC.sideTime + 1e-9; t += dt) {
-        const ds = o.ds + (o.v - v) * t;
+        const ds = o.ds + (vO - vMe) * t;
         if (Math.abs(ds) >= reachS) continue;
-        const sMe = me.s + v * t;
+        const sMe = me.s + vMe * t;
         const side = Math.abs(this.myLat(c, sMe, off0, t) - this.theirLat(o, sMe + ds, t));
         if (side >= reachL) continue;
         if (side < gapNow - 0.05) {
@@ -237,7 +254,10 @@ export class TrafficPlanner {
         out.alongside = true;
       }
       out.stuck = false;
-      vMe = Math.min(this.driver.laneSpeedAt(sMe, c.offset), vMe + TRAFFIC.pickUp * dt);
+      // In its slipstream we'd go quicker than our plan (that's how a pass is set up).
+      const lat = this.myLat(c, sMe, off0, t);
+      const tow = towStrength(sO - sMe - 2 * CONTACT.halfLength, Math.abs(lat - this.theirLat(o, sO, t)), vMe);
+      vMe = Math.min(this.driver.laneSpeedAt(sMe, c.offset) * (1 + TRAFFIC.towGain * tow), vMe + TRAFFIC.pickUp * dt);
       sMe += vMe * dt;
       sO += vO * dt;
       if (sO - sMe < -reachS) break;
@@ -263,6 +283,11 @@ export class TrafficPlanner {
   plan(me: CarState, cars: readonly CarState[], off0: number): LaneChoice {
     planners.set(me, this);
     this.gather(me, cars);
+    this.inBend = this.tightAhead(me.s);
+    this.crowded = this.near.some((o) => Math.abs(o.ds) < TRAFFIC.crowdAlong && Math.abs(o.lat - me.lateral) < TRAFFIC.crowdSide);
+    let k = 0;
+    for (let d = 0; d <= 20; d += 5) k = Math.max(k, Math.abs(this.driver.curvatureAt(me.s + d)));
+    this.bendRoom = TRAFFIC.bendMargin * k;
     // A slower car letting us by keeps to one side: we pass on the other, clear of the lane it's keeping to.
     const pass = this.passing(me);
     const sPass = me.s + TRAFFIC.roomLook;
@@ -310,17 +335,22 @@ export class TrafficPlanner {
     const needGain = this.committed > 0 ? TRAFFIC.commitGain : TRAFFIC.switchGain;
     if (keepCost !== Infinity && bestCost > keepCost - needGain) best = keep;
     // Side by side with no room for both (every lane closes in on the car beside us, e.g. the
-    // road narrowing into a bend): the car behind backs out, the one ahead keeps its place
-    // across the road and doesn't turn in.
+    // road narrowing into a bend). Racing rules: a car more than half a length behind backs out;
+    // overlapped more than that, the one on the inside of the bend coming up has earned its
+    // place and the one round the outside backs out. Neither turns in on the other.
     const sq = this.squeezer as Near | null;
     if (bestCost === Infinity && sq) {
       best = { offset: off0 };
-      if (sq.ds > TRAFFIC.yieldLead) this.yieldFor = TRAFFIC.yieldTime;
+      if (this.mustYield(me, sq)) {
+        this.yieldFor = TRAFFIC.yieldTime;
+        this.yieldTo = sq.car;
+      }
       this.choice = best;
       return best;
     }
-    // No new moves in the middle of a tight bend (unless where we are has become unsafe).
-    if (keepCost !== Infinity && this.tightAhead(me.s)) best = keep;
+    // No new moves out from the line in the middle of a tight bend (unless where we are has
+    // become unsafe); back towards it is fine.
+    if (keepCost !== Infinity && this.inBend && Math.abs(best.offset) > Math.abs(keep.offset) - 0.5) best = keep;
     // Nothing near and no reason to be off the line: back onto it.
     if (this.near.length === 0) best = { offset: 0 };
     if (best !== keep && Math.abs(best.offset - keep.offset) > 1 && this.near.length) this.committed = TRAFFIC.commitTime;
@@ -337,14 +367,24 @@ export class TrafficPlanner {
     const v = Math.max(0, me.speed);
     let cap = Infinity;
     this.brakeNeed = 0;
-    if (this.yieldFor > 0) this.yieldFor -= dt;
+    // Backing out of a side-by-side: drop in a little slower than the car we're giving way to.
+    if (this.yieldFor > 0) {
+      this.yieldFor -= dt;
+      if (this.yieldTo) cap = Math.min(cap, Math.max(0, this.yieldTo.speed) - TRAFFIC.yieldDrop);
+    }
+    // Room across the road it wants before drawing alongside: more in a tight bend, where the
+    // cars swing their tails out, and in any real bend more the faster it's closing.
     const reachS = 2 * CONTACT.halfLength + TRAFFIC.marginAlong;
-    const reachL = 2 * CONTACT.halfWidth + TRAFFIC.marginSide * 0.5;
+    const reachL0 = 2 * CONTACT.halfWidth + TRAFFIC.marginSide * (this.inBend ? 1 : 0.5);
+    let bend = 0;
+    for (let d = 0; d <= 20; d += 5) bend = Math.max(bend, Math.abs(this.driver.curvatureAt(me.s + d)));
+    const closingMargin = bend > TRAFFIC.closingBend ? TRAFFIC.closingMargin : 0;
     for (const o of cars) {
       if (o === me || Math.abs(o.y - me.y) > CONTACT.heightGap) continue;
       const ds = along(me.s, o.s, this.L);
       if (ds <= 0 || ds > TRAFFIC.ahead) continue;
       const gap = ds - 2 * CONTACT.halfLength;
+      const reachL = reachL0 + (this.cooperating(me, o) ? 0 : this.bendRoom) + Math.min(TRAFFIC.closingMarginMax, closingMargin * Math.max(0, v - Math.max(0, o.speed) - 2));
       const overlapNow = Math.abs(o.lateral - me.lateral) < reachL;
       // Right in front of us as we are now: brake if we must, whatever the plan says.
       const closingNow = v - Math.max(0, o.speed);
@@ -378,8 +418,10 @@ export class TrafficPlanner {
       if (ds > 2 * CONTACT.halfLength || ds < -2 * T.letByGap) this.letByFor = 0;
       this.passerClear = Math.abs(this.letByCar.lateral - me.lateral) > 2 * CONTACT.halfWidth + TRAFFIC.marginSide * 0.5;
     } else {
-      // (Not off the grid: everyone's bunched up then and sorts itself out.)
-      this.letByWait = behind && me.speed > T.letByMinSpeed ? this.letByWait + T.planEvery : 0;
+      // Not off the grid (everyone's bunched up then and sorts itself out), and not while we're
+      // queued behind someone ourselves (then it's for the car at the front of the queue).
+      const queued = this.near.some((o) => o.ds > 0 && o.ds < T.letByGap && Math.abs(o.lat - me.lateral) < 2 * CONTACT.halfWidth + T.marginSide);
+      this.letByWait = behind && this.started && !queued ? this.letByWait + T.planEvery : Math.max(0, this.letByWait - 2 * T.planEvery);
       if (behind && this.letByWait > T.letByAfter) {
         this.letByWait = 0;
         this.letByFor = T.letByHold;
@@ -408,6 +450,36 @@ export class TrafficPlanner {
       if (p && p.lettingBy && p.letByCar === me) return { side: p.letBySide, lane: p.letByLane };
     }
     return null;
+  }
+
+  /** Car `o` and we are in a let-by (one moving over for the other), so we can pass closer. */
+  private cooperating(me: CarState, o: CarState): boolean {
+    if (this.lettingBy && this.letByCar === o) return true;
+    const p = planners.get(o);
+    return !!p && p.lettingBy && p.letByCar === me;
+  }
+
+  /** Squeezed side by side with car `o`: is it us that should back out (see plan())? */
+  private mustYield(me: CarState, o: Near): boolean {
+    // In a let-by, the car letting the other through gives way, wherever they are.
+    if (this.cooperating(me, o.car)) return this.lettingBy;
+    if (o.ds > CONTACT.halfLength) return true;
+    if (o.ds < -CONTACT.halfLength) return false;
+    // Overlapped: the one on the inside of the next bend keeps its place.
+    const dir = this.bendAhead(me.s);
+    if (dir === 0) return o.ds > TRAFFIC.yieldLead;
+    return (me.lateral - o.lat) * dir < 0;
+  }
+
+  /** Which side the inside of the next real bend is on (within TRAFFIC.insideLook m): +1 left, -1 right, 0 none. */
+  private bendAhead(s: number): number {
+    let k = 0;
+    for (let d = 0; d <= TRAFFIC.insideLook; d += 5) {
+      const c = this.driver.curvatureAt(s + d);
+      if (Math.abs(c) > Math.abs(k)) k = c;
+    }
+    // + curvature is a right-hander: its inside is on the right.
+    return Math.abs(k) < 1 / 400 ? 0 : k < 0 ? 1 : -1;
   }
 
   /** Are we in, or right at, a tight bend? */

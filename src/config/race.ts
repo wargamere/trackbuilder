@@ -12,8 +12,8 @@ export const RACE = {
    * the grass to another stretch, or a reset) never pass a checkpoint.
    */
   maxProgressPerTick: 3,
-  /** ...and only if the car is at most this far beyond the road's edge. */
-  checkpointMargin: 8,
+  /** ...and only if the car is at most this far beyond the road's edge (well out on the run-off still counts). */
+  checkpointMargin: 25,
   /** Track limits: the whole car past the edge this long (s) invalidates the lap. */
   trackLimitSeconds: 0.12,
   /** Driving backwards along the track this fast for this long shows "Wrong way". */
@@ -47,6 +47,14 @@ export const AI = {
     [0.84, 0.9, 0.75],
     [1, 1, 0.9],
   ],
+  /**
+   * What each difficulty above means on any track: its lap as a multiple of
+   * the 100 % lap there, at 0, 25, 50, 75 and 100 %. On each track the pace
+   * is set to hit this, whatever the mix of bends (where grip counts) and
+   * straights (where it doesn't), so 75 % is as far off the limit on a fast
+   * banked oval as on a twisty street circuit.
+   */
+  lapRatio: [1.7, 1.27, 1.14, 1.06, 1],
   /** Medal times are the lap of an AI at this difficulty (gold; silver +10 %, bronze +25 %). */
   medalDifficulty: 0.75,
   /** The field spreads out below the chosen difficulty by up to this much (0.08 = 8 points). */
@@ -58,6 +66,9 @@ export const AI = {
   gridFront: 8,
   /** Stuck (slower than 1.5 m/s) this long: back onto the road. */
   stuckSeconds: 2.5,
+  /** For the first this many metres of a race, each grid slot back drives this much slower (a share). */
+  startStretch: 500,
+  startSpread: 0.005,
   /** Share of its pace after the finish (it carries on, not parked on the line). */
   afterFinishPace: 0.85,
 } as const;
@@ -82,8 +93,10 @@ export const RACING_LINE = {
   edgeMargin: 0.25,
   /** The road's usable edge may step out or in by at most this much per sample (where kerbs start and end). */
   corridorStep: 0.25,
-  /** Paths beside the line keep inside a smoothed road edge: the narrowest within this many samples either side, averaged as far. */
+  /** Paths beside the line keep inside a smoothed road edge: the narrowest within this many samples either side, averaged as far… */
   envelope: 8,
+  /** …and this much further in from it (m). */
+  laneInset: 0.6,
   /** First (coarsest) spacing of the points being placed, in samples; it halves down to 1. */
   firstStep: 64,
   /** Passes at each spacing (× √spacing). */
@@ -125,7 +138,7 @@ export const TRAFFIC = {
   planEvery: 1 / 30,
   /** Cars this far ahead / behind along the track (m) are considered. */
   ahead: 70,
-  behind: 12,
+  behind: 25,
   /** Lanes it can pick: offsets from the racing line (m). */
   lanes: [-6, -4.5, -3, -1.5, 0, 1.5, 3, 4.5, 6],
   /** How fast it moves across the road to a new lane (m/s), how hard it may speed up or slow that move (m/s²), and how briskly it heads for the new lane (1/s²). */
@@ -143,9 +156,21 @@ export const TRAFFIC = {
   step: 0.25,
   passHorizon: 5,
   pickUp: 5,
+  /** In a car's slipstream (strength 0..1) it reckons on going up to this share quicker than its plan. */
+  towGain: 0.08,
+  /** Within this far along (m) and across (m) of another car, it eases off by this share. */
+  crowdAlong: 15,
+  crowdSide: 4,
+  crowdEase: 0.015,
+  /** In a bend it wants this much more room across the road per 1/m of curvature (m) (tails swing out). */
+  bendMargin: 30,
   /** Room it keeps around another car's body: along the track and across it (m). */
   marginAlong: 1,
   marginSide: 1.2,
+  /** Drawing alongside a car it's closing on faster than 2 m/s in a bend (tighter than closingBend, 1/m), it wants this much more room across the road per m/s (m), up to this much. */
+  closingMargin: 0.1,
+  closingMarginMax: 0.6,
+  closingBend: 1 / 60,
   /** Touching a car beside or behind within this long (s) rules a lane out. */
   sideTime: 0.75,
   /** Costs, in seconds lost: per metre off the line, per metre of lane change, for getting close to a car (held up behind it, or alongside). */
@@ -161,14 +186,14 @@ export const TRAFFIC = {
    * (or for at most letByHold s).
    */
   letByPace: 0.05,
-  letByGap: 15,
+  letByGap: 25,
   letByAfter: 1.5,
   letByOffset: 3.5,
   letByHold: 8,
   letByEase: 0.85,
   letByThrottle: 0.5,
-  /** …once going faster than this (m/s); and the quicker car is put off passing on the side it's moved to by this (s). */
-  letByMinSpeed: 12,
+  /** Only this far (m) into the race, and not while queued behind someone itself. The quicker car is put off passing on the side it's moved to by this (s). */
+  letByFrom: 200,
   letByWrongSide: 0.5,
   /** A lane's cost counts the time it loses against the line over this far ahead (m) (about what a pass takes; also how its pace is judged)… */
   laneLook: 80,
@@ -178,8 +203,16 @@ export const TRAFFIC = {
   switchGain: 0.08,
   commitTime: 1.5,
   commitGain: 0.5,
-  /** Side by side with no room for both: the car more than this far behind (m) backs out, coasting for this long (s). */
+  /**
+   * Side by side with no room for both: overlapped by more than half a car,
+   * the car on the outside of the next bend (within insideLook m) backs out;
+   * otherwise the one behind (on a straight: by more than yieldLead m), for
+   * up to yieldTime s.
+   */
+  insideLook: 60,
   yieldLead: 0.5,
+  /** …dropping to this much (m/s) below the other car's speed. */
+  yieldDrop: 2,
   yieldTime: 1,
   /** Sliding sideways faster than this (m/s): off the throttle, for this long (s) after. */
   recoverSlip: 3,
@@ -199,11 +232,22 @@ export const TRAFFIC = {
   rejoinClear: 60,
 } as const;
 
-/** Slipstream (car/slipstream.ts): its reach behind a car (m) and to either side of it (m). How much it cuts the drag is HANDLING.slipstreamDragCut. */
+/**
+ * Slipstream (car/slipstream.ts). Its strength falls with the time gap to the
+ * car ahead (bumper to bumper): exp(−gap / speed / timeScale), at least
+ * minSpeed counted, out to `range` m. The wake is `width` m to either side
+ * right behind the car, widening by `spread` m per metre back. Leaving it, a
+ * car keeps the tow for a moment, fading over `carry` s (the slingshot). What
+ * it does to the car is HANDLING.slipstream*.
+ */
 export const SLIPSTREAM = {
-  range: 28,
-  width: 2.2,
+  timeScale: 0.35,
+  minSpeed: 10,
+  range: 60,
+  width: 1.6,
+  spread: 0.07,
+  carry: 0.4,
   /** The HUD shows "Slipstream" above this much of it. */
-  show: 0.25,
+  show: 0.15,
 } as const;
 

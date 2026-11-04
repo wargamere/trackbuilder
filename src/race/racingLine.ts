@@ -177,14 +177,24 @@ export function racingLine(track: Track): RacingLine {
     }
     return out;
   };
+  // The road's edges, at their narrowest nearby (where kerbs start and stop) and a little in
+  // from them (a car beside the line is racing someone, not on the limit); the room is from the
+  // line as it is here out to those, smoothed, and never past the edge itself.
+  const inset = RACING_LINE.laneInset;
+  const hiE = erode(hi, Math.min).map((x) => x - inset);
+  const loE = erode(lo, Math.max).map((x) => x + inset);
   const spareLeft = new Float32Array(n);
   const spareRight = new Float32Array(n);
   for (let i = 0; i < n; i++) {
-    spareLeft[i] = Math.max(0, hi[i] - offset[i]);
-    spareRight[i] = Math.max(0, offset[i] - lo[i]);
+    spareLeft[i] = Math.max(0, hiE[i] - offset[i]);
+    spareRight[i] = Math.max(0, offset[i] - loE[i]);
   }
-  const roomLeft = blur(erode(spareLeft, Math.min));
-  const roomRight = blur(erode(spareRight, Math.min));
+  const roomLeft = blur(spareLeft);
+  const roomRight = blur(spareRight);
+  for (let i = 0; i < n; i++) {
+    roomLeft[i] = Math.min(roomLeft[i], Math.max(0, hi[i] - offset[i]));
+    roomRight[i] = Math.min(roomRight[i], Math.max(0, offset[i] - lo[i]));
+  }
   const line: RacingLine = { offset, curvature, ds, lo, hi, roomLeft, roomRight };
   cache.set(track, line);
   return line;
@@ -259,4 +269,11 @@ export function speedProfile(track: Track, line: RacingLine, pace: Pace): SpeedP
   }
   brakeBack(v);
   return { speed: v, limit };
+}
+
+/** Seconds to drive the line once at the speeds of `plan`. */
+export function planLapTime(line: RacingLine, plan: SpeedPlan): number {
+  let t = 0;
+  for (let i = 0; i < plan.speed.length; i++) t += line.ds[i] / Math.max(1, plan.speed[i]);
+  return t;
 }

@@ -1,5 +1,5 @@
 import { collideCars } from '../../src/car/contact.ts';
-import { slipstream } from '../../src/car/slipstream.ts';
+import { carriedTow, slipstream } from '../../src/car/slipstream.ts';
 import { CarPhysics, NO_INPUT, type CarState } from '../../src/car/physics.ts';
 import { HANDLING } from '../../src/config/handling.ts';
 import { AiDriver, gridPlace } from '../../src/race/ai.ts';
@@ -82,7 +82,7 @@ export function race(
     const prev = cars.map((c) => progress(c.car));
     if (drafting) {
       slipstream(states, L, drafts);
-      cars.forEach((c, k) => (c.car.draft = drafts[k]));
+      cars.forEach((c, k) => (c.car.draft = carriedTow(c.car.draft, drafts[k], dt)));
     }
     for (const c of cars) {
       if (c.ai) {

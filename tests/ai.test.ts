@@ -4,7 +4,8 @@ import { carOverlap, collideCars } from '../src/car/contact.ts';
 import { CarPhysics, CarState } from '../src/car/physics.ts';
 import { HANDLING } from '../src/config/handling.ts';
 import { AI, CONTACT } from '../src/config/race.ts';
-import { getSampleTrack, SAMPLE_COUNT } from '../src/editor/pipeline.ts';
+import { getSampleTrack, SAMPLE_COUNT, trackFromControl, trackFromStroke } from '../src/editor/pipeline.ts';
+import { planLapTime, racingLine, speedProfile } from '../src/race/racingLine.ts';
 import { AiDriver, aiField, aiPace, gridOrder, gridPlace, qualifyingOrder, YOU } from '../src/race/ai.ts';
 import { rng } from '../src/core/random.ts';
 import { AuthorLap } from '../src/race/medals.ts';
@@ -52,6 +53,32 @@ test('AI pace rises with difficulty, up to the limit of the tyres at 100 %', () 
   assert.equal(aiPace(1).maxSpeed, HANDLING.maxSpeed);
   assert.deepEqual(aiPace(-1), aiPace(0));
   assert.deepEqual(aiPace(2), aiPace(1));
+});
+
+test('a difficulty means the same on every track: 75 % laps 6 % off the limit on a twisty track and on a flat-out banked oval alike', () => {
+  const oval = trackFromStroke(
+    Array.from({ length: 601 }, (_, i) => {
+      const a = (i / 600) * Math.PI * 2;
+      return { x: Math.cos(a) * 400, y: Math.sin(a) * 300 };
+    }),
+    'oval',
+  );
+  assert.ok(oval.ok);
+  const banked = trackFromControl({ id: 'oval', name: 'oval', control: oval.track.def.control, options: { banking: 2 } });
+  assert.ok(banked.ok);
+  for (const t of [...Array.from({ length: SAMPLE_COUNT }, (_, i) => getSampleTrack(i)), banked.track]) {
+    const line = racingLine(t);
+    const lap = (d: number) => planLapTime(line, speedProfile(t, line, aiPace(d, t)));
+    const limit = lap(1);
+    for (const [d, ratio] of [[0.25, 1.27], [0.5, 1.14], [0.75, 1.06]]) {
+      const r = lap(d) / limit;
+      assert.ok(Math.abs(r - ratio) < 0.005, `${t.def.name}: ${d * 100} % plans ${r.toFixed(3)}× the 100 % lap (want ${ratio})`);
+    }
+  }
+  // And driven: the medal (75 %) lap on the oval is really slower than a 100 % one.
+  const gold = new AuthorLap(banked.track).finish()!;
+  const best = new AuthorLap(banked.track, 1).finish()!;
+  assert.ok(gold / best > 1.04 && gold / best < 1.08, `oval gold ${gold.toFixed(2)} vs 100 % ${best.toFixed(2)}`);
 });
 
 test('grid slots are staggered two by two behind the line, on the road, and never on top of each other', () => {

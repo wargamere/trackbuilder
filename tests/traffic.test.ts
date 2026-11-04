@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { CarPhysics } from '../src/car/physics.ts';
 import { slipstream } from '../src/car/slipstream.ts';
 import { HANDLING } from '../src/config/handling.ts';
-import { SLIPSTREAM } from '../src/config/race.ts';
+import { CONTACT, SLIPSTREAM } from '../src/config/race.ts';
 import { getSampleTrack, SAMPLE_COUNT } from '../src/editor/pipeline.ts';
 import { orderAgreement, race, type CarSpec } from './helpers/traffic.ts';
 
@@ -29,7 +29,10 @@ test('slipstream: strongest right behind a car, fading with the gap and to the s
   assert.ok(draft(85, 0)[1] < close && draft(85, 0)[1] > 0, 'less further back');
   assert.ok(draft(95, 1.2)[1] < close, 'less off to the side');
   assert.equal(draft(95, 2.5)[1], 0, 'none beside it');
-  assert.equal(draft(100 - SLIPSTREAM.range - 1, 0)[1], 0, 'none out of reach');
+  assert.equal(draft(100 - SLIPSTREAM.range - 2 * CONTACT.halfLength - 1, 0)[1], 0, 'none out of reach');
+  // It grows the closer you get: faster than in proportion.
+  const at = (gap: number) => draft(100 - 2 * CONTACT.halfLength - gap, 0)[1];
+  assert.ok(at(5) - at(10) > at(25) - at(30), 'it grows faster the closer you get');
 });
 
 test('a car in a slipstream pulls harder and goes faster along a straight', () => {

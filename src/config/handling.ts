@@ -7,8 +7,15 @@ export const HANDLING = {
   tickRate: 120,
 
   // ---------------------------------------------------------- engine & brakes
-  /** In another car's slipstream (draft 1 = right behind it) the air resistance is cut by this share. */
-  slipstreamDragCut: 0.8,
+  /**
+   * In another car's slipstream (draft 1 = right on its bumper): the air
+   * resistance is cut by this share, the engine keeps pulling this much past
+   * its usual top end, and the tow adds this push (m/s², fading out at that
+   * raised top end), so a car in a tow can go faster than it could alone.
+   */
+  slipstreamDragCut: 0.75,
+  slipstreamTopSpeed: 0.12,
+  slipstreamPush: 1.2,
   /** Engine acceleration from standstill; it fades linearly to 0 at `maxSpeed`. */
   engineAccel: 15,
   /** Speed where the engine stops pulling (top speed ends up a bit lower, from drag). */

@@ -9,12 +9,16 @@ export type RaceEvent =
   | { type: 'go' }
   | { type: 'lapStart' }
   | { type: 'split'; index: number; time: number; delta: number | null }
-  /** A lap was completed; `valid` is false if the car broke track limits on it. */
-  | { type: 'lap'; lap: number; time: number; best: boolean; valid: boolean }
-  /** A checkpoint was missed: the lap doesn't count at all and a new one starts. */
-  | { type: 'lapInvalid' }
+  /**
+   * A lap was completed. `valid` is false if the car broke track limits on it
+   * or `missed` a checkpoint (cut across to a later stretch): it still counts
+   * towards the race, but its time never does.
+   */
+  | { type: 'lap'; lap: number; time: number; best: boolean; valid: boolean; missed: boolean }
   /** The whole car went past the track edge: this lap's time won't count. */
   | { type: 'trackLimits' }
+  /** A checkpoint was skipped (seen on reaching a later one): this lap's time won't count. */
+  | { type: 'missedCheckpoint' }
   | { type: 'finished' }
   | { type: 'wrongWay'; on: boolean };
 
@@ -39,8 +43,9 @@ export interface BestLap {
 
 /**
  * Time-trial rules: countdown, lap timing with sub-tick precision, checkpoints
- * in order (so shortcuts don't count), split deltas against the best lap and a
- * wrong-way warning. Fed once per physics tick; knows nothing about rendering.
+ * in order (a lap that skips one still counts, but its time doesn't), split
+ * deltas against the best lap and a wrong-way warning. Fed once per physics
+ * tick; knows nothing about rendering.
  */
 export class RaceSession {
   readonly dt = 1 / HANDLING.tickRate;
@@ -56,10 +61,15 @@ export class RaceSession {
   /** Session time the run ended. */
   runEnd: number | null = null;
   readonly laps: number[] = [];
-  /** Per completed lap: false if track limits were broken on it. */
+  /** Per completed lap: false if track limits were broken or a checkpoint missed on it. */
   readonly lapValid: boolean[] = [];
   /** Track limits were broken on the lap being driven. */
   cut = false;
+
+  /** The lap being driven won't count for its time (track limits, or a missed checkpoint). */
+  get lapSpoilt(): boolean {
+    return this.cut || this.missed;
+  }
   private offTicks = 0;
   lastLap: number | null = null;
   best: BestLap | null;
@@ -69,6 +79,8 @@ export class RaceSession {
 
   private readonly checkpoints: number[];
   private nextCheckpoint = 0;
+  /** A checkpoint was skipped on the lap being driven. */
+  private missed = false;
   private splits: number[] = [];
   private wrongWayTicks = 0;
   private countdownTicks: number;
@@ -97,9 +109,9 @@ export class RaceSession {
   }
 
   /**
-   * How far round the race the car is, for positions: completed laps and the
-   * checkpoints passed this lap, plus the way from the last one (negative on
-   * the grid, before the line). Driving backwards or cutting across never adds.
+   * How far round the race the car is, for positions: completed laps, the
+   * checkpoints passed this lap, plus the way on from the last one (negative
+   * on the grid, before the line). Driving backwards never adds.
    */
   raceDistance(s: number): number {
     const L = this.length;
@@ -111,11 +123,10 @@ export class RaceSession {
     if (this.phase === 'finished') return this.laps.length * L;
     const cp = this.nextCheckpoint;
     const from = cp === 0 ? 0 : this.checkpoints[cp - 1];
-    const to = cp < this.checkpoints.length ? this.checkpoints[cp] : L;
     d = (s - from) % L;
     if (d > L / 2) d -= L;
     if (d <= -L / 2) d += L;
-    return this.laps.length * L + from + clamp(d, 0, to - from);
+    return this.laps.length * L + from + clamp(d, 0, L - from);
   }
 
   get canDrive(): boolean {
@@ -186,16 +197,24 @@ export class RaceSession {
       return t0 + (d / ds) * this.dt; // interpolate within the tick
     };
 
-    // Checkpoints, strictly in order.
-    if (this.lapStart !== null && near && this.nextCheckpoint < this.checkpoints.length) {
-      const t = crossedAt(this.checkpoints[this.nextCheckpoint]);
-      if (t !== null) {
+    // Checkpoints, in order. Reaching a later one with an earlier one still to pass means that
+    // one was missed: the lap goes on (and on counting towards the race) but is marked.
+    if (this.lapStart !== null && near) {
+      for (let k = this.nextCheckpoint; k < this.checkpoints.length; k++) {
+        const t = crossedAt(this.checkpoints[k]);
+        if (t === null) continue;
+        if (this.nextCheckpoint < k && !this.missed) out.push({ type: 'missedCheckpoint' });
+        while (this.nextCheckpoint < k) {
+          this.splits.push(NaN);
+          this.nextCheckpoint++;
+          this.missed = true;
+        }
         const split = t - this.lapStart;
-        const k = this.nextCheckpoint;
         this.splits.push(split);
         this.nextCheckpoint++;
         const ref = this.best?.splits[k];
-        out.push({ type: 'split', index: k, time: split, delta: ref !== undefined ? split - ref : null });
+        out.push({ type: 'split', index: k, time: split, delta: ref !== undefined && !this.missed ? split - ref : null });
+        break;
       }
     }
 
@@ -209,36 +228,36 @@ export class RaceSession {
       out.push({ type: 'lapStart' });
       return;
     }
-    if (this.nextCheckpoint < this.checkpoints.length) {
-      // Missed a checkpoint: this lap doesn't count, a new one starts here.
-      out.push({ type: 'lapInvalid' });
-    } else {
-      const lapTime = tf - this.lapStart;
-      const valid = !this.cut;
-      this.laps.push(lapTime);
-      this.lapValid.push(valid);
-      this.lastLap = lapTime;
-      // Only clean laps can be bests (and so ghosts, medals and the score).
-      const isBest = valid && (!this.best || lapTime < this.best.time);
-      if (isBest) {
-        this.best = { time: lapTime, splits: [...this.splits] };
-        this.newBest = true;
-      }
-      out.push({ type: 'lap', lap: this.laps.length, time: lapTime, best: isBest, valid });
-      if (this.laps.length >= this.lapsToRun) {
-        this.phase = 'finished';
-        this.runEnd = tf;
-        out.push({ type: 'finished' });
-        return;
-      }
+    // A missed checkpoint (cut across to a later stretch, or ran far off the road past it)
+    // doesn't throw the lap away: it counts towards the race like any other, but, like
+    // breaking track limits, its time never counts.
+    const missed = this.missed || this.nextCheckpoint < this.checkpoints.length;
+    const lapTime = tf - this.lapStart;
+    const valid = !this.cut && !missed;
+    this.laps.push(lapTime);
+    this.lapValid.push(valid);
+    this.lastLap = lapTime;
+    // Only clean laps can be bests (and so ghosts, medals and the score).
+    const isBest = valid && (!this.best || lapTime < this.best.time);
+    if (isBest) {
+      this.best = { time: lapTime, splits: [...this.splits] };
+      this.newBest = true;
+    }
+    out.push({ type: 'lap', lap: this.laps.length, time: lapTime, best: isBest, valid, missed });
+    if (this.laps.length >= this.lapsToRun) {
+      this.phase = 'finished';
+      this.runEnd = tf;
+      out.push({ type: 'finished' });
+      return;
     }
     this.lapStart = tf;
     this.nextCheckpoint = 0;
     this.splits = [];
     this.cut = false;
+    this.missed = false;
   }
 
-  /** Fastest clean lap of this run, or null if every lap broke track limits. */
+  /** Fastest clean lap of this run, or null if no lap was clean. */
   bestOfRun(): number | null {
     const clean = this.laps.filter((_, i) => this.lapValid[i]);
     return clean.length ? Math.min(...clean) : null;

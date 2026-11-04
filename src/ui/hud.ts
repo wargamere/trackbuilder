@@ -150,12 +150,25 @@ export class Hud {
     if (this.posValue.textContent !== t) this.posValue.textContent = t;
   }
 
-  /** Lights the "Slipstream" tag while you're in the slipstream of a car ahead. */
-  setSlipstream(on: boolean): void {
-    if (on === this.draftOn) return;
-    this.draftOn = on;
-    this.draft.classList.toggle('on', on);
+  /**
+   * Lights the "Slipstream" tag while you're in the slipstream of a car ahead
+   * (`amount` above `show`); its bar fills with how strong the tow is (0..1).
+   */
+  setSlipstream(amount: number, show: number): void {
+    const on = amount > show;
+    if (on !== this.draftOn) {
+      this.draftOn = on;
+      this.draft.classList.toggle('on', on);
+    }
+    if (on) {
+      const pct = String(Math.round(amount * 20) * 5);
+      if (this.draftPct !== pct) {
+        this.draftPct = pct;
+        this.draft.style.setProperty('--draft', `${pct}%`);
+      }
+    }
   }
+  private draftPct = '';
 
   /** Shows or hides the minimap (Display settings). */
   showMinimap(on: boolean): void {

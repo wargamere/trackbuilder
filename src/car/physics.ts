@@ -238,10 +238,13 @@ export class CarPhysics {
 
     // --- longitudinal: driving force, then resistances that can only slow the car
     let drive = 0;
-    // In another car's slipstream the air resistance drops, so the car is quicker on a straight.
-    let resist = H.rollingDrag + surfDrag + H.aeroDrag * (1 - H.slipstreamDragCut * this.draft) * vf * vf;
+    // In another car's slipstream the air resistance drops and the tow pulls the car along,
+    // past its usual top speed: enough to draw alongside on a straight.
+    const tow = this.draft;
+    let resist = H.rollingDrag + surfDrag + H.aeroDrag * (1 - H.slipstreamDragCut * tow) * vf * vf;
     if (throttle > 0) {
-      if (vf >= -0.5) drive += H.engineAccel * accelF * throttle * Math.max(0, 1 - vf / (H.maxSpeed * speedF));
+      const fade = Math.max(0, 1 - vf / (H.maxSpeed * speedF * (1 + H.slipstreamTopSpeed * tow)));
+      if (vf >= -0.5) drive += (H.engineAccel * accelF + H.slipstreamPush * tow) * throttle * fade;
       else resist += H.brakeDecel * throttle;
     }
     if (brake > 0) {

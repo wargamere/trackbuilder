@@ -44,16 +44,57 @@ test('lap times are exact, to well under a tick', () => {
   assert.ok(Math.abs((session.totalTime() ?? 0) - (3 * L) / speed) < 1e-6);
 });
 
-test('cutting across to a later stretch of track (skipping a checkpoint) does not count', () => {
+test('a lap that cuts across to a later stretch (skipping a checkpoint) counts towards the race, but its time never does', () => {
   const L = 1000;
   // Mid-way through lap 1, jump 150 m ahead in one tick (a shortcut across the grass).
   const lapStartTick = COUNTDOWN_TICKS + Math.ceil((8 / 30) * HANDLING.tickRate);
   const { session, events } = constantSpeed(L, 30, COUNTDOWN_TICKS + 9000, L - 8, { tick: lapStartTick + 400, by: 150 });
-  assert.ok(events.some((e) => e.type === 'lapInvalid'), 'shortcut lap is rejected');
-  const firstLap = events.find((e) => e.type === 'lap');
-  assert.ok(firstLap && firstLap.type === 'lap');
-  if (firstLap?.type === 'lap') assert.ok(Math.abs(firstLap.time - L / 30) < 1e-6, 'the next full lap counts normally');
-  assert.ok(session.laps.every((t) => t > 30));
+  const laps = events.filter((e): e is Extract<RaceEvent, { type: 'lap' }> => e.type === 'lap');
+  assert.equal(laps.length, 2, 'the shortcut lap counts as a lap');
+  assert.ok(laps[0].missed && !laps[0].valid && !laps[0].best, 'the shortcut lap is marked invalid');
+  assert.ok(Math.abs(laps[0].time - (L - 150) / 30) < 0.05);
+  assert.ok(laps[1].valid && !laps[1].missed && Math.abs(laps[1].time - L / 30) < 1e-6, 'a full lap counts normally');
+  assert.ok(Math.abs(session.bestOfRun()! - L / 30) < 1e-6, 'the best lap is a full one');
+  assert.equal(events.filter((e) => e.type === 'missedCheckpoint').length, 1, 'the skip is flagged once, as it happens');
+});
+
+test('after skipping a checkpoint, race distance (and so the race position) keeps growing', () => {
+  const L = 1000;
+  const session = new RaceSession(L, null, 3, 12, 0);
+  const events: RaceEvent[] = [];
+  let s = L - 8;
+  let last = -Infinity;
+  let jumped = false;
+  for (let k = 0; k < HANDLING.tickRate * 40; k++) {
+    const prev: Progress = { s, lateral: 0, along: 30 };
+    s = (s + 30 * DT) % L;
+    if (!jumped && session.lapStart !== null && s > 250) {
+      s += 150;
+      jumped = true;
+    }
+    session.step(prev, { s, lateral: 0, along: 30 }, events);
+    const d = session.raceDistance(s);
+    if (s > 450 && s < 950) assert.ok(d > last, `race distance grows at s = ${s.toFixed(0)}`);
+    last = d;
+  }
+});
+
+test('running far wide past a checkpoint (beyond the run-off) still completes the lap, marked invalid', () => {
+  const L = 1000;
+  const session = new RaceSession(L, null, 2, 12, 0);
+  const events: RaceEvent[] = [];
+  let s = L - 8;
+  for (let k = 0; k < HANDLING.tickRate * 80 && session.phase !== 'finished'; k++) {
+    const prev: Progress = { s, lateral: 0, along: 30 };
+    s = (s + 30 * DT) % L;
+    // Out in a field (40 m off the road) around the first checkpoint of lap 1.
+    const wide = session.laps.length === 0 && session.lapStart !== null && s > 80 && s < 120;
+    session.step(prev, { s, lateral: wide ? 46 : 0, along: 30 }, events);
+  }
+  const laps = events.filter((e): e is Extract<RaceEvent, { type: 'lap' }> => e.type === 'lap');
+  assert.equal(laps.length, 2);
+  assert.ok(laps[0].missed && !laps[0].valid);
+  assert.ok(laps[1].valid);
 });
 
 test('split deltas compare against the best lap', () => {
@@ -99,7 +140,7 @@ test('the bot completes three valid laps, and the ghost replays the best one', (
         ghost = rec.take();
         bestPositions = positions.slice();
       }
-      if (e.type === 'lapStart' || e.type === 'lap' || e.type === 'lapInvalid') {
+      if (e.type === 'lapStart' || e.type === 'lap') {
         lapStart = session.lapStart ?? 0;
         rec.start(session.tick * DT - lapStart);
         positions.length = 0;
@@ -165,7 +206,7 @@ test('a figure-eight: driving straight over the crossroads keeps the car on its 
   const { session, events, grassTicks } = botRun(res.track);
   assert.equal(session.phase, 'finished');
   assert.equal(session.laps.length, 3);
-  assert.ok(!events.some((e) => e.type === 'lapInvalid'), 'no lap was thrown away at the crossing');
+  assert.ok(!events.some((e) => e.type === 'lap' && e.missed), 'no checkpoint was missed at the crossing');
   assert.equal(grassTicks, 0);
 });
 

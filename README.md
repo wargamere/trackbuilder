@@ -186,45 +186,60 @@ Up to eleven AI cars (`race/ai.ts`) line up on a staggered grid, two by two, 6.5
 
 On the test tracks a 100 % AI laps about 19 % faster than the old centre-line driver (up to 24 % on twisty ones), with no track-limit breaches and no barrier hits. The old driver's lap is now about 1.16× gold, so medals are roughly one step harder than before.
 
-**Difficulty** (`AI.pace`) sets the share of grip used in corners, the top speed and the share of the brakes. 100 % is the tyres' limit: with more grip the car slides off.
+**Difficulty** (`AI.pace`) sets the share of grip used in corners, the top speed and the share of the brakes. 100 % is the tyres' limit: with more grip the car slides off. On the test tracks, including random custom ones with hills, banking and 8–18 m roads, a 100 % AI is within 1 % of the fastest lap the physics allows.
 
-| Difficulty | AI lap vs the gold time |
+**Same difficulty, same meaning on every track.** Grip only matters in bends, so the same mix of grip, top speed and brakes would make 75 % nearly as fast as 100 % on a flat-out banked oval, and much slower on a twisty track. So each difficulty is tuned per track (`trackDifficulty()`, worked out once per track and cached): the pace is solved so its planned lap is a fixed multiple of the 100 % lap there (`AI.lapRatio`: 1.7× at 0 %, 1.27× at 25 %, 1.14× at 50 %, 1.06× at 75 %). That makes medals mean the same on every track too.
+
+| Difficulty | AI lap vs the gold time, on any track |
 |---|---|
 | 1 % | about 1.6× |
-| 20 % | about 1.25× (bronze) |
-| 45 % | about 1.09× (silver) |
+| 20 % | about 1.28× (bronze) |
+| 45 % | about 1.1× (silver) |
 | 75 % | 1× (gold: medal times are this AI's flying lap) |
-| 100 % | about 0.95× |
+| 100 % | about 0.94× |
 
 The field spreads up to 8 points below the chosen difficulty, so the cars don't drive nose to tail.
 
-**Lanes.** Besides the line itself, the driver has a speed plan for lanes 1.5 to 6 m either side of it (`DRIVER.planLanes`). A lane is the line shifted sideways, but never further than the room there is beside the line, smoothed so every lane bends as gently as the line. It's planned with 5 % of the grip kept in hand, and with the same engine and brake passes, so a lane on the inside of a bend is slower and the planner knows by how much. A car knocked off its path gets its speed limit from the path it will really drive back onto its lane.
+**Lanes.** Besides the line itself, the driver has a speed plan for lanes 1.5 to 6 m either side of it (`DRIVER.planLanes`). A lane is the line shifted sideways, but never further than the room there is beside the line: from the line out to the road's edge at its narrowest nearby, 0.6 m in from it, smoothed so every lane bends as gently as the line. It's planned with 5 % of the grip kept in hand, and with the same engine and brake passes, so a lane on the inside of a bend is slower and the planner knows by how much. A car knocked off its path gets its speed limit from the path it will really drive back onto its lane.
 
 **Traffic** (`race/traffic.ts`). About 30 times a second each AI picks a lane:
-- **Looking ahead:** it plays the next few seconds forward in each lane for itself and every car near it. Each car follows its speed plan at the pace it's going now, keeping its offset from the line; you (not an AI) are assumed to carry on drifting across the road as you are.
+- **Looking ahead:** it plays the next few seconds forward in each lane for itself and every car near it (70 m ahead to 25 m behind). Each car follows its speed plan at the pace it's going now, keeping its offset from the line; you (not an AI) are assumed to carry on drifting across the road as you are. In a car's slipstream it reckons on going up to 8 % quicker than its plan, which is how it sees a pass coming.
 - **Cost of a lane:**
   - the time it loses against the line over the next 80 m;
   - a moment held up behind a car before it's clear of it;
   - if it can't get past a slower car in that lane within 5 s, being stuck behind it for a good while (8 s at the speed difference).
   - A lane that would turn it into a car alongside is out.
-- **Choosing:** it takes the cheapest lane, but switches only for a clear gain, and once a pass is under way only for a big one, so it doesn't weave. It makes no new moves in a tight bend.
-- **Side by side with no room for both** (the road narrowing into a bend): the car behind coasts and drops back, the one ahead keeps its place and doesn't turn in.
-- **Following:** behind a car it would run into before it's clear of it, it keeps a gap of 1.5 m + 0.35 s and closes it gently. If the car ahead suddenly slows (a spin, a knock) it brakes hard.
+- **Room:** it wants 1.2 m between the cars' sides to draw alongside, plus more in a bend (30 m per 1/m of curvature: 0.6 m more at a 50 m radius), where tails swing out. Closing on a car in a bend faster than 2 m/s, it wants up to 0.6 m more again.
+- **Choosing:** it takes the cheapest lane, but switches only for a clear gain, and once a pass is under way only for a big one, so it doesn't weave. In a tight bend it makes no new moves away from the line (back towards it is fine).
+- **Side by side with no room for both** (the road narrowing into a bend), racing rules as in the F1 driving guidelines:
+  - a car more than half a length behind backs out;
+  - overlapped more than that, the car on the inside of the coming bend has earned its place, and the one round the outside backs out;
+  - in a let-by (below), the car letting the other through always gives way;
+  - neither turns in on the other. Backing out means dropping to 2 m/s below the other car.
+- **Following:** behind a car it would run into before it's clear of it, it keeps a gap of 1.5 m + 0.35 s and closes it gently. If the car ahead suddenly slows (a spin, a knock) it brakes hard. Within 15 m of another car it drives 1.5 % under its pace.
+- **The start:** for the first 500 m each grid slot back drives 0.5 % slower, so the field strings out instead of going three wide into the first bend.
 - **Recovering:** sliding (knocked, or ran wide), it comes off the throttle for a moment instead of braking in front of others. If it's stuck for 2.5 s it puts itself back on the road, but only once no car is coming. After the finish it carries on at 85 % pace.
 
-**Letting a quicker car by (help for overtaking).** Evenly matched cars rarely get past each other on twisty roads. So a slower AI that has had a clearly quicker AI (5+ points of difficulty) within 15 m behind it for 1.5 s:
+**Letting a quicker car by (help for overtaking).** Evenly matched cars rarely get past each other on twisty roads. So a slower AI that has had a clearly quicker AI (5+ points of difficulty) within 25 m behind it for about 1.5 s (from 200 m into the race, and only if it isn't queued behind someone itself, so a train sorts itself out from the front):
 - steps 3.5 m off the line to the side with more room over the next 40 m (or the other side of the line from the quicker car, if that's already well to one side);
-- drives at 85 % of its pace, and once the quicker car has pulled out beside it, at half throttle too;
+- drives at 85 % of its pace, and once the quicker car has pulled out beside it, at half throttle too (but not in the middle of a tight bend, where a car slowing is a hazard);
 - carries on until the quicker car is a car length ahead, drops well back, or 8 s have gone.
 
 The quicker car is told which side the slower one has taken and passes on the other, usually on the racing line. This works only between AI cars: they don't move over for you, and you don't have to move over for them.
 
-**Slipstream** (`car/slipstream.ts`). A car close behind another, in line with it, has less air to push through: up to 80 % less drag right behind a car, fading out to nothing 28 m back or 2.2 m to the side. Both cars must be going the same way at the same level. It's the same for every car, yours included, so you can get a run on an AI along a straight. At full tow the top speed goes from about 167 to 194 km/h. "SLIPSTREAM" shows above the speedometer while you're in one.
+**Slipstream** (`car/slipstream.ts`). It's the same for every car, yours included, and it's what lets you get a run on an AI along a straight.
+- **Stronger the closer you get:** its strength depends on the time gap to the car ahead (bumper to bumper), as in Speed Dreams' physics: exp(−gap / speed / 0.35 s). Right on the bumper it's full, half a second back it's a quarter, and it reaches out 60 m. The wake is 1.6 m to either side right behind the car, widening 7 cm per metre back.
+- **What it does:** up to 75 % less drag, and the engine keeps pulling up to 12 % past its usual top end, plus a tow of up to 1.2 m/s². So in a tow you go faster than you could alone ("overspeed"): top speed about 167 km/h alone, about 200 km/h 5 m behind a car, about 182 km/h 15 m back. 5 m behind a car at 30 m/s it pulls about 1.4 m/s² harder.
+- **Slingshot:** pulling out of the wake, you keep the tow for a moment, fading over 0.4 s, so you can draw alongside.
+- Both cars must be going the same way at the same level. AI cars use it too: in a tow an AI may go past its own top speed.
+- **HUD:** "SLIPSTREAM" shows above the speedometer while you're in one, and its bar fills with how strong the tow is.
 
 On test races (`npm test`, `tests/traffic.test.ts`):
-- a 90 % AI starting behind a 40 % one gets past within about 15–40 s;
-- a 95 / 75 / 55 / 35 % field starting in reverse order finishes in pace order or nearly so;
-- an evenly matched field of eight races 3 laps with no hard knocks and nobody off the road.
+- a 90 % AI starting behind a 40 % one gets past within a lap (about 12–27 s on the samples);
+- a 95 / 75 / 55 / 35 % field starting in reverse order finishes with the quickest ahead of the slowest;
+- an evenly matched field of eight races 3 laps with at most one hard knock and nobody off the road.
+
+How it was tuned: a scratch harness (not in the repo) ran 30 races on six tracks per setting: matched fields, reversed and mixed grids, and a stand-in "player" on pole that drives the centre line and avoids nobody. Against the previous version, hard knocks (over 4 m/s) went from 49 to 18 and firm ones (over 2 m/s) from 127 to 57. Time off the road went from 30 to 0.7 car-seconds, and sliding from 153 to 57. Order agreement with pace in mixed grids is a little lower (0.50 vs 0.62).
 
 **Contact** (`car/contact.ts`). Each car's body is a box the size of the car, turned with it.
 - **Overlap:** it's found with a separating-axis test on the four box sides, and the cars are pushed apart along the axis of least overlap, half each.
@@ -233,7 +248,7 @@ On test races (`npm test`, `tests/traffic.test.ts`):
 - **Bridges:** cars more than 2.5 m apart in height (on and under a bridge) never touch.
 - A bump on you knocks like a barrier hit.
 
-**Positions.** The HUD shows your position (POS 2/6) beside the timer. It comes from each car's race distance: laps, checkpoints passed and the way since the last one. Reversing or cutting across never adds to it. Name tags float over the AI cars, and they show on the minimap in their colours. The race ends when you finish, with "Finished 2nd!". The results show your place and the finishing order, with each car's time from GO, as gaps behind the winner. A car still racing gets an estimated time from its average speed so far.
+**Positions.** The HUD shows your position (POS 2/6) beside the timer. It comes from each car's race distance: laps, checkpoints passed and the way since the last one. Reversing never adds to it. Name tags float over the AI cars, and they show on the minimap in their colours. The race ends when you finish, with "Finished 2nd!". The results show your place and the finishing order, with each car's time from GO, as gaps behind the winner. A car still racing gets an estimated time from its average speed so far.
 
 Lap times against AI cars count for bests, the ghost, medals and the score as usual.
 
@@ -241,7 +256,7 @@ Lap times against AI cars count for bests, the ghost, medals and the score as us
 
 **Track limits.** Kerbs count as track; the grass, gravel or tarmac beyond them doesn't. If the whole car goes past the edge (both wheel tracks, with 25 cm of grace) for more than 0.12 s, the lap you're on is invalid. "Track limits!" flashes, and the timer turns red and struck through until the next lap. An invalid lap still counts towards a race's distance, but never for the best lap, the ghost, medals or the score. The results screen marks those laps ✗. A run with no clean lap scores nothing. Practice uses the same rule.
 
-3-2-1-GO, then the setup's number of laps (1–10). The timer starts when you cross the line. Ten checkpoints sit around the lap, and a lap counts only if you pass them in order, driving along the track. A jump of more than 3 m along the track in one physics tick (cutting across the grass to another stretch, or a reset) never passes a checkpoint. Lap times are interpolated within the 120 Hz tick. Each checkpoint shows a split against your best lap, and driving backwards shows "Wrong way!".
+3-2-1-GO, then the setup's number of laps (1–10). The timer starts when you cross the line. Ten checkpoints sit around the lap, to be passed in order, driving along the track (anywhere up to 25 m beyond the road's edge counts). A jump of more than 3 m along the track in one physics tick (cutting across the grass to another stretch, or a reset) never passes a checkpoint. A lap that misses one still counts towards the race (and towards finishing), but like a track-limits lap its time doesn't: it's marked invalid, and can't be a best, a ghost or a medal. Lap times are interpolated within the 120 Hz tick. Each checkpoint shows a split against your best lap, and driving backwards shows "Wrong way!".
 
 Your best lap is recorded tick by tick and replayed as a translucent ghost. The results screen shows the total time, each lap, the best lap and a score: average speed on your best lap × ink multiplier × 10.
 
