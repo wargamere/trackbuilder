@@ -3,13 +3,19 @@ import { carriedTow, slipstream } from '../../src/car/slipstream.ts';
 import { CarPhysics, NO_INPUT, type CarState } from '../../src/car/physics.ts';
 import { HANDLING } from '../../src/config/handling.ts';
 import { AiDriver, aiPace, gridPlace } from '../../src/race/ai.ts';
+import { aiCars } from '../../src/race/traffic.ts';
 import { RacingDriver } from '../../src/race/driver.ts';
 import { botInput } from '../../src/race/bot.ts';
 import { RaceSession, type Progress, type RaceEvent } from '../../src/race/session.ts';
 import type { Track } from '../../src/track/track.ts';
 
-/** A car in a test race: an AI at a difficulty, or the simple centre-line bot (a stand-in for a player who doesn't avoid anyone). */
-export type CarSpec = { kind: 'ai'; difficulty: number } | { kind: 'bot'; aggression: number } | { kind: 'player'; difficulty: number };
+/**
+ * A car in a test race: an AI at a difficulty; the simple centre-line bot (a
+ * stand-in for a player who doesn't avoid anyone); a `player` on the racing
+ * line at a pace, who looks out for no one either; or a `human`: a player who
+ * races cleanly (an AI driver, but one the AI cars see as you).
+ */
+export type CarSpec = { kind: 'ai'; difficulty: number } | { kind: 'bot'; aggression: number } | { kind: 'player'; difficulty: number } | { kind: 'human'; difficulty: number };
 
 export interface TrafficResult {
   /** Contacts closing faster than 2 m/s (one per incident, not per tick), and how many involved an AI hitting the bot. */
@@ -46,21 +52,23 @@ export function race(
   drafting = true,
   log: string[] | null = null,
   onHard: ((tick: number, i: number, j: number, hit: number) => void) | null = null,
-  onTick: ((tick: number, cars: { car: CarPhysics; ai: AiDriver | null; session: RaceSession }[]) => void) | null = null,
+  onTick: ((tick: number, cars: { car: CarPhysics; ai: AiDriver | null; session: RaceSession; human: boolean }[]) => void) | null = null,
 ): TrafficResult {
   const L = track.center.length;
-  type Car = { car: CarPhysics; session: RaceSession; ai: AiDriver | null; aggression: number; line?: RacingDriver | null };
+  type Car = { car: CarPhysics; session: RaceSession; ai: AiDriver | null; aggression: number; line?: RacingDriver | null; human: boolean };
   const cars: Car[] = specs.map((sp, k) => {
-    if (sp.kind === 'ai') {
+    if (sp.kind === 'ai' || sp.kind === 'human') {
       const ai = new AiDriver(track, { name: `ai${k}`, paint: 0, difficulty: sp.difficulty, laps, slot: k });
-      return { car: ai.car, session: ai.session, ai, aggression: 0, line: null };
+      // A clean-racing player: driven like an AI, but the AI cars see it as you.
+      if (sp.kind === 'human') aiCars.delete(ai.car.state);
+      return { car: ai.car, session: ai.session, ai, aggression: 0, line: null, human: sp.kind === 'human' };
     }
     const car = new CarPhysics(track);
     const g = gridPlace(track, k);
     car.placeAt(g.s, g.lateral);
     // A "player": the bot (centre line), or a slow driver on the racing line; neither looks out for anyone.
     const line = sp.kind === 'player' ? new RacingDriver(track, aiPace(sp.difficulty, track)) : null;
-    return { car, session: new RaceSession(L, null, laps, track.center.width), ai: null, aggression: sp.kind === 'bot' ? sp.aggression : 0, line };
+    return { car, session: new RaceSession(L, null, laps, track.center.width), ai: null, aggression: sp.kind === 'bot' ? sp.aggression : 0, line, human: false };
   });
   const states: CarState[] = cars.map((c) => c.car.state);
   const drafts = new Float32Array(cars.length);
@@ -113,7 +121,7 @@ export function race(
               if (ds > 3.2) kinds.rear++;
               else kinds.side++;
               if (Math.abs(track.center.curvature[Math.max(0, a.trackIndex)]) > 1 / 60) kinds.bend++;
-              if (!cars[i].ai || !cars[j].ai) kinds.withBot++;
+              if (!cars[i].ai || !cars[j].ai || cars[i].human || cars[j].human) kinds.withBot++;
               if (hit > 4) {
                 kinds.hard++;
                 onHard?.(tick, i, j, hit);
@@ -200,4 +208,35 @@ export function orderAgreement(order: number[], expected: number[]): number {
     }
   }
   return total ? (2 * agree) / total - 1 : 1;
+}
+
+/** Puts `car` on `driver`'s line at `s`, moving along it at the line's speed there (turning as it does). */
+export function rolling(car: CarPhysics, driver: RacingDriver, s: number, lane = 0): void {
+  car.placeAt(s, driver.lateralAt(s, lane));
+  const v = driver.speedAt(s);
+  const a = driver.pointAt(s - 1, lane);
+  const b = driver.pointAt(s + 1, lane);
+  const c = driver.pointAt(s + 3, lane);
+  const heading = Math.atan2(b.z - a.z, b.x - a.x);
+  let turn = Math.atan2(c.z - b.z, c.x - b.x) - heading;
+  while (turn > Math.PI) turn -= 2 * Math.PI;
+  while (turn < -Math.PI) turn += 2 * Math.PI;
+  Object.assign(car.state, { heading, vx: Math.cos(heading) * v, vz: Math.sin(heading) * v, speed: v, yawRate: (turn / 2) * v });
+  car.prev.copyFrom(car.state);
+}
+
+/** The bends the line brakes for (by 6 m/s or more): where the braking starts and the slowest point (m along). */
+export function brakingBends(track: Track, driver: RacingDriver): { brake: number; apex: number }[] {
+  const L = track.center.length;
+  const out: { brake: number; apex: number }[] = [];
+  const step = 5;
+  for (let s = 0; s < L; s += step) {
+    const v = driver.speedAt(s);
+    if (v <= driver.speedAt(s - step) && v < driver.speedAt(s + step)) {
+      let b = s;
+      while (driver.speedAt(b - step) > driver.speedAt(b) + 0.01 && s - b < 300) b -= step;
+      if (driver.speedAt(b) - v >= 6) out.push({ brake: b, apex: s });
+    }
+  }
+  return out;
 }

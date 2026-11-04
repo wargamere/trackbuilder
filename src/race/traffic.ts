@@ -1,6 +1,7 @@
 import type { CarState } from '../car/physics.ts';
 import { towStrength } from '../car/slipstream.ts';
 import { CONTACT, TRAFFIC } from '../config/race.ts';
+import { clamp } from '../core/math.ts';
 import { leftOf } from '../track/spline.ts';
 import type { Track } from '../track/track.ts';
 import type { Corridor, RacingDriver } from './driver.ts';
@@ -33,9 +34,11 @@ export function laneReach(t: number): number {
 
 /**
  * A nearby car as the planner sees it: along-track gap, lateral, offset from
- * the racing line, speed, sideways speed across the road, and whether it's an
- * AI (which holds its offset from the line) or not (the player: assumed to
- * carry on drifting across the road as it is, easing off over a second).
+ * the racing line, speed, sideways speed across the road (and against the
+ * line: how fast it's drifting off the line), and whether it's an AI (which
+ * holds its offset from the line) or not (the player: assumed to follow the
+ * line as it bends, carrying on drifting off it as it is, easing off over a
+ * second, and staying on the road).
  */
 interface Near {
   ds: number;
@@ -43,6 +46,8 @@ interface Near {
   off: number;
   v: number;
   vlat: number;
+  /** Sideways speed against the line's own sweep across the road there. */
+  drift: number;
   ai: boolean;
   /** Its difficulty, for an AI. */
   pace: number | null;
@@ -122,8 +127,36 @@ export class TrafficPlanner {
     return this.pushFor > 0;
   }
 
-  /** Another car is close by (set by plan()). */
+  /** Another AI is close by (set by plan()). */
   crowded = false;
+  /**
+   * Fighting a car that isn't an AI (you) for a place into a bend: alongside,
+   * or just behind and on the inside (set by plan()). It goes later on the
+   * brakes then.
+   */
+  fighting = false;
+  /**
+   * Defending against a car that isn't an AI close behind: the side of the
+   * road (+1 left) of the inside of the bend we're covering, 0 if not; where
+   * that ends (the apex, m along the track), and the car.
+   */
+  private defendSide = 0;
+  private defendEnd = 0;
+  private defendCar: CarState | null = null;
+  /** The lane (offset from the line) that covers it at the braking point. */
+  private defendOffset = 0;
+  /** Where the move began (m along), our offset from the line then, and the braking point (m along). */
+  private defendFrom = 0;
+  private defendOff0 = 0;
+  private defendBrake = 0;
+  /** The apex of the bend we last defended (one move per bend). */
+  private defendedApex = NaN;
+
+
+  /** Covering the inside of the bend coming up against you (it moves across a little quicker then). */
+  get defending(): boolean {
+    return this.defendSide !== 0;
+  }
   /** Extra room across the road wanted in the bend we're in (m) (set by plan()). */
   private bendRoom = 0;
 
@@ -163,7 +196,10 @@ export class TrafficPlanner {
   /** Car `o`, `ds` ahead of us along the track, as the planner sees it. */
   private toNear(o: CarState, ds: number): Near {
     const l = leftOf(this.track.center.tangents[Math.max(0, o.trackIndex)]);
-    return { ds, lat: o.lateral, off: o.lateral - this.driver.lateralAt(o.s), v: Math.max(0, o.speed), vlat: o.vx * l.x + o.vz * l.y, ai: aiCars.has(o), pace: aiCars.get(o) ?? null, car: o };
+    const v = Math.max(0, o.speed);
+    const vlat = o.vx * l.x + o.vz * l.y;
+    const sweep = ((this.driver.lateralAt(o.s + 1) - this.driver.lateralAt(o.s - 1)) / 2) * v;
+    return { ds, lat: o.lateral, off: o.lateral - this.driver.lateralAt(o.s), v, vlat, drift: vlat - sweep, ai: aiCars.has(o), pace: aiCars.get(o) ?? null, car: o };
   }
 
   /** Going on as we mean to in lane `c` (from offset `off0` now), would we run into the back of car `o` soon? */
@@ -178,8 +214,12 @@ export class TrafficPlanner {
       const lat = this.driver.lateralAt(s, o.off);
       return o.lat > lat + 0.5 && o.lat > this.driver.lateralAt(s, 99) ? o.lat : o.lat < lat - 0.5 && o.lat < this.driver.lateralAt(s, -99) ? o.lat : lat;
     }
+    // You: along the line as it bends (from where you are on the road), drifting off it as you
+    // are, and on the road.
     const tau = TRAFFIC.driftEase;
-    return o.lat + o.vlat * tau * (1 - Math.exp(-t / tau));
+    const sNow = this.driver.lateralAt(s - (o.v * t));
+    const lat = o.lat + (this.driver.lateralAt(s) - sNow) + o.drift * tau * (1 - Math.exp(-t / tau));
+    return Math.max(Math.min(o.lat, this.driver.lateralAt(s, -99)), Math.min(Math.max(o.lat, this.driver.lateralAt(s, 99)), lat));
   }
 
   /** My lateral `t` seconds ahead in lane `c`, at `s`, moving from `off0` (my offset now) at the lane-change rate. */
@@ -203,14 +243,22 @@ export class TrafficPlanner {
   }
 
   /**
+   * Room across the road (m, centre to centre) that counts as clear of car
+   * `o` for drawing alongside it: its width and ours, `margin` × the margin,
+   * and in a bend more (tails swing out), except passing in a let-by.
+   */
+  private sideRoom(me: CarState, o: { ai: boolean; car: CarState }, margin: number): number {
+    return 2 * CONTACT.halfWidth + TRAFFIC.marginSide * margin + (o.ai && this.cooperating(me, o.car) ? 0 : this.bendRoom);
+  }
+
+  /**
    * Cost of lane `c` (seconds it would lose), or Infinity if it would turn us
    * into a car alongside. `v` is the speed we'd like (for the cars beside and
    * behind), `off0` our offset from the line now.
    */
-  private cost(me: CarState, c: LaneChoice, v: number, off0: number): number {
+  private cost(me: CarState, c: LaneChoice, v: number, off0: number, ignore: CarState | null = null): number {
     const dt = TRAFFIC.step;
     const reachS = 2 * CONTACT.halfLength + TRAFFIC.marginAlong;
-    const reachL0 = 2 * CONTACT.halfWidth + TRAFFIC.marginSide;
     let cost = 0;
     // Off the line: the time its lane loses over the stretch ahead, against the line.
     // (A pass round a car that isn't an AI: wherever that puts us a moment from now.)
@@ -221,8 +269,8 @@ export class TrafficPlanner {
     // Play it forward.
     let worst = 0;
     for (const o of this.near) {
-      // In a bend, more room across the road (tails swing out), except passing in a let-by.
-      const reachL = reachL0 + (this.cooperating(me, o.car) ? 0 : this.bendRoom);
+      if (o.car === ignore) continue;
+      const reachL = this.sideRoom(me, o, 1);
       if (o.ds >= reachS) {
         worst = Math.max(worst, this.aheadCost(me, c, off0, o, reachS, reachL));
         continue;
@@ -231,6 +279,9 @@ export class TrafficPlanner {
       // moving away, or keeping our distance, is fine (but being this close still counts
       // against a lane).
       const gapNow = Math.abs(me.lateral - o.lat);
+      // You right behind us, in line: you're following, not alongside. Nothing to make room for
+      // (moving aside would only be scared of you, and let you by).
+      if (!o.ai && o.ds < 0 && gapNow < 2 * CONTACT.halfWidth) continue;
       // A car behind: judged against the speed we're really doing (not the one we'd like), and
       // drawing up on us faster if it's in our slipstream.
       const vMe = o.ds < 0 ? Math.max(0, me.speed) : v;
@@ -319,10 +370,12 @@ export class TrafficPlanner {
     planners.set(me, this);
     this.gather(me, cars);
     this.inBend = this.tightAhead(me.s);
-    this.crowded = this.near.some((o) => Math.abs(o.ds) < TRAFFIC.crowdAlong && Math.abs(o.lat - me.lateral) < TRAFFIC.crowdSide);
+    // (Only for another AI: with you it's not shy.)
+    this.crowded = this.near.some((o) => o.ai && Math.abs(o.ds) < TRAFFIC.crowdAlong && Math.abs(o.lat - me.lateral) < TRAFFIC.crowdSide);
     let k = 0;
     for (let d = 0; d <= 20; d += 5) k = Math.max(k, Math.abs(this.driver.curvatureAt(me.s + d)));
     this.bendRoom = TRAFFIC.bendMargin * k;
+    this.fighting = this.fight(me);
     // A slower car letting us by keeps to one side: we pass on the other, clear of the lane it's keeping to.
     const pass = this.passing(me);
     const sPass = me.s + TRAFFIC.roomLook;
@@ -342,7 +395,9 @@ export class TrafficPlanner {
     const options: LaneChoice[] = TRAFFIC.lanes.filter((o) => Math.abs(effective(o) - effective(off0)) > 0.5).map((offset) => ({ offset }));
     options.push({ offset: off0 });
     // A slower car ahead that isn't an AI: go by it on either side, wherever it is on the road.
-    const slow = this.near.find((o) => !o.ai && o.ds > 0 && o.ds < TRAFFIC.passAhead && o.v < v);
+    // (No new pass in the middle of a tight bend.)
+    const noPass = this.inBend && !this.choice.pass;
+    const slow = noPass ? undefined : this.near.find((o) => !o.ai && o.ds > 0 && o.ds < TRAFFIC.passAhead && o.v < v);
     if (slow) {
       for (const side of [1, -1]) {
         const at = slow.lat + side * this.passRoom();
@@ -366,8 +421,20 @@ export class TrafficPlanner {
       if (this.cost(me, aside, v, off0) < Infinity) {
         this.aside = true;
         this.choice = aside;
+        this.defendSide = 0;
         return aside;
       }
+    }
+    // You close behind, a bend coming: cover the inside of it (if that doesn't squeeze anyone
+    // else; you, behind, it's watching in defendLane()).
+    const def = this.defendLane(me);
+    if (def !== null) {
+      const c: LaneChoice = { offset: def };
+      if (this.cost(me, c, v, off0, this.defendCar) < Infinity) {
+        this.choice = c;
+        return c;
+      }
+      this.defendSide = 0;
     }
     let best = keep;
     let bestCost = Infinity;
@@ -378,6 +445,7 @@ export class TrafficPlanner {
         bestCost = k;
       }
     }
+    const sideSwap = (a: LaneChoice, b: LaneChoice) => !!a.pass && !!b.pass && a.pass.side !== b.pass.side;
     // Stick with a lane once picked: switch only for a clear gain, and while committed to a
     // pass only for a big one, unless the lane we're in has become unsafe.
     this.committed = Math.max(0, this.committed - TRAFFIC.planEvery);
@@ -399,10 +467,12 @@ export class TrafficPlanner {
     }
     // No new moves out from the line in the middle of a tight bend (unless where we are has
     // become unsafe); back towards it is fine.
-    if (keepCost !== Infinity && this.inBend && Math.abs(best.offset) > Math.abs(keep.offset) - 0.5) best = keep;
+    if (keepCost !== Infinity && this.inBend && (Math.abs(best.offset) > Math.abs(keep.offset) - 0.5 || sideSwap(best, keep))) best = keep;
     // Nothing near and no reason to be off the line: back onto it.
     if (this.near.length === 0) best = { offset: 0 };
-    if (best !== keep && Math.abs(best.offset - keep.offset) > 1 && this.near.length) this.committed = TRAFFIC.commitTime;
+    // (Going by a car on its other side is a real change too.)
+    const sideChange = !!best.pass !== !!keep.pass || (best.pass && keep.pass && best.pass.side !== keep.pass.side);
+    if (best !== keep && (Math.abs(best.offset - keep.offset) > 1 || sideChange) && this.near.length) this.committed = TRAFFIC.commitTime;
     this.choice = best;
     return best;
   }
@@ -427,7 +497,6 @@ export class TrafficPlanner {
     // Room across the road it wants before drawing alongside: more in a tight bend, where the
     // cars swing their tails out, and in any real bend more the faster it's closing.
     const reachS = 2 * CONTACT.halfLength + TRAFFIC.marginAlong;
-    const reachL0 = 2 * CONTACT.halfWidth + TRAFFIC.marginSide * (this.inBend ? 1 : 0.5);
     let bend = 0;
     for (let d = 0; d <= 20; d += 5) bend = Math.max(bend, Math.abs(this.driver.curvatureAt(me.s + d)));
     const closingMargin = bend > TRAFFIC.closingBend ? TRAFFIC.closingMargin : 0;
@@ -436,7 +505,11 @@ export class TrafficPlanner {
       const ds = along(me.s, o.s, this.L);
       if (ds <= 0 || ds > TRAFFIC.ahead) continue;
       const gap = ds - 2 * CONTACT.halfLength;
-      const reachL = reachL0 + (this.cooperating(me, o) ? 0 : this.bendRoom) + Math.min(TRAFFIC.closingMarginMax, closingMargin * Math.max(0, v - Math.max(0, o.speed) - 2));
+      const human = !aiCars.has(o);
+      let reachL = this.sideRoom(me, { ai: !human, car: o }, this.inBend ? 1 : 0.5) + Math.min(TRAFFIC.closingMarginMax, closingMargin * Math.max(0, v - Math.max(0, o.speed) - 2));
+      // The car we're going by (you): clear of it once we've the room we keep from it (keepOut()
+      // holds us there), or we'd never draw alongside.
+      if (this.choice.pass && this.choice.pass.car === o) reachL = Math.min(reachL, this.passRoom() - TRAFFIC.passSlack);
       const overlapNow = Math.abs(o.lateral - me.lateral) < reachL;
       // Right in front of us as we are now: brake if we must, whatever the plan says.
       const closingNow = v - Math.max(0, o.speed);
@@ -445,7 +518,8 @@ export class TrafficPlanner {
       // pass, we don't hold back for it).
       const inWay = (gap < 2 && overlapNow) || this.wouldHit(me, this.choice, lane, this.toNear(o, ds), reachS, reachL);
       if (!inWay) continue;
-      const want = TRAFFIC.gapBase + TRAFFIC.gapTime * v;
+      // (Right up behind you, in your tow, ready to pounce; further back behind another AI.)
+      const want = TRAFFIC.gapBase + (human ? TRAFFIC.gapTimeHuman : TRAFFIC.gapTime) * v;
       cap = Math.min(cap, Math.max(0, o.speed) + (gap - want) * TRAFFIC.gapGain);
     }
     // Held up behind a slower car that isn't an AI: after a while, push to get by.
@@ -479,6 +553,8 @@ export class TrafficPlanner {
     let lo = -Infinity;
     let hi = Infinity;
     const room = 2 * CONTACT.halfWidth + TRAFFIC.keepGap + this.bendRoom;
+    // You get a car's width and a little: hard, but fair.
+    const roomHuman = 2 * CONTACT.halfWidth + TRAFFIC.keepGapHuman + this.bendRoom;
     const reach = 2 * CONTACT.halfLength + TRAFFIC.keepReach;
     for (const o of cars) {
       if (o === me || Math.abs(o.y - me.y) > CONTACT.heightGap) continue;
@@ -491,8 +567,9 @@ export class TrafficPlanner {
       if (ds > reach || ds < -behindReach) continue;
       // Right in line, nose to tail: that's for following, not for room beside.
       if (Math.abs(side) < CONTACT.halfWidth) continue;
-      if (side > 0) hi = Math.min(hi, Math.max(o.lateral - room, me.lateral));
-      else lo = Math.max(lo, Math.min(o.lateral + room, me.lateral));
+      const r = aiCars.has(o) ? room : roomHuman;
+      if (side > 0) hi = Math.min(hi, Math.max(o.lateral - r, me.lateral));
+      else lo = Math.max(lo, Math.min(o.lateral + r, me.lateral));
     }
     // Passing a car that isn't an AI: stay on our side of it, with room.
     const pass = this.choice.pass;
@@ -508,6 +585,172 @@ export class TrafficPlanner {
     // Squeezed between two: the middle of the gap.
     if (lo > hi) lo = hi = (lo + hi) / 2;
     return { lo, hi };
+  }
+
+  /**
+   * The next bend that the line really slows for (by TRAFFIC.cornerDrop m/s,
+   * within TRAFFIC.defendLook m of `s`): how far ahead its braking starts
+   * (0 if already braking for it) and its slowest point (the apex), and which
+   * side its inside is on (+1 left). Null if none.
+   */
+  private nextCorner(s: number): { brake: number; apex: number; side: number } | null {
+    const T = TRAFFIC;
+    const step = 5;
+    let top = this.driver.speedAt(s);
+    let brake = 0;
+    let prev = top;
+    let found = false;
+    let apex = -1;
+    for (let d = step; d <= T.defendLook; d += step) {
+      const v = this.driver.speedAt(s + d);
+      if (!found) {
+        if (v >= top) {
+          top = v;
+          brake = d;
+        } else if (top - v >= T.cornerDrop) found = true;
+      } else if (v > prev + 0.01) {
+        apex = d - step;
+        break;
+      }
+      prev = v;
+    }
+    if (!found) return null;
+    if (apex < 0) apex = T.defendLook;
+    // Its inside: the way the tightest part of it turns.
+    let k = 0;
+    for (let d = Math.max(0, apex - 25); d <= apex + 10; d += 5) {
+      const c = this.driver.curvatureAt(s + d);
+      if (Math.abs(c) > Math.abs(k)) k = c;
+    }
+    if (k === 0) return null;
+    // + curvature is a right-hander: its inside is on the right.
+    return { brake, apex, side: k < 0 ? 1 : -1 };
+  }
+
+  /**
+   * Defending against a car that isn't an AI (you) close behind: the lane
+   * that covers the inside of the bend coming up (as far to that side as
+   * there's room), or null. One move, made before the braking point once
+   * you're close enough to try one; then held to the apex (no weaving), unless
+   * you drop well back or get by. Not if you're already alongside on that
+   * side (plan() checks the move doesn't squeeze you).
+   */
+  private defendLane(me: CarState): number | null {
+    const T = TRAFFIC;
+    if (this.defendSide !== 0) {
+      const o = this.near.find((n) => n.car === this.defendCar);
+      // Over once we're back on the line past the apex, or once you've dropped well back or
+      // got by; and if you've got your nose up alongside on the inside before we're across,
+      // it's your line (keepOut()).
+      const overlap = o && o.ds > -(T.keepBehind + Math.max(0, o.v - me.speed) * T.keepClosing) && (o.lat - me.lateral) * this.defendSide > CONTACT.halfWidth;
+      if (along(me.s, this.defendEnd + T.defendPast, this.L) < 0 || !o || o.ds < -T.defendDrop || o.ds > CONTACT.halfLength || overlap) {
+        this.stopDefending(me);
+        return null;
+      }
+      return this.defendOffset;
+    }
+    // The nearest car behind that isn't an AI, and how close it is (bumper to bumper).
+    let atk: Near | null = null;
+    for (const o of this.near) if (!o.ai && o.ds < 0 && (!atk || o.ds > atk.ds)) atk = o;
+    if (!atk) return null;
+    const gap = -atk.ds - 2 * CONTACT.halfLength;
+    if (gap > T.defendWithin) return null;
+    const bend = this.nextCorner(me.s);
+    if (!bend) return null;
+    const apexS = me.s + bend.apex;
+    if (!isNaN(this.defendedApex) && Math.abs(along(this.defendedApex, apexS, this.L)) < 40) return null;
+    // Before the braking point (not under braking), but not long before it (at the speed we'll
+    // be doing on the way there).
+    const sB = me.s + bend.brake;
+    const t = bend.brake / Math.max(5, (Math.max(0, me.speed) + this.driver.speedAt(sB)) / 2);
+    if (t < T.defendLatest || t > T.defendLead) return null;
+    // Close enough by then to try a move (sooner if you're already pulling out to the inside).
+    const pulling = (atk.lat - me.lateral) * bend.side > CONTACT.halfWidth;
+    if (gap - Math.max(0, atk.v - me.speed) * t > T.defendGap * (pulling ? T.defendPulling : 1)) return null;
+    // The lane that has us on the inside at the braking point (as far over as there's room):
+    // not needed if the line is already there (no room left for a car down the inside).
+    const offset = this.driver.lateralAt(sB, bend.side * 99) - this.driver.lateralAt(sB);
+    if (Math.abs(offset) < T.defendMin) return null;
+    // Only a move it can make in time, smoothly (half a move only loses time: the smoothest
+    // way across in time t has a peak sideways pull of 6 × across / t²), on a straight run to the
+    // braking point with the car settled (not out of the bend before, or in twisty stuff, where
+    // one bend runs into the next and the line covers itself).
+    // (The line's own sweep across the road comes free: it's the move off it that takes time.)
+    const across = Math.abs(offset - (me.lateral - this.driver.lateralAt(me.s)));
+    let k = 0;
+    for (let d = 0; d <= bend.brake; d += 5) k = Math.max(k, Math.abs(this.driver.curvatureAt(me.s + d)));
+    if (this.inBend || k > T.defendStraight || me.slip > T.defendSlip || 6 * across > T.defendAccel * t * t) return null;
+    // And only where it's worth it: a bend you'd brake hard into (the inside of a faster one is
+    // a slower way round, and passes there on the brakes are rare), or any bend you're already
+    // pulling out to go down the inside of (it sees the move coming).
+    const slow = this.driver.speedAt(me.s + bend.apex) <= this.driver.speedAt(sB) * T.defendSlow;
+    if (!slow && !pulling) return null;
+    this.defendSide = bend.side;
+    this.defendEnd = apexS;
+    this.defendCar = atk.car;
+    this.defendedApex = apexS;
+    this.defendOffset = offset;
+    this.defendFrom = me.s;
+    this.defendOff0 = me.lateral - this.driver.lateralAt(me.s);
+    this.defendBrake = sB;
+    return offset;
+  }
+
+  /** Done covering the inside: carry on from where we are (plan() takes it from there). */
+  private stopDefending(me: CarState): void {
+    this.defendSide = 0;
+    this.choice = { offset: me.lateral - this.driver.lateralAt(me.s) };
+  }
+
+  /**
+   * The path covering the inside (m left of the centre, at s), or null if
+   * not defending: easing from where we were onto the inside of the bend by
+   * the braking point (as far over as there's room, less TRAFFIC.coverGap),
+   * along it to the apex, and back onto the line over TRAFFIC.defendPast m.
+   * Smooth all the way, so it's no slower than it must be.
+   */
+  coverPath(): ((s: number) => number) | null {
+    if (this.defendSide === 0) return null;
+    const T = TRAFFIC;
+    const L = this.L;
+    const side = this.defendSide;
+    const from = this.defendFrom;
+    const toBrake = Math.max(1, along(from, this.defendBrake, L));
+    const toApex = along(from, this.defendEnd, L);
+    const smooth = (u: number) => {
+      const x = clamp(u, 0, 1);
+      return x * x * (3 - 2 * x);
+    };
+    const off0 = this.defendOff0;
+    return (s: number) => {
+      const a = along(from, s, L);
+      const line = this.driver.lateralAt(s);
+      let u = smooth(a / toBrake);
+      if (a > toApex) u *= 1 - smooth((a - toApex) / T.defendPast);
+      const inside = Math.max(0, (this.driver.lateralAt(s, side * 99) - side * T.coverGap - line) * side);
+      return line + off0 * (1 - smooth(a / toBrake)) + side * inside * u;
+    };
+  }
+
+  /**
+   * Fighting a car that isn't an AI (you) for a place: alongside it, or with
+   * it just ahead and us on the inside of the bend coming up, clear of it
+   * across the road (not right behind it, where braking late would only run
+   * into it).
+   */
+  private fight(me: CarState): boolean {
+    const T = TRAFFIC;
+    const clear = 2 * CONTACT.halfWidth + T.fightSide;
+    let bend: { side: number } | null | undefined;
+    for (const o of this.near) {
+      if (o.ai || o.ds < -2 * CONTACT.halfLength || o.ds > T.fightAhead) continue;
+      const side = me.lateral - o.lat;
+      if (Math.abs(side) < clear) continue;
+      if (o.ds < 2 * CONTACT.halfLength) return true;
+      if (bend === undefined) bend = this.nextCorner(me.s);
+      if (bend && side * bend.side > 0) return true;
+    }
+    return false;
   }
 
   /**

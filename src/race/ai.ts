@@ -191,6 +191,13 @@ export class AiDriver {
       this.lane = kept;
       this.laneVel = 0;
     }
+    // Well away from its lane (held off it to keep room from a car, going by one, or knocked):
+    // the lane is where it is, so it eases back from there rather than swinging straight across.
+    const off = st.lateral - this.driver.lateralAt(st.s);
+    if (Math.abs(off - this.lane) > AI.laneSync) {
+      this.lane = off - Math.sign(off - this.lane) * AI.laneSync;
+      this.laneVel = 0;
+    }
 
     // Speed: the plan, held back to keep a gap behind the car in our way.
     const cap = this.planner.followSpeed(st, cars, this.lane, dt);
@@ -209,15 +216,22 @@ export class AiDriver {
     if (this.planner.pushing) this.car.draft = Math.max(this.car.draft, TRAFFIC.pushTow);
     // With a car beside us, its room: we bend our path round it rather than turn in on it.
     const keep = this.planner.keepOut(st, cars);
-    const inp = this.driver.drive(st, this.lane, this.inp, pace, cap, this.car.draft, keep);
-    // Sliding (knocked, or ran wide): off the throttle until it gathers itself. No braking,
+    // Covering the inside against you: a path of its own (and the lane follows where it is, to
+    // carry on from there after). Fighting you for a place into a bend: later on the brakes.
+    const route = this.planner.coverPath();
+    if (route) {
+      this.lane = st.lateral - this.driver.lateralAt(st.s);
+      this.laneVel = 0;
+    }
+    const inp = this.driver.drive(st, this.lane, this.inp, { pace, cap, tow: this.car.draft, keep, late: this.planner.fighting, route });
+    // Sliding (knocked, or ran wide): easing off the throttle until it gathers itself. No braking,
     // which would only surprise the car behind. (Being off its path is already taken care of:
     // the speed then comes from the path it's really on.)
     this.recover = st.slip > TRAFFIC.recoverSlip ? TRAFFIC.recoverTime : Math.max(0, this.recover - dt);
     // (Backing out of a side-by-side it can't win is in the cap: a touch slower than the other
     // car.) Letting a quicker car by, once it's pulled out beside us: lift a little, even while
     // accelerating.
-    if (this.recover > 0) inp.throttle = 0;
+    if (this.recover > 0) inp.throttle = Math.min(inp.throttle, TRAFFIC.recoverThrottle);
     else if (this.planner.liftForPass) inp.throttle = Math.min(inp.throttle, TRAFFIC.letByThrottle);
     // Closing much too fast on it anyway (it braked hard, or spun): brake now.
     const need = this.planner.brakeNeed;

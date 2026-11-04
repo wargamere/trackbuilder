@@ -71,6 +71,8 @@ export const AI = {
   startSpread: 0.005,
   /** Share of its pace after the finish (it carries on, not parked on the line). */
   afterFinishPace: 0.85,
+  /** More than this far (m) off the lane it means to drive, it takes the lane to be (about) where it is. */
+  laneSync: 1,
 } as const;
 
 /** Car-to-car contact (car/contact.ts). */
@@ -130,6 +132,14 @@ export const DRIVER = {
   /** …looking this far along it (m), at points this far apart. */
   pathLook: 100,
   pathStep: 6,
+  /** A path's bends are measured on it smoothed over this far either side (m): about how far ahead the steering looks. */
+  pathSmooth: 5,
+  /** On a path of its own (covering the inside of a bend): this share of its grip in the bends, and of the speed that gives. */
+  routeGrip: 0.98,
+  routeSpeed: 1,
+  /** Fighting for a place (see TRAFFIC.fightAhead): it brakes with this much more of the brakes (a share), up to this much. */
+  lateBrake: 0.2,
+  lateBrakeMax: 1,
 } as const;
 
 /** Racing in traffic (race/traffic.ts). */
@@ -183,6 +193,8 @@ export const TRAFFIC = {
   passClose: 10,
   passGap: 0.8,
   passStep: 1.5,
+  /** …and counts as clear of it (not following it any more) this much (m) short of that room. */
+  passSlack: 0.3,
   /**
    * Push to pass (a help for overtaking you): held up (below pushBelow of its
    * plan, with a slower car that isn't an AI within pushWithin m ahead) for
@@ -246,9 +258,10 @@ export const TRAFFIC = {
   yieldDrop: 2,
   yieldMinSpeed: 6,
   yieldTime: 1,
-  /** Sliding sideways faster than this (m/s): off the throttle, for this long (s) after. */
+  /** Sliding sideways faster than this (m/s): at most this much throttle, for this long (s) after. */
   recoverSlip: 3,
   recoverTime: 0.4,
+  recoverThrottle: 0.35,
   /** Another (non-AI) car's drift across the road eases off over this long (s) in the prediction. */
   driftEase: 0.8,
   /** No new lane changes in a bend tighter than this (1/m), or this close to one (m). */
@@ -262,6 +275,52 @@ export const TRAFFIC = {
   emergencyDecel: 6,
   /** Rejoin the road only when no car is coming within this far behind (m). */
   rejoinClear: 60,
+  /**
+   * Defending against a car that isn't an AI (you): with it close behind
+   * (bumper to bumper within defendWithin m, and set to be within defendGap m
+   * by the braking point, at the rate it's closing), it moves over to the
+   * inside of the bend coming up (one that slows the line by at least
+   * cornerDrop m/s, within defendLook m) and holds it to the apex. One move
+   * per bend, made between defendLead and defendLatest s before the braking
+   * point (not under braking), and only if it can get across in time with at
+   * most defendAccel m/s² of sideways pull. It gives up once the car has
+   * dropped defendDrop m back.
+   */
+  defendWithin: 20,
+  defendGap: 5,
+  /** (…× this if you're already pulling out to the inside.) Not if the line already has it within this much (m) of the inside at the braking point. */
+  defendPulling: 1.6,
+  defendMin: 1.5,
+  /** …and only into a bend that slows the line to this share of its speed at the braking point, unless you're already pulling out to the inside. */
+  defendSlow: 0.72,
+  /** Covering the inside it keeps this much (m) further in from the edge than a lane would (not quite on the kerb: no room for a car, either way), and eases back onto the line over defendPast m after the apex. */
+  coverGap: 0.4,
+  defendPast: 25,
+  defendLook: 220,
+  cornerDrop: 6,
+  defendLead: 4,
+  defendLatest: 1,
+  defendAccel: 7,
+  /** …on a run to the braking point no more curved than this (1/m), with the car sliding no more than this (m/s). */
+  defendStraight: 1 / 70,
+  defendSlip: 1.5,
+  defendDrop: 30,
+  /**
+   * Hard but fair with you alongside: it leaves you a car's width and this
+   * much (m) (and the extra for a bend), not the wider berth (keepGap) it
+   * gives another AI.
+   */
+  keepGapHuman: 0.7,
+  /** …and isn't shy of you: it follows you closer, this many seconds behind (in your tow, ready to pounce), instead of gapTime. */
+  gapTimeHuman: 0.15,
+  /**
+   * Fighting you for a place into a bend: alongside (or with you up to
+   * fightAhead m ahead, centre to centre, and it on the inside of the bend,
+   * clear of you across the road by fightSide m), it goes later on the brakes
+   * (see DRIVER.lateBrake).
+   */
+  fightAhead: 9,
+  fightSide: 0.3,
 } as const;
 
 /**
