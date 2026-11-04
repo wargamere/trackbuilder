@@ -32,6 +32,8 @@ export class Hud {
   private readonly debug: HTMLElement;
   private readonly medals: HTMLElement;
   private readonly pos: HTMLElement;
+  private readonly draft: HTMLElement;
+  private draftOn = false;
   private readonly posValue: HTMLElement;
   private medalKey = '';
   readonly minimap = new Minimap();
@@ -72,9 +74,10 @@ export class Hud {
     this.speedValue = h('span', { class: 'speed-value', text: '0' });
     this.speedUnit = h('span', { class: 'speed-unit', text: STR.race.speedUnit });
     const speed = h('div', { class: 'hud-speed' }, this.speedValue, this.speedUnit);
+    this.draft = h('div', { class: 'hud-draft', text: STR.race.slipstream });
     this.hint = h('div', { class: 'hud-hint' });
     this.debug = h('div', { class: 'hud-debug' });
-    this.root = h('div', { class: 'screen hud' }, top, timer, this.minimap.root, this.center, speed, this.hint, this.debug);
+    this.root = h('div', { class: 'screen hud' }, top, timer, this.minimap.root, this.center, speed, this.draft, this.hint, this.debug);
   }
 
   /** Medal targets under the timer; the ones your best lap has won are lit. */
@@ -145,6 +148,13 @@ export class Hud {
     if (pos === null) return;
     const t = fmt(STR.race.positionValue, { pos, n: of });
     if (this.posValue.textContent !== t) this.posValue.textContent = t;
+  }
+
+  /** Lights the "Slipstream" tag while you're in the slipstream of a car ahead. */
+  setSlipstream(on: boolean): void {
+    if (on === this.draftOn) return;
+    this.draftOn = on;
+    this.draft.classList.toggle('on', on);
   }
 
   /** Shows or hides the minimap (Display settings). */

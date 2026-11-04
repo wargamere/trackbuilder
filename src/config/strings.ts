@@ -315,6 +315,7 @@ export const STR = {
     hintRestartKeyboard: ' · R R restart lap',
     hintRestartGamepad: ' · Back Back restart lap',
     lapRestarted: 'Lap restarted',
+    slipstream: 'SLIPSTREAM',
     qualifying: 'QUALIFYING',
     qualifyingLap: 'QUALIFYING · LAP {n}/{total}',
     qualifyingGo: 'Qualifying: {n} timed laps. Your best clean lap sets your grid slot.',

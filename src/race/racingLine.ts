@@ -21,6 +21,15 @@ export interface RacingLine {
   /** How far left (hi) and right (lo, negative) of the centre a car may drive: the road and its kerbs, minus the car's half-width. */
   lo: Float32Array;
   hi: Float32Array;
+  /**
+   * Room beside the line, to its left and right (m), smoothed into a gentle,
+   * cautious envelope. Paths beside the line are the line shifted sideways by
+   * at most this much, so they're as smooth as the line is. (Shifting into the
+   * raw road edge instead would copy every wiggle of the centre line and every
+   * step where a kerb starts, and a car at the limit can't follow those.)
+   */
+  roomLeft: Float32Array;
+  roomRight: Float32Array;
 }
 
 const cache = new WeakMap<Track, RacingLine>();
@@ -148,7 +157,35 @@ export function racingLine(track: Track): RacingLine {
   }
   const curvature = new Float32Array(n);
   for (let i = 0; i < n; i++) curvature[i] = (raw[wrapI(i - 1)] + 2 * raw[i] + raw[wrapI(i + 1)]) / 4;
-  const line: RacingLine = { offset, curvature, ds, lo, hi };
+  // A cautious, smooth envelope of the road: the narrowest it gets nearby, then averaged.
+  const W = RACING_LINE.envelope;
+  const erode = (arr: Float32Array, pick: (a: number, b: number) => number) => {
+    const out = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      let v = arr[i];
+      for (let o = -W; o <= W; o++) v = pick(v, arr[wrapI(i + o)]);
+      out[i] = v;
+    }
+    return out;
+  };
+  const blur = (arr: Float32Array) => {
+    const out = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      let sum = 0;
+      for (let o = -W; o <= W; o++) sum += arr[wrapI(i + o)];
+      out[i] = sum / (2 * W + 1);
+    }
+    return out;
+  };
+  const spareLeft = new Float32Array(n);
+  const spareRight = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    spareLeft[i] = Math.max(0, hi[i] - offset[i]);
+    spareRight[i] = Math.max(0, offset[i] - lo[i]);
+  }
+  const roomLeft = blur(erode(spareLeft, Math.min));
+  const roomRight = blur(erode(spareRight, Math.min));
+  const line: RacingLine = { offset, curvature, ds, lo, hi, roomLeft, roomRight };
   cache.set(track, line);
   return line;
 }
@@ -161,43 +198,65 @@ export interface Pace {
 }
 
 /**
- * The speed to drive at each sample of the line: as fast as the corner allows
- * (`grip` of the tyres' sideways grip, plus the help from a bank that leans
- * into the turn, as the physics gives it), then limited by how quickly the car
- * can speed up out of the corners before and must slow down for the ones
- * after (engine, drag, slopes and `brake` of the brakes).
+ * Sideways acceleration the car can hold at `grip` of the tyres' grip in a
+ * bend of curvature `k` (signed like a yaw rate) on a road banked `bank`
+ * (rad, + = left side up): the tyres plus the help from a bank that leans
+ * into the turn, as the physics gives it.
  */
-export function speedProfile(track: Track, line: RacingLine, pace: Pace): Float32Array {
+export function cornerGrip(k: number, bank: number, grip: number): number {
+  const H = HANDLING;
+  const assist = G * Math.sin(Math.abs(bank)) * (Math.sign(bank) === Math.sign(k) ? 1 : -0.5);
+  return Math.max(H.maxLateralAccel * 0.5, H.maxLateralAccel + assist * H.bankGripFactor) * grip;
+}
+
+/** Deceleration available from the brakes at `brake` of their force, plus drag, at speed v on slope `grade`. */
+export const brakingDecel = (brake: number, v: number, grade: number): number =>
+  HANDLING.brakeDecel * brake + HANDLING.rollingDrag + HANDLING.aeroDrag * v * v + G * HANDLING.slopeFactor * grade;
+
+/** Speeds along the line (m/s per sample). */
+export interface SpeedPlan {
+  /** What the car can actually do: as fast as each corner allows, reached by accelerating out of the one before and braking for the next. */
+  speed: Float32Array;
+  /** Just the corner and braking limits (no "can it get up to that speed" pass): drive flat out below it. */
+  limit: Float32Array;
+}
+
+/**
+ * The speeds to drive at along the line: as fast as each corner allows (see
+ * cornerGrip), then limited by how quickly the car can speed up out of the
+ * corners before (engine, drag, slopes) and must slow down for the ones after
+ * (`brake` of the brakes, drag, slopes).
+ */
+export function speedProfile(track: Track, line: RacingLine, pace: Pace): SpeedPlan {
   const H = HANDLING;
   const c = track.center;
   const n = c.points.length;
   const v = new Float32Array(n);
   for (let i = 0; i < n; i++) {
     const k = line.curvature[i];
-    const bank = c.bank[i];
-    const assist = G * Math.sin(Math.abs(bank)) * (Math.sign(bank) === Math.sign(k) ? 1 : -0.5);
-    const lat = Math.max(H.maxLateralAccel * 0.5, H.maxLateralAccel + assist * H.bankGripFactor) * pace.grip;
-    v[i] = Math.min(pace.maxSpeed, Math.sqrt(lat / Math.max(Math.abs(k), 1e-5)));
+    v[i] = Math.min(pace.maxSpeed, Math.sqrt(cornerGrip(k, c.bank[i], pace.grip) / Math.max(Math.abs(k), 1e-5)));
   }
-  const slope = (i: number) => G * H.slopeFactor * c.grade[i];
-  // Twice round, so the limits carry across the start line.
+  const brakeBack = (arr: Float32Array) => {
+    // Twice round, so the limits carry across the start line.
+    for (let round = 0; round < 2; round++) {
+      for (let i = n - 1; i >= 0; i--) {
+        const j = (i + 1) % n;
+        const reach = Math.sqrt(Math.max(0, arr[j] * arr[j] + 2 * brakingDecel(pace.brake, arr[j], c.grade[i]) * line.ds[i]));
+        if (reach < arr[i]) arr[i] = reach;
+      }
+    }
+  };
+  const limit = Float32Array.from(v);
+  brakeBack(limit);
   for (let round = 0; round < 2; round++) {
     for (let i = 0; i < n; i++) {
       const j = (i + 1) % n;
       const vi = v[i];
-      const acc = H.engineAccel * Math.max(0, 1 - vi / H.maxSpeed) - H.rollingDrag - H.aeroDrag * vi * vi - slope(i);
+      const acc = H.engineAccel * Math.max(0, 1 - vi / H.maxSpeed) - H.rollingDrag - H.aeroDrag * vi * vi - G * H.slopeFactor * c.grade[i];
       const reach = Math.sqrt(Math.max(0, vi * vi + 2 * acc * line.ds[i]));
       if (reach < v[j]) v[j] = reach;
     }
   }
-  for (let round = 0; round < 2; round++) {
-    for (let i = n - 1; i >= 0; i--) {
-      const j = (i + 1) % n;
-      const vj = v[j];
-      const dec = H.brakeDecel * pace.brake + H.rollingDrag + H.aeroDrag * vj * vj + slope(i);
-      const reach = Math.sqrt(Math.max(0, vj * vj + 2 * dec * line.ds[i]));
-      if (reach < v[i]) v[i] = reach;
-    }
-  }
-  return v;
+  brakeBack(v);
+  return { speed: v, limit };
 }

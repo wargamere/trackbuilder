@@ -159,7 +159,7 @@ export function collideCars(a: CarState, b: CarState): number {
   a.vz -= iz;
   b.vx += ix;
   b.vz += iz;
-  a.yawRate -= (rax * iz - raz * ix) / INERTIA;
-  b.yawRate += (rbx * iz - rbz * ix) / INERTIA;
+  a.yawRate -= (CONTACT.spin * (rax * iz - raz * ix)) / INERTIA;
+  b.yawRate += (CONTACT.spin * (rbx * iz - rbz * ix)) / INERTIA;
   return closing;
 }

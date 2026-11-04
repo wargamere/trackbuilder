@@ -1,12 +1,13 @@
 import { CarPhysics, NO_INPUT, type CarState, type DriveInput } from '../car/physics.ts';
 import { HANDLING } from '../config/handling.ts';
-import { AI, CONTACT } from '../config/race.ts';
+import { AI, TRAFFIC } from '../config/race.ts';
 import { clamp } from '../core/math.ts';
 import { edgeOffsets } from '../track/spline.ts';
 import type { Track } from '../track/track.ts';
 import { RacingDriver } from './driver.ts';
 import type { Pace } from './racingLine.ts';
 import { RaceSession } from './session.ts';
+import { aiCars, TrafficPlanner } from './traffic.ts';
 
 /** How hard an AI with a difficulty from 0 to 1 drives (see AI.pace). */
 export function aiPace(difficulty: number): Pace {
@@ -76,19 +77,12 @@ export function aiField(count: number, difficulty: number, paints: readonly numb
   }));
 }
 
-/** Signed distance along a loop of length `L` from `a` to `b`, in (-L/2, L/2]. */
-const along = (a: number, b: number, L: number) => {
-  let d = (b - a) % L;
-  if (d > L / 2) d -= L;
-  if (d <= -L / 2) d += L;
-  return d;
-};
-
 /**
  * An AI opponent: its own car, lap counter and a driver. It drives the racing
- * line at a pace set by its difficulty, moves over to pass a slower car in its
- * way (to whichever side has more room), lifts rather than ram one it can't
- * get past, and puts itself back on the road if it gets stuck.
+ * line at a pace set by its difficulty and races the cars around it through a
+ * TrafficPlanner: it picks a lane to pass in (or holds its own), never turns
+ * into a car alongside, keeps a safe gap behind a car it can't pass yet, and
+ * puts itself back on the road if it gets stuck (once nobody is coming).
  */
 export class AiDriver {
   readonly car: CarPhysics;
@@ -98,41 +92,33 @@ export class AiDriver {
   readonly difficulty: number;
   /** Where it started (m along the track; negative = behind the line). */
   readonly start: number;
-  private readonly track: Track;
   private readonly driver: RacingDriver;
+  private readonly planner: TrafficPlanner;
   private readonly inp: DriveInput = { ...NO_INPUT };
-  /** How far off the racing line it is driving (to pass), and where it's heading. */
+  /** How far off the racing line it is driving now (+ = left). */
   private lane = 0;
-  private laneTarget = 0;
-  /** Passing: on which side of the line (+1 left, -1 right, 0 = not passing), and for how much longer. */
-  private passSide = 0;
-  private passTimer = 0;
-  /** How long a car ahead has held us well below our pace. */
-  private heldUpFor = 0;
+  /** How fast `lane` is changing (m/s). */
+  private laneVel = 0;
+  private planIn = 0;
   private stuck = 0;
+  /** Seconds left taking it easy after a slide or a knock. */
+  private recover = 0;
 
   constructor(track: Track, opts: { name: string; paint: number; difficulty: number; laps: number; slot: number }) {
-    this.track = track;
     this.name = opts.name;
     this.paint = opts.paint;
     this.difficulty = opts.difficulty;
     this.driver = new RacingDriver(track, aiPace(opts.difficulty));
+    this.planner = new TrafficPlanner(this.driver, track, opts.difficulty);
     this.car = new CarPhysics(track);
+    aiCars.set(this.car.state, opts.difficulty);
     const g = gridPlace(track, opts.slot);
     this.start = g.s;
     this.car.placeAt(g.s, g.lateral);
-    // Off the grid slot, it eases over onto the line.
+    // Off the grid it keeps its slot's offset from the line until the planner sees room to move over.
     this.lane = g.lateral - this.driver.lateralAt(g.s);
+    this.planner.choice = { offset: this.lane };
     this.session = new RaceSession(track.center.length, null, opts.laps, track.center.width);
-  }
-
-  /** Is the racing line gentle over the next stretch (fit to start a pass on)? */
-  private gentleAhead(s: number): boolean {
-    const c = this.track.center;
-    for (let d = 0; d <= AI.passClearAhead; d += c.spacing) {
-      if (Math.abs(this.driver.curvatureAt(s + d)) > AI.passMaxCurvature) return false;
-    }
-    return true;
   }
 
   /** Input for the next tick. `cars` are all the cars in the race (this one included). */
@@ -140,70 +126,58 @@ export class AiDriver {
     const st = this.car.state;
     const s = this.session;
     if (!s.canDrive) return NO_INPUT;
-    const c = this.track.center;
-    const L = c.length;
     const finished = s.phase === 'finished';
 
-    // Traffic: the nearest car ahead that is in our way: beside where we are now, or beside
-    // where we mean to be by the time we'd catch it (our paths may converge across the road).
-    let ahead: CarState | null = null;
-    let gap = Infinity;
-    for (const o of cars) {
-      if (o === st || Math.abs(o.y - st.y) > CONTACT.heightGap) continue;
-      const ds = along(st.s, o.s, L);
-      if (ds <= 0 || ds > AI.lookAhead || ds >= gap) continue;
-      const catchIn = Math.min(3, Math.max(0, ds - 2 * CONTACT.halfLength) / Math.max(0.5, st.speed - o.speed));
-      const meet = o.s + Math.max(0, o.speed) * catchIn;
-      const inWay = (lat: number) => Math.abs(o.lateral - lat) < AI.sameLine;
-      if (!inWay(st.lateral) && !inWay(this.driver.lateralAt(o.s, this.lane)) && !inWay(this.driver.lateralAt(meet, this.lane))) continue;
-      ahead = o;
-      gap = ds;
+    // Which lane (a few dozen times a second), then ease across towards it.
+    this.planIn -= dt;
+    if (this.planIn <= 0) {
+      this.planIn = TRAFFIC.planEvery;
+      this.planner.plan(st, cars, this.lane);
     }
-    // Passing. Only a car that's clearly slower (we're catching it fast, or it has held us
-    // well below our own pace for a while), and only starting where the line ahead is
-    // gentle, not into a corner. The pass runs beside the racing line (so it bends like the
-    // line does) on the side where the car ahead leaves more room, and we keep to that side
-    // while anyone is alongside, so we never swing back into a car we're passing.
-    const closing = ahead ? st.speed - ahead.speed : 0;
-    const heldUp = !!ahead && gap < AI.heldUpGap && this.driver.speedAt(st.s) - st.speed > AI.heldUpBy;
-    this.heldUpFor = heldUp ? this.heldUpFor + dt : 0;
-    const wantPass = !!ahead && !finished && (closing > AI.passClosing || this.heldUpFor > AI.heldUpSeconds);
-    if (ahead && wantPass && (this.passTimer > 0 || this.gentleAhead(st.s))) {
-      if (this.passSide === 0) {
-        const roomLeft = this.driver.lateralAt(ahead.s, 99) - ahead.lateral;
-        const roomRight = ahead.lateral - this.driver.lateralAt(ahead.s, -99);
-        this.passSide = roomLeft >= roomRight ? 1 : -1;
-      }
-      this.passTimer = AI.passHold;
-    } else if (this.passTimer > 0) {
-      const alongside = cars.some((o) => o !== st && Math.abs(along(st.s, o.s, L)) < 2 * CONTACT.halfLength + 2 && Math.abs(o.lateral - st.lateral) < AI.passOffset + 1.5 && Math.abs(o.y - st.y) < CONTACT.heightGap);
-      if (!alongside) this.passTimer -= dt;
-      if (this.passTimer <= 0) this.passSide = 0;
-    }
-    this.laneTarget = this.passTimer > 0 ? this.passSide * AI.passOffset : 0;
-    const step = AI.laneRate * dt;
-    this.lane += clamp(this.laneTarget - this.lane, -step, step);
-
-    // After the finish it carries on a little slower (not parked on the line for others to hit).
-    const inp = this.driver.drive(st, this.lane, this.inp, finished ? AI.afterFinishPace : 1);
-    // Closing on the car in our way: slow down to its speed before we'd touch it. Lift when
-    // that needs a gentle slowdown, brake for a firmer one. Following at its speed needs nothing.
-    if (ahead) {
-      const closingNow = st.speed - ahead.speed;
-      const gapLeft = Math.max(0.3, gap - 2 * CONTACT.halfLength - AI.followGap);
-      const need = closingNow > 0.1 ? (closingNow * closingNow) / (2 * gapLeft) : 0;
-      if (need > AI.liftDecel) inp.throttle = 0;
-      if (need > AI.brakeDecel) inp.brake = Math.max(inp.brake, clamp(need / (HANDLING.brakeDecel * 0.9), 0.25, 1));
+    const want = this.planner.choice.offset;
+    // Move across smoothly: ease into the move and out of it (a kink at speed would unsettle
+    // the car), at most laneRate sideways.
+    const T = TRAFFIC;
+    const accel = clamp(T.laneStiff * (want - this.lane) - 2 * Math.sqrt(T.laneStiff) * this.laneVel, -T.laneAccel, T.laneAccel);
+    this.laneVel = clamp(this.laneVel + accel * dt, -T.laneRate, T.laneRate);
+    this.lane += this.laneVel * dt;
+    // Stay within the room beside the line whatever the lane says.
+    const kept = this.driver.lateralAt(st.s, this.lane) - this.driver.lateralAt(st.s);
+    if (Math.abs(kept - this.lane) > 1e-6) {
+      this.lane = kept;
+      this.laneVel = 0;
     }
 
-    // Stuck against something (or spun into the grass): back onto the road.
+    // Speed: the plan, held back to keep a gap behind the car in our way.
+    const cap = this.planner.followSpeed(st, cars, this.lane, dt);
+    // After the finish it carries on a little slower (not parked on the line for others to hit);
+    // letting a quicker car by, it eases off a touch.
+    const pace = finished ? AI.afterFinishPace : this.planner.lettingBy ? TRAFFIC.letByEase : 1;
+    const inp = this.driver.drive(st, this.lane, this.inp, pace, cap);
+    // Sliding (knocked, or ran wide): off the throttle until it gathers itself. No braking,
+    // which would only surprise the car behind. (Being off its path is already taken care of:
+    // the speed then comes from the path it's really on.)
+    this.recover = st.slip > TRAFFIC.recoverSlip ? TRAFFIC.recoverTime : Math.max(0, this.recover - dt);
+    // Backing out of a side-by-side it can't win: coast, don't brake. Letting a quicker car
+    // by, once it's pulled out beside us: lift a little, even while accelerating.
+    if (this.recover > 0 || this.planner.yielding) inp.throttle = 0;
+    else if (this.planner.liftForPass) inp.throttle = Math.min(inp.throttle, TRAFFIC.letByThrottle);
+    // Closing much too fast on it anyway (it braked hard, or spun): brake now.
+    const need = this.planner.brakeNeed;
+    if (need > TRAFFIC.emergencyDecel) {
+      inp.throttle = 0;
+      inp.brake = Math.max(inp.brake, clamp(need / (HANDLING.brakeDecel * 0.9), 0.3, 1));
+    }
+
+    // Stuck against something (or spun into the grass): back onto the road, once nobody is
+    // coming up behind (it would be put right in front of them).
     this.stuck = Math.abs(st.speed) < 1.5 ? this.stuck + dt : 0;
-    if (this.stuck > AI.stuckSeconds) {
+    if (this.stuck > AI.stuckSeconds && !this.planner.carComing(st, cars)) {
       this.stuck = 0;
       this.car.resetToRoad();
-      this.lane = this.laneTarget = 0;
-      this.passSide = 0;
-      this.passTimer = 0;
+      this.lane = 0;
+      this.laneVel = 0;
+      this.planner.choice = { offset: 0 };
       return NO_INPUT;
     }
     return inp;

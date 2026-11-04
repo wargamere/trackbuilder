@@ -151,6 +151,8 @@ export class CarPhysics {
   readonly state = new CarState();
   /** State before the last step, for render interpolation. */
   readonly prev = new CarState();
+  /** How much of the slipstream of a car ahead this car is in, 0..1 (set before each step; see slipstream.ts). */
+  draft = 0;
   private readonly track: Track;
   private readonly locator: TrackLocator;
   private readonly obstacles: ObstacleGrid;
@@ -236,7 +238,8 @@ export class CarPhysics {
 
     // --- longitudinal: driving force, then resistances that can only slow the car
     let drive = 0;
-    let resist = H.rollingDrag + surfDrag + H.aeroDrag * vf * vf;
+    // In another car's slipstream the air resistance drops, so the car is quicker on a straight.
+    let resist = H.rollingDrag + surfDrag + H.aeroDrag * (1 - H.slipstreamDragCut * this.draft) * vf * vf;
     if (throttle > 0) {
       if (vf >= -0.5) drive += H.engineAccel * accelF * throttle * Math.max(0, 1 - vf / (H.maxSpeed * speedF));
       else resist += H.brakeDecel * throttle;

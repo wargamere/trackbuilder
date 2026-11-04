@@ -2,13 +2,14 @@ import { type PerspectiveCamera, Vector3 } from 'three';
 import { audio } from '../audio/audio.ts';
 import { CameraRig } from '../car/camera.ts';
 import { collideCars } from '../car/contact.ts';
+import { slipstream } from '../car/slipstream.ts';
 import { InputManager, type InputAction } from '../car/input.ts';
 import { CarModel } from '../car/model.ts';
 import { currentPaintHex, recordFinishedRun } from '../car/paint.ts';
 import { CarPhysics, CarState, lerpState, NO_INPUT, type DriveInput } from '../car/physics.ts';
 import { HANDLING } from '../config/handling.ts';
 import { AI_PAINTS, PAINTS } from '../config/paint.ts';
-import { AI, RACE } from '../config/race.ts';
+import { AI, RACE, SLIPSTREAM } from '../config/race.ts';
 import { STR, fmt } from '../config/strings.ts';
 import { FixedStep } from '../core/fixedStep.ts';
 import type { GameContext, Screen } from '../core/screen.ts';
@@ -89,6 +90,8 @@ export class RaceScreen implements Screen {
   /** The player's car state first, then the AI cars' (for traffic and contact). */
   private states: CarState[] = [];
   private readonly aiEvents: RaceEvent[] = [];
+  /** Slipstream for each car in `states` this tick. */
+  private readonly drafts = new Float32Array(AI.maxOpponents + 1);
   private lastResetPress = -Infinity;
   /** What's being driven: qualifying (alone, for the grid), the grid on show after it, or the run itself. */
   private stage: 'qualifying' | 'grid' | 'run' = 'run';
@@ -475,10 +478,15 @@ export class RaceScreen implements Screen {
     return p;
   }
 
-  /** One fixed physics tick: inputs -> cars -> contact -> race rules -> ghost recording. */
+  /** One fixed physics tick: inputs -> slipstream -> cars -> contact -> race rules -> ghost recording. */
   private tick(): void {
     const car = this.car!;
     const session = this.session!;
+    if (this.opponents.length) {
+      slipstream(this.states, this.game.track.center.length, this.drafts);
+      car.draft = this.drafts[0];
+      this.opponents.forEach((o, k) => (o.ai.car.draft = this.drafts[k + 1]));
+    } else car.draft = 0;
     const inp = session.phase === 'racing' ? this.input.sample(this.tickInput) : session.phase === 'finished' ? BRAKE : NO_INPUT;
     const prev = this.progress();
     car.step(inp);
@@ -772,6 +780,7 @@ export class RaceScreen implements Screen {
     if (this.stage === 'qualifying') this.runQualifyingSims();
     v.render();
     this.hud.setSpeed(this.view.speed);
+    this.hud.setSlipstream(car.draft > SLIPSTREAM.show);
     this.updateHud(alpha);
     this.hud.tick(dt);
 

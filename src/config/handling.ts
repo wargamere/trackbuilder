@@ -7,6 +7,8 @@ export const HANDLING = {
   tickRate: 120,
 
   // ---------------------------------------------------------- engine & brakes
+  /** In another car's slipstream (draft 1 = right behind it) the air resistance is cut by this share. */
+  slipstreamDragCut: 0.8,
   /** Engine acceleration from standstill; it fades linearly to 0 at `maxSpeed`. */
   engineAccel: 15,
   /** Speed where the engine stops pulling (top speed ends up a bit lower, from drag). */

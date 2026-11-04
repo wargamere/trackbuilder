@@ -44,13 +44,13 @@ src/
   render/     view3d.ts (renderer, sky, ground, hills, lights), textures.ts
               (procedural canvas textures), geom.ts (merge/tint helpers)
   car/        physics.ts (fixed-step arcade physics), contact.ts (car-to-car
-              bumps), input.ts (keyboard, gamepad, touch), model.ts (low-poly car),
-              camera.ts (chase + bonnet)
+              bumps), slipstream.ts (drafting), input.ts (keyboard, gamepad, touch),
+              model.ts (low-poly car), camera.ts (chase + bonnet)
   race/       raceScreen.ts (fixed-step loop, interpolation, pause), session.ts
               (countdown, checkpoints, lap timing, splits, race distance), ghost.ts,
               records.ts, resultsScreen.ts, ai.ts (AI opponents), racingLine.ts
-              (line + speed plan), driver.ts (drives it), bot.ts (test driver),
-              medals.ts (medal times)
+              (line + speed plan), driver.ts (drives it), traffic.ts (racing other
+              cars), bot.ts (test driver), medals.ts (medal times)
   ui/         dom helpers, menuScreen.ts (main menu), raceSetupScreen.ts (race
               setup), gridOverlay.ts (grid after qualifying), editor overlay, HUD,
               minimap, pause menu, touch controls,
@@ -198,15 +198,38 @@ On the test tracks a 100 % AI laps about 19 % faster than the old centre-line dr
 
 The field spreads up to 8 points below the chosen difficulty, so the cars don't drive nose to tail.
 
-**Traffic.**
-- The AI starts passing only a car it's actually catching (by 1 m/s, or about to touch it). It moves to the side with more room and stays on that side for 1.5 s, rather than weaving.
-- Following at the same speed, however close, it just follows. It lifts when it would touch the car ahead within 1.2 s, and brakes, the harder the sooner, within 0.6 s.
-- It puts itself back on the road if it's stuck for 2.5 s. After the finish it cruises a cool-down lap.
+**Lanes.** Besides the line itself, the driver has a speed plan for lanes 1.5 to 6 m either side of it (`DRIVER.planLanes`). A lane is the line shifted sideways, but never further than the room there is beside the line, smoothed so every lane bends as gently as the line. It's planned with 5 % of the grip kept in hand, and with the same engine and brake passes, so a lane on the inside of a bend is slower and the planner knows by how much. A car knocked off its path gets its speed limit from the path it will really drive back onto its lane.
+
+**Traffic** (`race/traffic.ts`). About 30 times a second each AI picks a lane:
+- **Looking ahead:** it plays the next few seconds forward in each lane for itself and every car near it. Each car follows its speed plan at the pace it's going now, keeping its offset from the line; you (not an AI) are assumed to carry on drifting across the road as you are.
+- **Cost of a lane:**
+  - the time it loses against the line over the next 80 m;
+  - a moment held up behind a car before it's clear of it;
+  - if it can't get past a slower car in that lane within 5 s, being stuck behind it for a good while (8 s at the speed difference).
+  - A lane that would turn it into a car alongside is out.
+- **Choosing:** it takes the cheapest lane, but switches only for a clear gain, and once a pass is under way only for a big one, so it doesn't weave. It makes no new moves in a tight bend.
+- **Side by side with no room for both** (the road narrowing into a bend): the car behind coasts and drops back, the one ahead keeps its place and doesn't turn in.
+- **Following:** behind a car it would run into before it's clear of it, it keeps a gap of 1.5 m + 0.35 s and closes it gently. If the car ahead suddenly slows (a spin, a knock) it brakes hard.
+- **Recovering:** sliding (knocked, or ran wide), it comes off the throttle for a moment instead of braking in front of others. If it's stuck for 2.5 s it puts itself back on the road, but only once no car is coming. After the finish it carries on at 85 % pace.
+
+**Letting a quicker car by (help for overtaking).** Evenly matched cars rarely get past each other on twisty roads. So a slower AI that has had a clearly quicker AI (5+ points of difficulty) within 15 m behind it for 1.5 s:
+- steps 3.5 m off the line to the side with more room over the next 40 m (or the other side of the line from the quicker car, if that's already well to one side);
+- drives at 85 % of its pace, and once the quicker car has pulled out beside it, at half throttle too;
+- carries on until the quicker car is a car length ahead, drops well back, or 8 s have gone.
+
+The quicker car is told which side the slower one has taken and passes on the other, usually on the racing line. This works only between AI cars: they don't move over for you, and you don't have to move over for them.
+
+**Slipstream** (`car/slipstream.ts`). A car close behind another, in line with it, has less air to push through: up to 80 % less drag right behind a car, fading out to nothing 28 m back or 2.2 m to the side. Both cars must be going the same way at the same level. It's the same for every car, yours included, so you can get a run on an AI along a straight. At full tow the top speed goes from about 167 to 194 km/h. "SLIPSTREAM" shows above the speedometer while you're in one.
+
+On test races (`npm test`, `tests/traffic.test.ts`):
+- a 90 % AI starting behind a 40 % one gets past within about 15–40 s;
+- a 95 / 75 / 55 / 35 % field starting in reverse order finishes in pace order or nearly so;
+- an evenly matched field of eight races 3 laps with no hard knocks and nobody off the road.
 
 **Contact** (`car/contact.ts`). Each car's body is a box the size of the car, turned with it.
 - **Overlap:** it's found with a separating-axis test on the four box sides, and the cars are pushed apart along the axis of least overlap, half each.
 - **Impulse:** the hit is resolved at the actual contact point, the middle of the overlap. A small bounce cancels the closing speed, and friction along the contact makes a side-swipe drag. Because it acts at the point of contact, a hit on a nose or tail turns the car, while a square hit pushes it straight.
-- **Packs:** contacts are resolved twice per tick, so in a pack a car pushed out of one car and into another is pushed out of that one too.
+- **Packs:** contacts are resolved three times per tick, so in a pack a car pushed out of one car and into another is pushed out of that one too.
 - **Bridges:** cars more than 2.5 m apart in height (on and under a bridge) never touch.
 - A bump on you knocks like a barrier hit.
 
@@ -289,3 +312,4 @@ Tested against the real SDK in its `local` mode (localhost): the SDK's own log s
 - [x] Elevation, banking, barriers, bridges, scenery themes; editor zoom/pan, lazy pen, section redraw, soft editing and Height mode; minimap and medals
 - [x] Editor sidebar (7 sections), stats strip, numbered corners, road width, kerb / run-off / barrier styles, pits, sunset, laps, tree density, display settings, 3D view
 - [x] Race setup menu (practice / race, laps 1–10, ghost on / off, 1–12 cars, grid: qualifying / random / pick your slot), AI cars with difficulty 1–100 %, car-to-car contact, positions; double-tap R restarts a practice lap
+- [x] AI racing line and speed plan; box-shaped car contact; racing in traffic (lane planner, passing, letting quicker cars by) and slipstream
