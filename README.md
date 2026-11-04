@@ -36,6 +36,7 @@ src/
               transform.ts (resize / rotate / mirror), preview.ts (3D view)
   track/      spline.ts (centripetal Catmull-Rom -> evenly spaced centre line),
               corners.ts, ink.ts, track.ts (TrackDef/Track), samples.ts,
+              catalog.ts + data/ (the built-in tracks: generated and real circuits),
               mesh.ts (road ribbon, kerbs, barriers, bridge decks), surface.ts
               (terrain, decks, barrier and pillar placement), pits.ts (pit
               layout), stats.ts (stats strip numbers), ground.ts (ground
@@ -54,7 +55,7 @@ src/
   ui/         dom helpers, menuScreen.ts (main menu), raceSetupScreen.ts (race
               setup), gridOverlay.ts (grid after qualifying), editor overlay, HUD,
               minimap, pause menu, touch controls,
-              libraryScreen.ts (My tracks), shareDialog.ts, style.css
+              libraryScreen.ts (track library), shareDialog.ts, style.css
   audio/      audio.ts (synthesised engine, tyre squeal, grass rumble, beeps)
   platform/   platform.ts (PLATFORM flag + CAPS), services.ts (what the game calls:
               loading/gameplay events, ads, user, device), crazygames.ts (SDK wrapper),
@@ -151,9 +152,33 @@ Freehand pipeline: raw stroke → lazy pen → merge points closer than 2 m → 
 ### Menu, race setup and practice
 
 The game boots to the **main menu**, with the current track turning slowly in 3D behind it. From there:
-- pick a track with ‹ › (or ← →): the samples, then your saved tracks;
+- pick a list (tabs, or ↑ ↓): **Tracks** (the game's own 23), **Real circuits** (30) or **My tracks** (yours; greyed out until you've saved one);
+- pick a track in it with ‹ › (or ← →); "4 / 30" shows where you are, and a real circuit shows its country;
 - **Race this track** (Enter) opens the race setup (below);
-- **Draw a track** (E), **My tracks** (L), and sound / graphics / units toggles.
+- **Draw a track** (E), the **Track library** (L), and sound / graphics / units toggles.
+
+The **Track library** (`ui/libraryScreen.ts`) has the same three lists as tabs (yours first if you have any), with thumbnails, length, multiplier and your best for each, plus Race, Edit and Share (and Delete for yours), and a box to paste a friend's track code.
+
+### Built-in tracks
+
+Built-in tracks (`track/catalog.ts`, listed by `builtInTracks()` in `editor/pipeline.ts`) can't be deleted or overwritten; editing one and saving makes a track of your own. A track code of a built-in track loads as that track (same records).
+- **Tracks (23):** the three hand-drawn samples (Sunday Loop, Paperclip, Knot Garden), then 20 generated ones (`track/data/classic.ts`).
+  - Each is a random loop from a fixed seed: the hull of 6–13 random points, its edges bent in and out at their middles, points too close pushed apart, smoothed, sized to fit, run either way round, starting on its longest straight.
+  - About half get rolling hills. Each gets its own theme (meadow, desert, snow), road width, banking, run-off, kerbs, barriers, trees and time of day.
+  - A loop is kept only if it's a valid road with no crossings, 1.1–2.4 km with at least 5 real bends, and an AI can lap it at medal pace and flat out.
+- **Real circuits (30):** real-world layouts (`track/data/world.ts`), made from the open GeoJSON outlines in [bacinger/f1-circuits](https://github.com/bacinger/f1-circuits) (MIT licence, see `THIRD_PARTY_NOTICES.md`; the game shows it too, under the Real circuits tab). They're named after their place, with no series branding, and are unofficial.
+  - The tracks: Sakhir, Jeddah, Melbourne, Suzuka, Shanghai, Miami, Imola, Monaco, Montréal, Barcelona, Spielberg, Silverstone, Budapest, Spa-Francorchamps, Zandvoort, Monza, Baku, Singapore, Austin, Mexico City, São Paulo, Las Vegas, Lusail, Yas Marina, Portimão, Istanbul, Sepang, Hockenheim, Nürburg and Mugello.
+  - *Fitting:* each outline is turned to fill the drawing area best, then scaled down to fit it and the ink pot (1.3–2.35 km; the real ones are 3.3–7 km).
+  - *Start and direction:* the start is moved back up the straight if the outline began right by a bend, and they run the way the race does (Singapore's outline is drawn the other way, so it's reversed).
+  - *Making it drivable:* corners too tight for the car are opened up a little. Where the real road comes back close by, the road is narrowed to 10 m (Jeddah, Miami, Monaco, Baku, Suzuka), and only if even that's not enough are those stretches pushed apart a little (Jeddah, Baku).
+  - Suzuka's crossover is a bridge, the later road rising 7.5 m over the earlier one.
+  - Flat (the data has no heights), with no banking, and themes, run-off and trees to suit: desert for the Gulf, night races at sunset.
+
+Both are plain data written by `node scripts/buildTracks.ts <path to a checkout of bacinger/f1-circuits>`. The game never runs that, and `tests/catalog.test.ts` checks every built-in:
+- valid, inside the drawing area, not starting in a corner;
+- only Suzuka crossing itself, on a bridge;
+- lapped by an AI at medal pace and flat out;
+- the same track again from its code.
 
 **Race setup** (`ui/raceSetupScreen.ts`) opens wherever you choose to race a track: the main menu, the editor's Race it (Enter), the 3D view, My tracks, the results screen's Race settings (S), the pause menu, and practice's "Start a race". Back (Esc) returns to where you came from (to the editor with your edit kept). It sets:
 - **Mode:** Practice or Race (P / R).

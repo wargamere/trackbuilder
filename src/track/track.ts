@@ -16,8 +16,10 @@ export interface TrackDef {
   control: Dot[];
   /** Missing fields use DEFAULT_OPTIONS. */
   options?: Partial<TrackOptions>;
-  /** True for the built-in sample tracks. */
+  /** True for the built-in tracks (the game's own and the real-world circuits). */
   builtIn?: boolean;
+  /** Where a real-world circuit is (its country). */
+  place?: string;
 }
 
 /** A track ready to race: definition plus all derived geometry. */

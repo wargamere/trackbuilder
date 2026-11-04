@@ -439,7 +439,10 @@ export class EditorScreen implements Screen {
     const b = this.base;
     const same = !!b && contentId(b.control, b.options) === contentId(def.control, def.options);
     def.id = same && b ? b.id : contentId(def.control, def.options);
-    if (same) def.builtIn = b?.builtIn;
+    if (same) {
+      def.builtIn = b?.builtIn;
+      def.place = b?.place;
+    }
     this.game.setTrack(buildTrack(def));
     if (mode === 'practice') {
       this.game.drive('practice');

@@ -1,12 +1,14 @@
 import { STR, fmt } from '../config/strings.ts';
 import type { GameContext, Screen } from '../core/screen.ts';
-import { getSampleTrack, SAMPLE_COUNT, trackFromCode } from '../editor/pipeline.ts';
+import { builtInTrack, builtInTracks, trackFromCode } from '../editor/pipeline.ts';
 import { drawPaper, fitView, PAPER } from '../editor/render2d.ts';
 import { medalFor, medalTimes } from '../race/medals.ts';
 import { formatTime } from '../race/session.ts';
 import { sampleClosedCatmullRom } from '../track/spline.ts';
+import type { TrackGroup } from '../track/catalog.ts';
+import { WORLD_TRACKS_LICENCE } from '../track/data/notices.ts';
 import { buildTrack, type TrackDef } from '../track/track.ts';
-import { button, h } from './dom.ts';
+import { button, h, segmented } from './dom.ts';
 import { ShareDialog } from './shareDialog.ts';
 
 /** Length and multiplier per track id (building a track for its stats isn't free). */
@@ -56,9 +58,10 @@ function drawThumbnail(canvas: HTMLCanvasElement, dots: TrackDef['control']): vo
 }
 
 /**
- * LIBRARY state: your saved tracks and the built-ins, with thumbnails and
- * personal bests. Race, edit, share (track code) or delete each one, or paste
- * a friend's code to load their track.
+ * LIBRARY state: three lists in tabs (your saved tracks, the game's own, and
+ * the real-world circuits), with thumbnails and personal bests. Race, edit,
+ * share (track code) or delete each one, or paste a friend's code to load
+ * their track.
  */
 export class LibraryScreen implements Screen {
   readonly layer = '2d';
@@ -69,6 +72,8 @@ export class LibraryScreen implements Screen {
   private readonly message: HTMLElement;
   private readonly share = new ShareDialog();
   private abort: AbortController | null = null;
+  /** The list shown (null until first opened: yours if you have any, else the game's). */
+  private tab: TrackGroup | null = null;
 
   constructor(game: GameContext) {
     this.game = game;
@@ -175,19 +180,19 @@ export class LibraryScreen implements Screen {
   }
 
   private race(def: TrackDef): void {
-    this.game.setTrack(def.builtIn ? getSampleTrack(sampleIndexOf(def)) : buildTrack(def));
+    this.game.setTrack((def.builtIn && builtInTrack(def.id)) || buildTrack(def));
     this.game.openSetup();
   }
 
   private edit(def: TrackDef): void {
-    this.game.setTrack(def.builtIn ? getSampleTrack(sampleIndexOf(def)) : buildTrack(def));
+    this.game.setTrack((def.builtIn && builtInTrack(def.id)) || buildTrack(def));
     this.game.go('editor');
   }
 
   private card(def: TrackDef, deletable: boolean): HTMLElement {
     let info = statsCache.get(def.id);
     if (!info) {
-      const t = buildTrack(def);
+      const t = (def.builtIn && builtInTrack(def.id)) || buildTrack(def);
       info = { len: t.center.length, mult: t.ink.multiplier };
       statsCache.set(def.id, info);
     }
@@ -231,6 +236,7 @@ export class LibraryScreen implements Screen {
       { class: 'track-card' },
       thumb,
       h('div', { class: 'card-name', text: def.name }),
+      def.place ? h('div', { class: 'card-place', text: def.place }) : null,
       h('div', { class: 'card-stats', text: stats }),
       h('div', { class: `card-best${rec.best ? '' : ' none'}` }, medal ? h('i', { class: `medal ${medal}`, title: STR.medals[medal] }) : null, best),
       actions,
@@ -239,41 +245,55 @@ export class LibraryScreen implements Screen {
 
   private render(): void {
     const mine = this.game.library.list();
-    const grid = h('div', { class: 'card-grid' });
-    if (mine.length) for (const e of mine) grid.append(this.card(e.def, true));
-    else grid.append(h('p', { class: 'help', text: STR.library.empty }));
-    const builtIns = h('div', { class: 'card-grid' });
-    for (let i = 0; i < SAMPLE_COUNT; i++) builtIns.append(this.card(getSampleTrack(i).def, false));
-    // "Delete all" needs a second tap to confirm.
-    let armed = false;
-    const delAll = button(
-      STR.library.deleteAll,
-      () => {
-        if (!armed) {
-          armed = true;
-          delAll.classList.add('danger');
-          delAll.querySelector('.btn-label')!.textContent = fmt(STR.library.confirmDeleteAll, { n: mine.length });
-          return;
-        }
-        for (const e of mine) this.game.records.forget(e.def.id);
-        this.game.library.clear();
-        this.say(STR.library.allDeleted, 'ok');
+    const all = builtInTracks();
+    const lists: Record<TrackGroup, TrackDef[]> = {
+      mine: mine.map((e) => e.def),
+      builtIn: all.filter((b) => b.group === 'builtIn').map((b) => b.def),
+      world: all.filter((b) => b.group === 'world').map((b) => b.def),
+    };
+    this.tab ??= mine.length ? 'mine' : 'builtIn';
+    const tab = this.tab;
+    const order: TrackGroup[] = ['mine', 'builtIn', 'world'];
+    const tabs = segmented<TrackGroup>(
+      order.map((g) => [g, `${STR.groups[g]} (${lists[g].length})`]),
+      (g) => {
+        this.tab = g;
         this.render();
       },
-      { icon: '🗑', class: 'compact' },
     );
-    delAll.hidden = mine.length === 0;
-    this.list.replaceChildren(
-      h('div', { class: 'label-row' }, h('div', { class: 'label', text: `${STR.library.yours} (${mine.length})` }), delAll),
-      grid,
-      h('div', { class: 'label', text: STR.library.builtIn }),
-      builtIns,
-    );
+    tabs.el.classList.add('library-tabs');
+    tabs.set(tab);
+    const grid = h('div', { class: 'card-grid' });
+    for (const def of lists[tab]) grid.append(this.card(def, tab === 'mine'));
+    if (tab === 'mine' && !mine.length) grid.append(h('p', { class: 'help', text: STR.library.empty }));
+    const head: (HTMLElement | null)[] = [];
+    if (tab === 'mine') {
+      // "Delete all" needs a second tap to confirm.
+      let armed = false;
+      const delAll = button(
+        STR.library.deleteAll,
+        () => {
+          if (!armed) {
+            armed = true;
+            delAll.classList.add('danger');
+            delAll.querySelector('.btn-label')!.textContent = fmt(STR.library.confirmDeleteAll, { n: mine.length });
+            return;
+          }
+          for (const e of mine) this.game.records.forget(e.def.id);
+          this.game.library.clear();
+          this.say(STR.library.allDeleted, 'ok');
+          this.render();
+        },
+        { icon: '🗑', class: 'compact' },
+      );
+      delAll.hidden = mine.length === 0;
+      head.push(h('div', { class: 'label-row' }, h('div', { class: 'label', text: STR.library.yours }), delAll));
+    }
+    if (tab === 'world') {
+      head.push(h('p', { class: 'help', text: STR.library.worldNote }));
+      const credit = h('details', { class: 'credit' }, h('summary', { text: STR.library.worldCredit }), h('pre', { text: WORLD_TRACKS_LICENCE }));
+      head.push(credit);
+    }
+    this.list.replaceChildren(tabs.el, ...head.filter((x): x is HTMLElement => !!x), grid);
   }
-}
-
-/** Index of a built-in sample by id. */
-function sampleIndexOf(def: TrackDef): number {
-  for (let i = 0; i < SAMPLE_COUNT; i++) if (getSampleTrack(i).def.id === def.id) return i;
-  return 0;
 }

@@ -23,7 +23,7 @@ export const STR = {
     raceAgain: 'Race again',
     newTrack: 'Draw new track',
     reverse: 'Reverse direction',
-    myTracks: 'My tracks',
+    myTracks: 'Track library',
     share: 'Share',
     shareTrack: 'Share track',
     race: 'Race',
@@ -52,13 +52,23 @@ export const STR = {
     race: 'Race this track',
     raceHint: 'Practice or race, laps, ghost and AI cars.',
     draw: 'Draw a track',
-    myTracks: 'My tracks',
+    myTracks: 'Track library',
     trackInfo: '{len} km · ×{mult}',
     best: 'Best lap {time}',
     noBest: 'No lap yet',
     prev: 'Previous track',
     next: 'Next track',
-    keys: 'Enter race this track · E draw · L my tracks · ← → change track',
+    keys: 'Enter race this track · E draw · L track library · ← → change track · ↑ ↓ change list',
+    /** Position in the list, e.g. "3 / 23". */
+    position: '{i} / {n}',
+    noMine: 'No tracks of your own yet. Draw one, or save one after a race.',
+  },
+
+  /** The lists of tracks: the game's own, real-world circuits, and yours. */
+  groups: {
+    builtIn: 'Tracks',
+    world: 'Real circuits',
+    mine: 'My tracks',
   },
 
   editor: {
@@ -400,11 +410,13 @@ export const STR = {
   },
 
   library: {
-    title: 'My tracks',
+    title: 'Track library',
     importLabel: 'Got a track code from a friend?',
     importPlaceholder: 'Paste a track code here',
     yours: 'Your tracks',
     builtIn: 'Built-in tracks',
+    worldNote: 'Real-world circuit layouts, scaled down to fit and smoothed a little where they had to be. Unofficial: not associated with any circuit or series.',
+    worldCredit: 'Circuit outlines from bacinger/f1-circuits (MIT licence)',
     empty: 'No saved tracks yet. Draw one and press Save, or paste a code above.',
     deleteAll: 'Delete all',
     confirmDeleteAll: 'Delete all {n}?',

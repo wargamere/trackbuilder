@@ -2,18 +2,21 @@ import { audio } from '../audio/audio.ts';
 import { STR, fmt } from '../config/strings.ts';
 import type { GameContext, Screen } from '../core/screen.ts';
 import { settings, updateSettings } from '../core/settings.ts';
-import { getSampleTrack, SAMPLE_COUNT } from '../editor/pipeline.ts';
+import { builtInTracks } from '../editor/pipeline.ts';
 import { medalFor, medalTimes } from '../race/medals.ts';
 import { formatTime } from '../race/session.ts';
 import { TrackOrbit } from '../render/orbit.ts';
+import type { TrackGroup } from '../track/catalog.ts';
 import { buildTrack, type Track, type TrackDef } from '../track/track.ts';
-import { button, h } from './dom.ts';
+import { button, h, segmented, type Choice } from './dom.ts';
 
-/** A track the menu can pick: the built-in samples, then your saved tracks. */
+/** A track the menu can pick. */
 interface Pick {
   def: TrackDef;
   track: () => Track;
 }
+
+const GROUPS: readonly TrackGroup[] = ['builtIn', 'world', 'mine'];
 
 /**
  * MENU state (the boot screen): the current track turning slowly in 3D behind
@@ -32,8 +35,12 @@ export class MenuScreen implements Screen {
   private readonly unitsBtn: HTMLButtonElement;
   private abort: AbortController | null = null;
   private restore: (() => void) | null = null;
-  private picks: Pick[] = [];
+  /** The three lists (the game's tracks, real circuits, yours), the one shown and where in it we are. */
+  private lists: Record<TrackGroup, Pick[]> = { builtIn: [], world: [], mine: [] };
+  private group: TrackGroup = 'builtIn';
   private index = 0;
+  private readonly groupChoice: Choice<TrackGroup>;
+  private readonly trackPos: HTMLElement;
   private readonly orbit = new TrackOrbit();
 
   constructor(game: GameContext) {
@@ -42,6 +49,12 @@ export class MenuScreen implements Screen {
     this.trackName = h('div', { class: 'menu-track-name' });
     this.trackInfo = h('div', { class: 'menu-track-info' });
     this.trackBest = h('div', { class: 'menu-track-best' });
+    this.trackPos = h('div', { class: 'menu-track-pos' });
+    this.groupChoice = segmented<TrackGroup>(
+      GROUPS.map((g) => [g, STR.groups[g]]),
+      (g) => this.pickGroup(g),
+    );
+    this.groupChoice.el.classList.add('menu-groups');
     // Labels are filled in by refresh(); they need a placeholder so the label comes before the key hint.
     this.soundBtn = button(STR.buttons.soundOn, () => this.toggleSound(), { icon: '♪', class: 'small', key: 'M' });
     this.gfxBtn = button(STR.sidebar.graphics, () => this.toggleGraphics(), { icon: '⚙', class: 'small' });
@@ -54,11 +67,12 @@ export class MenuScreen implements Screen {
         { class: 'panel' },
         h('h1', { class: 'menu-title', text: STR.gameName }),
         h('p', { class: 'menu-tagline', text: STR.tagline }),
+        this.groupChoice.el,
         h(
           'div',
           { class: 'menu-track' },
           button('', () => this.step(-1), { icon: '‹', class: 'round', title: M.prev }),
-          h('div', { class: 'menu-track-text' }, this.trackName, this.trackInfo, this.trackBest),
+          h('div', { class: 'menu-track-text' }, this.trackName, this.trackInfo, this.trackBest, this.trackPos),
           button('', () => this.step(1), { icon: '›', class: 'round', title: M.next }),
         ),
         h(
@@ -80,17 +94,23 @@ export class MenuScreen implements Screen {
 
   enter(): void {
     const v = this.game.view3d;
-    // Tracks to flick through: the samples, then your own (newest first).
-    const samples: Pick[] = Array.from({ length: SAMPLE_COUNT }, (_, i) => ({ def: getSampleTrack(i).def, track: () => getSampleTrack(i) }));
-    const mine: Pick[] = this.game.library.list().map((e) => {
-      let built: Track | null = null;
-      return { def: e.def, track: () => (built ??= buildTrack(e.def)) };
-    });
-    this.picks = [...samples, ...mine];
+    // Tracks to flick through, in three lists: the game's own, real circuits, and yours (newest first).
+    const all = builtInTracks();
+    this.lists = {
+      builtIn: all.filter((b) => b.group === 'builtIn'),
+      world: all.filter((b) => b.group === 'world'),
+      mine: this.game.library.list().map((e) => {
+        let built: Track | null = null;
+        return { def: e.def, track: () => (built ??= buildTrack(e.def)) };
+      }),
+    };
+    // Start in the list the current track is in (a track just drawn and not saved goes first in yours).
     const cur = this.game.track;
-    this.index = this.picks.findIndex((p) => p.def.id === cur.def.id);
-    if (this.index < 0) {
-      this.picks.unshift({ def: cur.def, track: () => cur });
+    const found = GROUPS.map((g) => [g, this.lists[g].findIndex((p) => p.def.id === cur.def.id)] as const).find(([, i]) => i >= 0);
+    if (found) [this.group, this.index] = found;
+    else {
+      this.lists.mine.unshift({ def: cur.def, track: () => cur });
+      this.group = 'mine';
       this.index = 0;
     }
     this.game.ui.append(this.root);
@@ -116,6 +136,8 @@ export class MenuScreen implements Screen {
           KeyA: () => this.step(-1),
           ArrowRight: () => this.step(1),
           KeyD: () => this.step(1),
+          ArrowUp: () => this.stepGroup(-1),
+          ArrowDown: () => this.stepGroup(1),
         };
         const a = act[e.code];
         if (!a) return;
@@ -142,9 +164,33 @@ export class MenuScreen implements Screen {
 
   /** Previous / next track in the list. */
   private step(d: number): void {
-    if (!this.picks.length) return;
-    this.index = (this.index + d + this.picks.length) % this.picks.length;
-    const t = this.picks[this.index].track();
+    const list = this.lists[this.group];
+    if (!list.length) return;
+    this.index = (this.index + d + list.length) % list.length;
+    this.select();
+  }
+
+  /** Shows another list (from its first track), if it has any. */
+  private pickGroup(g: TrackGroup): void {
+    if (g === this.group || !this.lists[g].length) return;
+    this.group = g;
+    this.index = 0;
+    this.select();
+  }
+
+  /** The previous / next list that has tracks in it. */
+  private stepGroup(d: number): void {
+    let k = GROUPS.indexOf(this.group);
+    for (let n = 0; n < GROUPS.length; n++) {
+      k = (k + d + GROUPS.length) % GROUPS.length;
+      if (this.lists[GROUPS[k]].length) break;
+    }
+    this.pickGroup(GROUPS[k]);
+  }
+
+  /** Makes the track at the current place in the list the one to race. */
+  private select(): void {
+    const t = this.lists[this.group][this.index].track();
     this.game.setTrack(t);
     this.showTrack(t);
     this.refresh();
@@ -160,7 +206,15 @@ export class MenuScreen implements Screen {
     const t = this.game.track;
     const rec = this.game.records.summary(t.def.id);
     this.trackName.textContent = t.def.name;
-    this.trackInfo.textContent = fmt(STR.menu.trackInfo, { len: (t.center.length / 1000).toFixed(2), mult: t.ink.multiplier.toFixed(2) });
+    const info = fmt(STR.menu.trackInfo, { len: (t.center.length / 1000).toFixed(2), mult: t.ink.multiplier.toFixed(2) });
+    this.trackInfo.textContent = t.def.place ? `${t.def.place} · ${info}` : info;
+    this.groupChoice.set(this.group);
+    for (const g of GROUPS) {
+      const b = this.groupChoice.el.children[GROUPS.indexOf(g)] as HTMLButtonElement;
+      b.disabled = !this.lists[g].length;
+      b.title = this.lists[g].length ? `${STR.groups[g]} (${this.lists[g].length})` : STR.menu.noMine;
+    }
+    this.trackPos.textContent = fmt(STR.menu.position, { i: this.index + 1, n: this.lists[this.group].length });
     this.trackBest.replaceChildren();
     const medal = rec.best && rec.author ? medalFor(rec.best.time, medalTimes(rec.author)) : null;
     if (medal) this.trackBest.append(h('i', { class: `medal ${medal}`, title: STR.medals[medal] }));
