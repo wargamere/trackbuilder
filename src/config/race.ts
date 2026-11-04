@@ -164,6 +164,37 @@ export const TRAFFIC = {
   crowdEase: 0.015,
   /** In a bend it wants this much more room across the road per 1/m of curvature (m) (tails swing out). */
   bendMargin: 30,
+  /**
+   * With a car beside it (overlapping along the track: up to keepReach m
+   * beyond its nose ahead, keepBehind m back behind), it keeps at least keepGap (m) between their sides (plus the extra for
+   * a bend), or no less than there is now, whatever the line does.
+   */
+  keepGap: 0.9,
+  keepReach: 1,
+  /** …and a car behind counts as beside it once less than this far back (m, centre to centre: its nose past our rear wheels), plus this many seconds of the speed it's closing at. */
+  keepBehind: 3,
+  keepClosing: 0.6,
+  /**
+   * Passing a slower car that isn't an AI (you) within passAhead m: from
+   * passClose m back it keeps this much (m) between the sides (plus the extra
+   * for a bend), moving over at most passStep m ahead of where it is at a time.
+   */
+  passAhead: 40,
+  passClose: 10,
+  passGap: 0.8,
+  passStep: 1.5,
+  /**
+   * Push to pass (a help for overtaking you): held up (below pushBelow of its
+   * plan, with a slower car that isn't an AI within pushWithin m ahead) for
+   * pushAfter s, it gets the pace of a tow this strong (see
+   * HANDLING.slipstream*) for up to pushTime s, then waits pushRest s.
+   */
+  pushWithin: 30,
+  pushBelow: 0.95,
+  pushAfter: 2,
+  pushTow: 1,
+  pushTime: 6,
+  pushRest: 10,
   /** Room it keeps around another car's body: along the track and across it (m). */
   marginAlong: 1,
   marginSide: 1.2,
@@ -211,8 +242,9 @@ export const TRAFFIC = {
    */
   insideLook: 60,
   yieldLead: 0.5,
-  /** …dropping to this much (m/s) below the other car's speed. */
+  /** …dropping to this much (m/s) below the other car's speed (unless that car is slower than yieldMinSpeed m/s, or behind). */
   yieldDrop: 2,
+  yieldMinSpeed: 6,
   yieldTime: 1,
   /** Sliding sideways faster than this (m/s): off the throttle, for this long (s) after. */
   recoverSlip: 3,

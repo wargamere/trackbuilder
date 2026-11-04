@@ -2,13 +2,14 @@ import { collideCars } from '../../src/car/contact.ts';
 import { carriedTow, slipstream } from '../../src/car/slipstream.ts';
 import { CarPhysics, NO_INPUT, type CarState } from '../../src/car/physics.ts';
 import { HANDLING } from '../../src/config/handling.ts';
-import { AiDriver, gridPlace } from '../../src/race/ai.ts';
+import { AiDriver, aiPace, gridPlace } from '../../src/race/ai.ts';
+import { RacingDriver } from '../../src/race/driver.ts';
 import { botInput } from '../../src/race/bot.ts';
 import { RaceSession, type Progress, type RaceEvent } from '../../src/race/session.ts';
 import type { Track } from '../../src/track/track.ts';
 
 /** A car in a test race: an AI at a difficulty, or the simple centre-line bot (a stand-in for a player who doesn't avoid anyone). */
-export type CarSpec = { kind: 'ai'; difficulty: number } | { kind: 'bot'; aggression: number };
+export type CarSpec = { kind: 'ai'; difficulty: number } | { kind: 'bot'; aggression: number } | { kind: 'player'; difficulty: number };
 
 export interface TrafficResult {
   /** Contacts closing faster than 2 m/s (one per incident, not per tick), and how many involved an AI hitting the bot. */
@@ -45,19 +46,21 @@ export function race(
   drafting = true,
   log: string[] | null = null,
   onHard: ((tick: number, i: number, j: number, hit: number) => void) | null = null,
-  onTick: ((tick: number, cars: { car: CarPhysics; ai: AiDriver | null }[]) => void) | null = null,
+  onTick: ((tick: number, cars: { car: CarPhysics; ai: AiDriver | null; session: RaceSession }[]) => void) | null = null,
 ): TrafficResult {
   const L = track.center.length;
-  type Car = { car: CarPhysics; session: RaceSession; ai: AiDriver | null; aggression: number };
+  type Car = { car: CarPhysics; session: RaceSession; ai: AiDriver | null; aggression: number; line?: RacingDriver | null };
   const cars: Car[] = specs.map((sp, k) => {
     if (sp.kind === 'ai') {
       const ai = new AiDriver(track, { name: `ai${k}`, paint: 0, difficulty: sp.difficulty, laps, slot: k });
-      return { car: ai.car, session: ai.session, ai, aggression: 0 };
+      return { car: ai.car, session: ai.session, ai, aggression: 0, line: null };
     }
     const car = new CarPhysics(track);
     const g = gridPlace(track, k);
     car.placeAt(g.s, g.lateral);
-    return { car, session: new RaceSession(L, null, laps, track.center.width), ai: null, aggression: sp.aggression };
+    // A "player": the bot (centre line), or a slow driver on the racing line; neither looks out for anyone.
+    const line = sp.kind === 'player' ? new RacingDriver(track, aiPace(sp.difficulty, track)) : null;
+    return { car, session: new RaceSession(L, null, laps, track.center.width), ai: null, aggression: sp.kind === 'bot' ? sp.aggression : 0, line };
   });
   const states: CarState[] = cars.map((c) => c.car.state);
   const drafts = new Float32Array(cars.length);
@@ -91,7 +94,8 @@ export function race(
         c.car.step(c.ai.drive(states, dt));
         if (Math.hypot(c.car.state.x - x0, c.car.state.z - z0) > 3) resets++;
       } else {
-        c.car.step(c.session.canDrive && c.session.phase !== 'finished' ? botInput(c.car.state, track, c.aggression) : NO_INPUT);
+        const go = c.session.canDrive && c.session.phase !== 'finished';
+        c.car.step(!go ? NO_INPUT : c.line ? c.line.drive(c.car.state) : botInput(c.car.state, track, c.aggression));
       }
     }
     const now = new Set<string>();

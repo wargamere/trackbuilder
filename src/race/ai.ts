@@ -204,7 +204,12 @@ export class AiDriver {
     if (run < AI.startStretch) pace *= 1 - AI.startSpread * this.slot;
     // Close to another car, a touch of caution.
     if (this.planner.crowded) pace *= 1 - TRAFFIC.crowdEase;
-    const inp = this.driver.drive(st, this.lane, this.inp, pace, cap, this.car.draft);
+    // Stuck behind a slower car that isn't an AI (you): a push to get by, like a tow (see
+    // TrafficPlanner.pushing).
+    if (this.planner.pushing) this.car.draft = Math.max(this.car.draft, TRAFFIC.pushTow);
+    // With a car beside us, its room: we bend our path round it rather than turn in on it.
+    const keep = this.planner.keepOut(st, cars);
+    const inp = this.driver.drive(st, this.lane, this.inp, pace, cap, this.car.draft, keep);
     // Sliding (knocked, or ran wide): off the throttle until it gathers itself. No braking,
     // which would only surprise the car behind. (Being off its path is already taken care of:
     // the speed then comes from the path it's really on.)

@@ -211,16 +211,25 @@ The field spreads up to 8 points below the chosen difficulty, so the cars don't 
   - A lane that would turn it into a car alongside is out.
 - **Room:** it wants 1.2 m between the cars' sides to draw alongside, plus more in a bend (30 m per 1/m of curvature: 0.6 m more at a 50 m radius), where tails swing out. Closing on a car in a bend faster than 2 m/s, it wants up to 0.6 m more again.
 - **Choosing:** it takes the cheapest lane, but switches only for a clear gain, and once a pass is under way only for a big one, so it doesn't weave. In a tight bend it makes no new moves away from the line (back towards it is fine).
+- **Room for a car alongside** (yours too): with a car beside it, its path bends round that car whatever the racing line does. It keeps at least 0.9 m between the sides (plus the bend extra), or no less than there is now, so it never turns in on a car down its inside. That counts a car beside it, just ahead, or behind with its nose past its rear wheels: 3 m back, plus 0.6 s of the speed it's closing at, so a dive down the inside gets its room. A car further back than that doesn't own the line, so the AI takes it.
 - **Side by side with no room for both** (the road narrowing into a bend), racing rules as in the F1 driving guidelines:
   - a car more than half a length behind backs out;
   - overlapped more than that, the car on the inside of the coming bend has earned its place, and the one round the outside backs out;
   - in a let-by (below), the car letting the other through always gives way;
-  - neither turns in on the other. Backing out means dropping to 2 m/s below the other car.
+  - neither turns in on the other. Backing out means dropping to 2 m/s below the other car (unless that car has dropped behind or all but stopped, so two cars never wait for each other).
+- **Getting past you** (or any car that isn't an AI, so it won't keep to a lane beside the line):
+  - **Pass lanes:** it can also pick "go by on its left" or "on its right". That's the racing line wherever it's already clear of you, and elsewhere a car's width plus 0.8 m (plus the bend extra) from wherever you really are, from 10 m back. Once alongside, the room-for-a-car-alongside rule keeps it from cutting back in until it's past.
+  - **Push to pass:** stuck 2 s below its pace behind a slower car like that, it gets a full tow's worth of extra pace (see Slipstream) for up to 6 s, then waits 10 s. That's enough to draw alongside on a straight.
+  - It still won't turn in on you: if you take the line into a bend while it's beside you, it backs off.
 - **Following:** behind a car it would run into before it's clear of it, it keeps a gap of 1.5 m + 0.35 s and closes it gently. If the car ahead suddenly slows (a spin, a knock) it brakes hard. Within 15 m of another car it drives 1.5 % under its pace.
 - **The start:** for the first 500 m each grid slot back drives 0.5 % slower, so the field strings out instead of going three wide into the first bend.
 - **Recovering:** sliding (knocked, or ran wide), it comes off the throttle for a moment instead of braking in front of others. If it's stuck for 2.5 s it puts itself back on the road, but only once no car is coming. After the finish it carries on at 85 % pace.
 
-**Letting a quicker car by (help for overtaking).** Evenly matched cars rarely get past each other on twisty roads. So a slower AI that has had a clearly quicker AI (5+ points of difficulty) within 25 m behind it for about 1.5 s (from 200 m into the race, and only if it isn't queued behind someone itself, so a train sorts itself out from the front):
+**Letting a quicker car by (help for overtaking).** Evenly matched cars rarely get past each other on twisty roads. So a slower AI that has had a clearly quicker AI (5+ points of difficulty) within 25 m behind it for about 1.5 s:
+- only from 200 m into the race;
+- only if no car is within 25 m ahead of it and nobody is letting it by itself, so a train sorts itself out from the front instead of everyone easing off at once;
+
+then it:
 - steps 3.5 m off the line to the side with more room over the next 40 m (or the other side of the line from the quicker car, if that's already well to one side);
 - drives at 85 % of its pace, and once the quicker car has pulled out beside it, at half throttle too (but not in the middle of a tight bend, where a car slowing is a hazard);
 - carries on until the quicker car is a car length ahead, drops well back, or 8 s have gone.
@@ -236,10 +245,20 @@ The quicker car is told which side the slower one has taken and passes on the ot
 
 On test races (`npm test`, `tests/traffic.test.ts`):
 - a 90 % AI starting behind a 40 % one gets past within a lap (about 12–27 s on the samples);
-- a 95 / 75 / 55 / 35 % field starting in reverse order finishes with the quickest ahead of the slowest;
-- an evenly matched field of eight races 3 laps with at most one hard knock and nobody off the road.
+- a 95 / 75 / 55 / 35 % field starting in reverse order finishes with the quickest ahead of the slowest, and in roughly pace order on average;
+- an evenly matched field of eight races 3 laps with at most one hard knock and nobody off the road;
+- going down the inside of Sunday Loop's turn 1 overlapped with a 100 % AI (from 2 m behind to 2 m ahead), it leaves room and never touches you;
+- an 80 % AI gets past a 20 % "player" on the racing line who looks out for no one, within the first lap, and stays ahead.
 
-How it was tuned: a scratch harness (not in the repo) ran 30 races on six tracks per setting: matched fields, reversed and mixed grids, and a stand-in "player" on pole that drives the centre line and avoids nobody. Against the previous version, hard knocks (over 4 m/s) went from 49 to 18 and firm ones (over 2 m/s) from 127 to 57. Time off the road went from 30 to 0.7 car-seconds, and sliding from 153 to 57. Order agreement with pace in mixed grids is a little lower (0.50 vs 0.62).
+How it was tuned: a scratch harness (not in the repo) ran 30 races on six tracks per setting. The races were matched fields, reversed and mixed grids, and a stand-in "player" on pole that drives the centre line and avoids nobody.
+- **The version before this one** (against the one before it): hard knocks (over 4 m/s) went from 49 to 18 and firm ones (over 2 m/s) from 127 to 57. Time off the road went from 30 to 0.7 car-seconds, and sliding from 153 to 57.
+- **This version:** firm contacts went from 57 to 36, contacts with the stand-in player to none, and hard knocks between AI cars from 11 to 7. Order agreement with pace in mixed grids is lower (0.40 vs 0.50).
+- **Passing a slow player:** in a separate test with slow players on the racing line, AIs got past them 17 times out of 60 (was 15). A player about 27 % slower is usually passed on tracks with straights. One about 10 % slower usually isn't, and on very twisty tracks hardly anyone gets by.
+
+Tried and dropped, as they made racing worse:
+- an "impatient" mode that squeezes by with less room;
+- late braking whenever close to another car;
+- a bonus for going down the inside.
 
 **Contact** (`car/contact.ts`). Each car's body is a box the size of the car, turned with it.
 - **Overlap:** it's found with a separating-axis test on the four box sides, and the cars are pushed apart along the axis of least overlap, half each.

@@ -6,6 +6,12 @@ import { leftOf } from '../track/spline.ts';
 import type { Track } from '../track/track.ts';
 import { brakingDecel, cornerGrip, racingLine, speedProfile, type Pace, type RacingLine, type SpeedPlan } from './racingLine.ts';
 
+/** A stretch across the road (m left of the centre line) for a car to keep within. */
+export interface Corridor {
+  lo: number;
+  hi: number;
+}
+
 /**
  * Drives the racing line at a pace: steers for a point on the line a little
  * ahead (further at speed), and works throttle and brakes to the speed the
@@ -252,24 +258,33 @@ export class RacingDriver {
     return clamp(lat, line - this.at(this.line.roomRight, s), line + this.at(this.line.roomLeft, s));
   }
 
-  /** Input for the next tick; `lane` drives that far left (+) of the line, at `pace` × the planned speed, at most `cap`, `tow` = how much of a slipstream it is in. */
-  drive(st: CarState, lane = 0, out?: DriveInput, pace = 1, cap = Infinity, tow = 0): DriveInput {
+  /**
+   * Input for the next tick; `lane` drives that far left (+) of the line, at
+   * `pace` × the planned speed, at most `cap`, `tow` = how much of a
+   * slipstream it is in. `keep`, if given, is a stretch across the road to
+   * stay within (m left of the centre): room left for a car alongside, or a
+   * car being passed. The path bends round it, however the line goes.
+   */
+  drive(st: CarState, lane = 0, out?: DriveInput, pace = 1, cap = Infinity, tow = 0, keep: Corridor | null = null): DriveInput {
     const H = HANDLING;
     const o = out ?? { throttle: 0, brake: 0, steer: 0, handbrake: false };
     const v = Math.max(0, st.speed);
-    const path = (x: number) => this.lateralAt(x, lane);
+    const kept = keep;
+    const path = kept ? (x: number) => this.clampLat(x, clamp(this.lateralAt(x, lane), kept.lo, kept.hi)) : (x: number) => this.lateralAt(x, lane);
 
     // Steering: aim for a point on the line a little way ahead (further at speed): the arc
     // through the car and that point needs curvature 2 sin(a) / distance. Add part of the
     // line's own curvature just ahead, so the wheels are already turning as a corner begins.
     const look = DRIVER.lookBase + DRIVER.lookPerSpeed * v;
-    const p = this.pointAt(st.s + look, lane);
+    const p = this.worldAt(st.s + look, path(st.s + look));
     const dist = Math.max(1, Math.hypot(p.x - st.x, p.z - st.z));
     const alpha = angleDelta(st.heading, Math.atan2(p.z - st.z, p.x - st.x));
     // Off the line, it's the bend of the path being driven (beside the line, or along the road's
     // edge) that the wheels should follow, not the line's.
     const sk = st.s + v * DRIVER.curvaturePreview;
-    const kAhead = Math.abs(lane) > DRIVER.offLine ? this.pathCurvature(sk, path) : this.at(this.line.curvature, sk);
+    // (Bent round a car beside us: wherever the stretch we keep to cuts the path.)
+    const bent = kept !== null && Math.abs(path(st.s + look) - this.lateralAt(st.s + look, lane)) > 0.05;
+    const kAhead = bent || Math.abs(lane) > DRIVER.offLine ? this.pathCurvature(sk, path) : this.at(this.line.curvature, sk);
     const k = (2 * Math.sin(alpha)) / dist + DRIVER.curvatureFeed * kAhead;
     const lock = H.maxSteerAngle / (1 + Math.abs(st.speed) / H.steerFalloff);
     o.steer = clamp(Math.atan(k * H.wheelBase) / lock, -1, 1);
@@ -283,6 +298,7 @@ export class RacingDriver {
     // stretch onto the path it wants.
     const lat0 = st.lateral;
     if (Math.abs(lane) > DRIVER.offLine) limit = Math.min(this.laneLimitAt(sp, lane), this.laneLimitAt(st.s + 2, lane));
+    if (bent || (kept !== null && Math.abs(path(st.s) - this.lateralAt(st.s, lane)) > 0.05)) limit = Math.min(limit, this.pathLimit(st.s, path) * DRIVER.offLineSpeed);
     // Well away from where it means to be (knocked, or still moving across): the limit of the
     // path it will really drive, from where it is now blending onto the one it wants.
     if (Math.abs(lat0 - path(st.s)) > DRIVER.farOff) {

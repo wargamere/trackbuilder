@@ -3,7 +3,7 @@ import { towStrength } from '../car/slipstream.ts';
 import { CONTACT, TRAFFIC } from '../config/race.ts';
 import { leftOf } from '../track/spline.ts';
 import type { Track } from '../track/track.ts';
-import type { RacingDriver } from './driver.ts';
+import type { Corridor, RacingDriver } from './driver.ts';
 
 /**
  * Cars driven by AiDriver, and their difficulty (0..1). They keep to a lane
@@ -49,9 +49,15 @@ interface Near {
   car: CarState;
 }
 
-/** The lane the planner picked: an offset from the racing line (m, + = left). */
+/**
+ * The lane the planner picked: an offset from the racing line (m, + = left).
+ * With `pass`, it's getting past a car that isn't an AI (which won't keep to
+ * a lane beside the line): the line, but never closer than the room for a car
+ * to that car's `side` (+1: we go by on its left).
+ */
 export interface LaneChoice {
   offset: number;
+  pass?: { car: CarState; side: number };
 }
 
 /**
@@ -103,6 +109,19 @@ export class TrafficPlanner {
   }
   /** In, or right at, a tight bend (set by plan()). */
   inBend = false;
+  /** Held up behind a slower car that isn't an AI: for how long (s), the push left (s) and the wait till the next. */
+  private heldFor = 0;
+  private pushFor = 0;
+  private pushWait = 0;
+  /**
+   * Pushing to get past a slower car that isn't an AI (you), having been held
+   * up behind it: the car gets a tow's worth of extra pace (TRAFFIC.pushTow)
+   * for a few seconds, enough to draw alongside on a straight.
+   */
+  get pushing(): boolean {
+    return this.pushFor > 0;
+  }
+
   /** Another car is close by (set by plan()). */
   crowded = false;
   /** Extra room across the road wanted in the bend we're in (m) (set by plan()). */
@@ -167,7 +186,20 @@ export class TrafficPlanner {
   private myLat(c: LaneChoice, s: number, off0: number, t: number): number {
     const r = laneReach(t);
     const off = off0 + Math.max(-r, Math.min(r, c.offset - off0));
-    return this.driver.lateralAt(s, off);
+    const lat = this.driver.lateralAt(s, off);
+    if (!c.pass) return lat;
+    // Passing: kept clear of the car, as far over as we can get by then.
+    const o = this.near.find((n) => n.car === c.pass!.car);
+    if (!o) return lat;
+    const bound = this.theirLat(o, s, t) + c.pass.side * this.passRoom();
+    const want = c.pass.side > 0 ? Math.max(lat, bound) : Math.min(lat, bound);
+    const lat0 = this.driver.lateralAt(s, off0);
+    return Math.max(this.driver.lateralAt(s, -99), Math.min(this.driver.lateralAt(s, 99), Math.max(lat0 - r, Math.min(lat0 + r, want))));
+  }
+
+  /** Room across the road (m, centre to centre) to keep from a car we're passing that isn't an AI. */
+  private passRoom(): number {
+    return 2 * CONTACT.halfWidth + TRAFFIC.passGap + this.bendRoom;
   }
 
   /**
@@ -181,7 +213,9 @@ export class TrafficPlanner {
     const reachL0 = 2 * CONTACT.halfWidth + TRAFFIC.marginSide;
     let cost = 0;
     // Off the line: the time its lane loses over the stretch ahead, against the line.
-    const offset = c.offset;
+    // (A pass round a car that isn't an AI: wherever that puts us a moment from now.)
+    const sOff = me.s + TRAFFIC.roomLook;
+    const offset = c.pass ? this.myLat(c, sOff, off0, 1) - this.driver.lateralAt(sOff) : c.offset;
     if (Math.abs(offset) > 0.3) cost += this.driver.laneTimeLost(me.s, offset, TRAFFIC.laneLook);
     cost += TRAFFIC.offLineCost * Math.min(6, Math.abs(offset));
     // Play it forward.
@@ -257,7 +291,8 @@ export class TrafficPlanner {
       // In its slipstream we'd go quicker than our plan (that's how a pass is set up).
       const lat = this.myLat(c, sMe, off0, t);
       const tow = towStrength(sO - sMe - 2 * CONTACT.halfLength, Math.abs(lat - this.theirLat(o, sO, t)), vMe);
-      vMe = Math.min(this.driver.laneSpeedAt(sMe, c.offset) * (1 + TRAFFIC.towGain * tow), vMe + TRAFFIC.pickUp * dt);
+      const laneNow = c.pass ? lat - this.driver.lateralAt(sMe) : c.offset;
+      vMe = Math.min(this.driver.laneSpeedAt(sMe, laneNow) * (1 + TRAFFIC.towGain * Math.max(tow, this.pushing ? TRAFFIC.pushTow : 0)), vMe + TRAFFIC.pickUp * dt);
       sMe += vMe * dt;
       sO += vO * dt;
       if (sO - sMe < -reachS) break;
@@ -306,6 +341,20 @@ export class TrafficPlanner {
     const effective = (o: number) => this.driver.lateralAt(ahead, o) - this.driver.lateralAt(ahead);
     const options: LaneChoice[] = TRAFFIC.lanes.filter((o) => Math.abs(effective(o) - effective(off0)) > 0.5).map((offset) => ({ offset }));
     options.push({ offset: off0 });
+    // A slower car ahead that isn't an AI: go by it on either side, wherever it is on the road.
+    const slow = this.near.find((o) => !o.ai && o.ds > 0 && o.ds < TRAFFIC.passAhead && o.v < v);
+    if (slow) {
+      for (const side of [1, -1]) {
+        const at = slow.lat + side * this.passRoom();
+        const edge = this.driver.lateralAt(ahead, side * 99);
+        if ((edge - at) * side >= 0) options.push({ offset: 0, pass: { car: slow.car, side } });
+      }
+    }
+    // A pass is over once its car is behind us (or out of sight).
+    if (this.choice.pass) {
+      const o = this.near.find((n) => n.car === this.choice.pass!.car);
+      if (!o || o.ds < -2 * CONTACT.halfLength) this.choice = { offset: off0 };
+    }
     const keep = this.choice;
     this.squeezer = null;
     const keepCost = this.cost(me, keep, v, off0) + wrongSide(keep);
@@ -368,9 +417,12 @@ export class TrafficPlanner {
     let cap = Infinity;
     this.brakeNeed = 0;
     // Backing out of a side-by-side: drop in a little slower than the car we're giving way to.
+    // Not if it's dropped behind us, or has all but stopped (then we'd only both stand there).
     if (this.yieldFor > 0) {
       this.yieldFor -= dt;
-      if (this.yieldTo) cap = Math.min(cap, Math.max(0, this.yieldTo.speed) - TRAFFIC.yieldDrop);
+      const to = this.yieldTo;
+      if (to && (to.speed < TRAFFIC.yieldMinSpeed || along(me.s, to.s, this.L) < -CONTACT.halfLength)) this.yieldFor = 0;
+      else if (to) cap = Math.min(cap, Math.max(0, to.speed) - TRAFFIC.yieldDrop);
     }
     // Room across the road it wants before drawing alongside: more in a tight bend, where the
     // cars swing their tails out, and in any real bend more the faster it's closing.
@@ -396,7 +448,66 @@ export class TrafficPlanner {
       const want = TRAFFIC.gapBase + TRAFFIC.gapTime * v;
       cap = Math.min(cap, Math.max(0, o.speed) + (gap - want) * TRAFFIC.gapGain);
     }
+    // Held up behind a slower car that isn't an AI: after a while, push to get by.
+    const slowAhead = this.near.some((o) => !o.ai && o.ds > 0 && o.ds < TRAFFIC.pushWithin && o.v < this.driver.speedAt(me.s + o.ds));
+    const held = slowAhead && v < this.driver.speedAt(me.s) * TRAFFIC.pushBelow;
+    this.heldFor = held ? this.heldFor + dt : Math.max(0, this.heldFor - dt);
+    this.pushWait = Math.max(0, this.pushWait - dt);
+    if (this.pushFor > 0) {
+      this.pushFor -= dt;
+      // Over when its time is up, or there's no such car near ahead or beside any more (we're by).
+      const still = this.near.some((o) => !o.ai && o.ds > -2 * CONTACT.halfLength && o.ds < TRAFFIC.pushWithin);
+      if (this.pushFor <= 0 || !still) {
+        this.pushFor = 0;
+        this.pushWait = TRAFFIC.pushRest;
+      }
+    } else if (this.heldFor > TRAFFIC.pushAfter && this.pushWait <= 0) {
+      this.pushFor = TRAFFIC.pushTime;
+      this.heldFor = 0;
+    }
     return Math.max(0, cap);
+  }
+
+  /**
+   * The stretch across the road to keep within for the cars beside us: never
+   * closer to one alongside (or just ahead, or with its nose up beside us) than a
+   * car's width and TRAFFIC.keepGap (or than we are now, if already closer),
+   * however the line goes. A car on the inside of a bend has its room; we
+   * don't turn in on it. Null if no car is beside us.
+   */
+  keepOut(me: CarState, cars: readonly CarState[]): Corridor | null {
+    let lo = -Infinity;
+    let hi = Infinity;
+    const room = 2 * CONTACT.halfWidth + TRAFFIC.keepGap + this.bendRoom;
+    const reach = 2 * CONTACT.halfLength + TRAFFIC.keepReach;
+    for (const o of cars) {
+      if (o === me || Math.abs(o.y - me.y) > CONTACT.heightGap) continue;
+      const ds = along(me.s, o.s, this.L);
+      const side = o.lateral - me.lateral;
+      // A car behind gets its room once its nose is well up alongside us (past our rear
+      // wheels), or about to be (closing fast: diving down the inside); before that, the line
+      // is ours.
+      const behindReach = TRAFFIC.keepBehind + Math.max(0, o.speed - me.speed) * TRAFFIC.keepClosing;
+      if (ds > reach || ds < -behindReach) continue;
+      // Right in line, nose to tail: that's for following, not for room beside.
+      if (Math.abs(side) < CONTACT.halfWidth) continue;
+      if (side > 0) hi = Math.min(hi, Math.max(o.lateral - room, me.lateral));
+      else lo = Math.max(lo, Math.min(o.lateral + room, me.lateral));
+    }
+    // Passing a car that isn't an AI: stay on our side of it, with room.
+    const pass = this.choice.pass;
+    if (pass) {
+      const ds = along(me.s, pass.car.s, this.L);
+      if (ds > -2 * CONTACT.halfLength && ds < TRAFFIC.passClose) {
+        const bound = pass.car.lateral + pass.side * this.passRoom();
+        if (pass.side > 0) lo = Math.max(lo, Math.min(bound, me.lateral + TRAFFIC.passStep));
+        else hi = Math.min(hi, Math.max(bound, me.lateral - TRAFFIC.passStep));
+      }
+    }
+    if (lo === -Infinity && hi === Infinity) return null;
+    // Squeezed between two: the middle of the gap.
+    if (lo > hi) lo = hi = (lo + hi) / 2;
+    return { lo, hi };
   }
 
   /**
@@ -420,7 +531,8 @@ export class TrafficPlanner {
     } else {
       // Not off the grid (everyone's bunched up then and sorts itself out), and not while we're
       // queued behind someone ourselves (then it's for the car at the front of the queue).
-      const queued = this.near.some((o) => o.ds > 0 && o.ds < T.letByGap && Math.abs(o.lat - me.lateral) < 2 * CONTACT.halfWidth + T.marginSide);
+      // (Or while someone is letting us by.)
+      const queued = this.near.some((o) => o.ds > 0 && o.ds < T.letByGap) || this.passing(me) !== null;
       this.letByWait = behind && this.started && !queued ? this.letByWait + T.planEvery : Math.max(0, this.letByWait - 2 * T.planEvery);
       if (behind && this.letByWait > T.letByAfter) {
         this.letByWait = 0;
