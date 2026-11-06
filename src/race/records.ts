@@ -37,7 +37,6 @@ export interface RunResult {
   recordLap: number | null;
   newRecord: boolean;
   avgSpeedKmh: number;
-  multiplier: number;
   score: number;
   bestScore: number;
   newBestScore: boolean;
@@ -53,16 +52,14 @@ export interface RunResult {
   position: number | null;
 }
 
-/**
- * Score: average speed on your best lap of the run (km/h) × the track's ink
- * multiplier × 10. Short, twisty tracks are slower but multiply more.
- */
-export function scoreFor(trackLength: number, bestLap: number, multiplier: number): { avg: number; score: number } {
+/** Score: average speed on your best clean lap (km/h) × 10. */
+export function scoreFor(trackLength: number, bestLap: number): { avg: number; score: number } {
   const avg = (trackLength / bestLap) * 3.6;
-  return { avg, score: Math.round(avg * multiplier * 10) };
+  return { avg, score: Math.round(avg * 10) };
 }
 
 interface StoredRecord {
+  scoreV?: number;
   best: BestLap | null;
   bestScore: number;
   ghost: string | null;
@@ -91,7 +88,7 @@ export class RecordBook {
     const s = loadJSON<StoredRecord | null>(key(id), null);
     r = {
       best: s?.best && typeof s.best.time === 'number' ? s.best : null,
-      bestScore: typeof s?.bestScore === 'number' ? s.bestScore : 0,
+      bestScore: s?.scoreV === 2 && typeof s.bestScore === 'number' ? s.bestScore : 0,
       ghost: s?.ghost ? decodeGhost(s.ghost) : null,
       author: storedAuthor(s),
     };
@@ -106,7 +103,7 @@ export class RecordBook {
     const s = loadJSON<StoredRecord | null>(key(id), null);
     return {
       best: s?.best && typeof s.best.time === 'number' ? s.best : null,
-      bestScore: typeof s?.bestScore === 'number' ? s.bestScore : 0,
+      bestScore: s?.scoreV === 2 && typeof s.bestScore === 'number' ? s.bestScore : 0,
       author: storedAuthor(s),
     };
   }
@@ -114,7 +111,7 @@ export class RecordBook {
   /** Writes a track's record after it changed. */
   save(id: string): void {
     const r = this.get(id);
-    const stored: StoredRecord = { best: r.best, bestScore: r.bestScore, ghost: r.ghost ? encodeGhost(r.ghost) : null };
+    const stored: StoredRecord = { scoreV: 2, best: r.best, bestScore: r.bestScore, ghost: r.ghost ? encodeGhost(r.ghost) : null };
     if (r.author !== undefined) {
       stored.author = r.author;
       stored.authorV = AUTHOR_VERSION;

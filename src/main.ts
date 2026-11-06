@@ -152,6 +152,7 @@ class Game implements GameContext {
     surface.resize();
     this.current = next;
     this.currentId = id;
+    document.documentElement.dataset.screen = id;
     next.enter();
     next.resize();
   }

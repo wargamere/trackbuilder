@@ -11,8 +11,8 @@ import { buildTrack, type TrackDef } from '../track/track.ts';
 import { button, h, segmented } from './dom.ts';
 import { ShareDialog } from './shareDialog.ts';
 
-/** Length and multiplier per track id (building a track for its stats isn't free). */
-const statsCache = new Map<string, { len: number; mult: number }>();
+/** Length per track id (building a track for its stats isn't free). */
+const statsCache = new Map<string, { len: number }>();
 
 /** Draws a track's outline into a small canvas, fitted with a margin. */
 function drawThumbnail(canvas: HTMLCanvasElement, dots: TrackDef['control']): void {
@@ -193,13 +193,13 @@ export class LibraryScreen implements Screen {
     let info = statsCache.get(def.id);
     if (!info) {
       const t = (def.builtIn && builtInTrack(def.id)) || buildTrack(def);
-      info = { len: t.center.length, mult: t.ink.multiplier };
+      info = { len: t.center.length };
       statsCache.set(def.id, info);
     }
     const thumb = h('canvas', { class: 'thumb' });
     drawThumbnail(thumb, def.control);
     const rec = this.game.records.summary(def.id);
-    const stats = fmt(STR.library.stats, { len: Math.round(info.len).toLocaleString('en-US'), mult: info.mult.toFixed(2) });
+    const stats = fmt(STR.library.stats, { len: Math.round(info.len).toLocaleString('en-US') });
     const medal = rec.best && rec.author ? medalFor(rec.best.time, medalTimes(rec.author)) : null;
     const best = rec.best
       ? fmt(STR.library.best, { time: formatTime(rec.best.time), score: rec.bestScore.toLocaleString('en-US') })

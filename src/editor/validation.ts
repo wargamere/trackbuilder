@@ -1,10 +1,9 @@
-import { INK, TRACK } from '../config/track.ts';
+import { TRACK } from '../config/track.ts';
 import { dist2, lerpVec, segmentsCross, type Vec2 } from '../core/math.ts';
 import type { Centerline } from '../track/spline.ts';
 
 export type TrackIssue =
   | 'too-short'
-  | 'too-long'
   | 'not-closed'
   | 'shallow-crossing'
   | 'crossing-start'
@@ -90,7 +89,6 @@ export function validateCenterline(c: Centerline): Validation {
   const n = pts.length;
 
   if (c.length < TRACK.minLength) return { ok: false, issue: 'too-short', at: pts[0] };
-  if (c.length > INK.max * 1.03) return { ok: false, issue: 'too-long', at: pts[Math.floor(n / 2)] };
 
   const maxCurv = 1 / TRACK.minRadius;
   for (let i = 0; i < n; i++) {

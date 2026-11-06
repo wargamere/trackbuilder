@@ -206,7 +206,7 @@ export class MenuScreen implements Screen {
     const t = this.game.track;
     const rec = this.game.records.summary(t.def.id);
     this.trackName.textContent = t.def.name;
-    const info = fmt(STR.menu.trackInfo, { len: (t.center.length / 1000).toFixed(2), mult: t.ink.multiplier.toFixed(2) });
+    const info = fmt(STR.menu.trackInfo, { len: (t.center.length / 1000).toFixed(2) });
     this.trackInfo.textContent = t.def.place ? `${t.def.place} · ${info}` : info;
     this.groupChoice.set(this.group);
     for (const g of GROUPS) {

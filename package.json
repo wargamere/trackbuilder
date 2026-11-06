@@ -14,7 +14,8 @@
     "build:cg:ads": "npm run typecheck && ADS=1 vite build --mode crazygames && node scripts/size.mjs dist/crazygames",
     "build": "npm run build:web && npm run build:cg",
     "preview:web": "vite preview --outDir dist/web",
-    "preview:cg": "vite preview --outDir dist/crazygames"
+    "preview:cg": "vite preview --outDir dist/crazygames",
+    "test:browser": "node scripts/browserCheck.mjs"
   },
   "dependencies": {
     "three": "0.186.1"
@@ -22,6 +23,8 @@
   "devDependencies": {
     "@types/node": "22.19.0",
     "@types/three": "0.186.0",
+    "happy-dom": "21.0.4",
+    "playwright": "1.65.0",
     "typescript": "5.9.3",
     "vite": "8.3.4"
   }

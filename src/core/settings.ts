@@ -31,7 +31,7 @@ export interface Settings {
 const DEFAULTS: Settings = {
   muted: false,
   camera: 'chase',
-  editorMode: 'draw',
+  editorMode: 'dots',
   softEdit: true,
   smoothing: 'normal',
   snap: false,

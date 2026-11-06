@@ -1,4 +1,4 @@
-import { INK, type SmoothingLevel } from '../config/track.ts';
+import { TRACK, type SmoothingLevel } from '../config/track.ts';
 import type { Vec2 } from '../core/math.ts';
 import { bakedDef, type BakedTrack, type TrackGroup } from '../track/catalog.ts';
 import { CLASSIC_TRACKS } from '../track/data/classic.ts';
@@ -16,7 +16,7 @@ export function dotsFromStroke(
   raw: readonly Vec2[],
   level: SmoothingLevel,
 ): { ok: true; dots: Vec2[]; autoClosed: boolean } | { ok: false; issue: TrackIssue; at?: Vec2 } {
-  const stroke = strokeToControl(dedupe(raw, INK.minStep), level);
+  const stroke = strokeToControl(dedupe(raw, TRACK.strokeMinStep), level);
   if (!stroke.ok) return stroke;
   return { ok: true, dots: denseToDots(stroke.control, level), autoClosed: !!stroke.autoClosed };
 }

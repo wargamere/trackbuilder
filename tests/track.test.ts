@@ -1,11 +1,10 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { INK, TRACK } from '../src/config/track.ts';
+import { TRACK } from '../src/config/track.ts';
 import type { Vec2 } from '../src/core/math.ts';
 import { getSampleTrack, SAMPLE_COUNT, trackFromControl, trackFromStroke } from '../src/editor/pipeline.ts';
 import { strokeToControl } from '../src/editor/smoothing.ts';
 import { validateCenterline } from '../src/editor/validation.ts';
-import { inkStats } from '../src/track/ink.ts';
 import { buildCenterline } from '../src/track/spline.ts';
 import { buildTrack } from '../src/track/track.ts';
 
@@ -129,26 +128,17 @@ test('a track rebuilds identically from its definition', () => {
   }
 });
 
-test('ink multiplier rewards unused ink and tight corners', () => {
-  const full = inkStats(INK.max, []);
-  assert.equal(full.multiplier, 1);
-  const half = inkStats(INK.max / 2, []);
-  assert.equal(half.multiplier, 1 + INK.leftWeight / 2);
-  const corner = { start: 0, count: 1, sign: 1 as const, turn: 1, apex: 0 };
-  const twisty = inkStats(INK.max / 2, Array(3).fill(corner));
-  assert.equal(twisty.multiplier, Math.round((half.multiplier + 3 * INK.cornerBonus) * 100) / 100);
-  const capped = inkStats(INK.max / 2, Array(50).fill(corner));
-  assert.equal(capped.cornerBonus, INK.cornerBonusMax);
-});
-
-test('all sample tracks are valid, fit the ink pot, and differ in multiplier', () => {
-  const mults: number[] = [];
+test('all sample tracks remain valid without a length budget', () => {
   for (let i = 0; i < SAMPLE_COUNT; i++) {
     const t = getSampleTrack(i);
-    assert.ok(t.center.length <= INK.max, `${t.def.name} is ${t.center.length} m`);
     assert.ok(trackFromControl(t.def).ok, t.def.name);
-    mults.push(t.ink.multiplier);
   }
   assert.equal(SAMPLE_COUNT, 3);
-  assert.equal(new Set(mults).size, 3);
+});
+
+test('a drivable circuit longer than the former ink limit is accepted', () => {
+  const control = Array.from({ length: 24 }, (_, i) => ({ x: 500 * Math.cos(i * Math.PI / 12), y: 500 * Math.sin(i * Math.PI / 12) }));
+  const result = trackFromControl({ id: 'long', name: 'Long circuit', control });
+  assert.ok(result.ok);
+  assert.ok(result.track.center.length > 3000);
 });

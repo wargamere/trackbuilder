@@ -186,7 +186,7 @@ export class RaceScreen implements Screen {
     this.hud.showMinimap(settings().minimap);
     this.game.view3d?.setQuality(settings().graphics);
     this.hud.setTrackInfo(
-      fmt(STR.race.trackInfo, { name: t.def.name, len: Math.round(t.center.length), mult: t.ink.multiplier.toFixed(2) }),
+      fmt(STR.race.trackInfo, { name: t.def.name, len: Math.round(t.center.length) }),
     );
     const v = this.game.view3d;
     if (!v) {
@@ -589,7 +589,7 @@ export class RaceScreen implements Screen {
     const rec = this.game.records.get(t.def.id);
     // Only clean laps score; a run with none scores nothing.
     const bestOfRun = s.bestOfRun();
-    const { avg, score } = bestOfRun === null ? { avg: 0, score: 0 } : scoreFor(t.center.length, bestOfRun, t.ink.multiplier);
+    const { avg, score } = bestOfRun === null ? { avg: 0, score: 0 } : scoreFor(t.center.length, bestOfRun);
     const newBestScore = score > rec.bestScore;
     if (newBestScore) {
       rec.bestScore = score;
@@ -608,7 +608,6 @@ export class RaceScreen implements Screen {
       recordLap: rec.best?.time ?? bestOfRun,
       newRecord: s.newBest,
       avgSpeedKmh: avg,
-      multiplier: t.ink.multiplier,
       score,
       bestScore: rec.bestScore,
       newBestScore,

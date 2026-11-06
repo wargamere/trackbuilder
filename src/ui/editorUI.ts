@@ -1,7 +1,8 @@
 import { STR, fmt } from '../config/strings.ts';
 import { TRACK, type SmoothingLevel, type TrackOptions } from '../config/track.ts';
 import type { Settings } from '../core/settings.ts';
-import type { InkStats } from '../track/ink.ts';
+import { STARTERS, starterTrack, type StarterId } from '../editor/starters.ts';
+import { sampleClosedCatmullRom } from '../track/spline.ts';
 import type { TrackStats } from '../track/stats.ts';
 import { button, h, segmented, slider, type Choice, type Slider } from './dom.ts';
 
@@ -12,6 +13,15 @@ export type DisplaySettings = Pick<Settings, 'graphics' | 'units' | 'minimap' | 
 
 export interface EditorActions {
   back(): void;
+  starter(id: StarterId): void;
+  surprise(): void;
+  restoreDraft(): void;
+  closeLoop(): void;
+  locateIssue(): void;
+  soften(): void;
+  selectPoint(direction: number): void;
+  nudgePoint(dx: number, dy: number, dh?: number): void;
+  deletePoint(): void;
   undo(): void;
   redo(): void;
   clear(): void;
@@ -19,6 +29,7 @@ export interface EditorActions {
   practice(): void;
   preview(): void;
   setMode(m: EditorMode): void;
+  pan(): void;
   setSmoothing(s: SmoothingLevel): void;
   setSnap(on: boolean): void;
   setSoft(on: boolean): void;
@@ -58,6 +69,16 @@ export interface CornerInfo {
 
 /** Everything the editor overlay shows; set every frame (DOM is only touched on change). */
 export interface EditorViewState {
+  panActive: boolean;
+  empty: boolean;
+  drawing: boolean;
+  closed: boolean;
+  pointCount: number;
+  selected: number;
+  selectedHeight: number;
+  hasProblem: boolean;
+  hasDraft: boolean;
+  draftSaved: boolean;
   canUndo: boolean;
   canRedo: boolean;
   canRace: boolean;
@@ -83,22 +104,27 @@ function checkbox(label: string, onChange: (on: boolean) => void): { el: HTMLEle
   return { el: h('label', { class: 'field check' }, input, h('span', { text: label })), input };
 }
 
-const field = (label: string, ...children: (Node | string)[]) => h('div', { class: 'field' }, h('span', { class: 'label', text: label }), ...children);
+const field = (label: string, ...children: (Node | string)[]) => {
+  const el = h('div', { class: 'field' }, h('span', { class: 'label', text: label }), ...children);
+  el.querySelectorAll('input:not([type="checkbox"])').forEach((input) => input.setAttribute('aria-label', label));
+  return el;
+};
 
 interface Section {
   root: HTMLElement;
   summary: HTMLElement;
   body: HTMLElement;
+  head: HTMLButtonElement;
 }
 
 /** Wide screens dock the sidebar; narrower ones show a rail of numbers that opens over the map. */
-const DOCK_MIN_WIDTH = 1100;
+const DOCK_MIN_WIDTH = 900;
 
 /**
  * DOM overlay for the track editor: a sidebar of seven numbered sections
  * (Draw, Size & shape, Corners, Start & pits, Track edges, Scenery & world,
- * Display) with the race button at the bottom, a top bar (undo, ink, messages,
- * multiplier), a stats strip along the bottom and zoom buttons.
+ * Display) with visible drawing tools, starter layouts, point controls,
+ * a status bar, a quick guide and draft recovery.
  */
 export class EditorUI {
   readonly root: HTMLElement;
@@ -106,11 +132,22 @@ export class EditorUI {
   private readonly top: HTMLElement;
   private readonly statsBar: HTMLElement;
   private readonly statCells: Record<'length' | 'corners' | 'straight' | 'gradient' | 'elevation' | 'radius', HTMLElement>;
-  private readonly inkFill: HTMLElement;
-  private readonly inkValue: HTMLElement;
-  private readonly inkBox: HTMLElement;
-  private readonly multValue: HTMLElement;
-  private readonly multDetail: HTMLElement;
+  private readonly toolMode: Choice<EditorMode | 'pan'>;
+  private readonly welcome: HTMLElement;
+  private welcomeDismissed = false;
+  private wasEmpty = false;
+  private readonly toolHint: HTMLElement;
+  private readonly restoreBtn: HTMLButtonElement;
+  private readonly closeBtn: HTMLButtonElement;
+  private readonly locateBtn: HTMLButtonElement;
+  private readonly draftStatus: HTMLElement;
+  private readonly pointLabel: HTMLElement;
+  private readonly pointControls: HTMLElement;
+  private readonly prevPoint: HTMLButtonElement;
+  private readonly nextPoint: HTMLButtonElement;
+  private readonly previewBtn: HTMLButtonElement;
+  private readonly shareBtn: HTMLButtonElement;
+  private readonly help: HTMLDialogElement;
   private readonly message: HTMLElement;
   private readonly undoBtn: HTMLButtonElement;
   private readonly redoBtn: HTMLButtonElement;
@@ -124,7 +161,6 @@ export class EditorUI {
   private overlay = false;
   private readonly name: HTMLInputElement;
   private readonly ctl: {
-    mode: Choice<EditorMode>;
     smoothing: Choice<SmoothingLevel>;
     snap: HTMLInputElement;
     soft: HTMLInputElement;
@@ -157,28 +193,32 @@ export class EditorUI {
     this.open = openSection;
 
     // ---------------------------------------------------------- top bar
-    this.inkFill = h('div', { class: 'meter-fill' });
-    this.inkValue = h('span', { class: 'ink-value' });
-    this.inkBox = h('div', { class: 'ink' }, h('span', { class: 'label', text: STR.editor.ink }), h('div', { class: 'meter' }, this.inkFill), this.inkValue);
-    this.multValue = h('div', { class: 'mult-value' });
-    this.multDetail = h('div', { class: 'mult-detail' });
-    const mult = h('div', { class: 'mult', title: STR.editor.multiplierLabel }, h('div', { class: 'label', text: STR.editor.multiplierLabel }), this.multValue, this.multDetail);
+    const T = STR.studio;
     this.message = h('div', { class: 'message' });
-    this.undoBtn = button('', actions.undo, { icon: '↶', class: 'tool', title: `${STR.buttons.undo} (${k.undo})` });
-    this.redoBtn = button('', actions.redo, { icon: '↷', class: 'tool', title: `${STR.buttons.redo} (${k.redo})` });
-    const tools = h(
-      'div',
-      { class: 'tools' },
-      this.undoBtn,
-      this.redoBtn,
-      button('', actions.clear, { icon: '⌫', class: 'tool', title: `${STR.buttons.clear} (${k.clear})` }),
-      button('', actions.preview, { icon: '◈', class: 'tool', title: S.preview }),
-    );
-    this.top = h('div', { class: 'bar top' }, tools, this.message, this.inkBox, mult);
+    this.message.setAttribute('role', 'status');
+    this.message.setAttribute('aria-live', 'polite');
+    this.undoBtn = button('', actions.undo, { icon: '↶', class: 'tool', title: `${STR.buttons.undo} (Z)` });
+    this.redoBtn = button('', actions.redo, { icon: '↷', class: 'tool', title: `${STR.buttons.redo} (Y)` });
+    this.toolMode = segmented<EditorMode | 'pan'>([
+      ['draw', STR.editor.modeDraw, '✎'], ['dots', STR.editor.modeDots, '◇'], ['height', STR.editor.modeHeight, '△'], ['pan', 'Pan', '✥'],
+    ], (mode) => mode === 'pan' ? actions.pan() : actions.setMode(mode));
+    this.toolMode.el.setAttribute('aria-label', T.tools);
+    this.toolMode.el.classList.add('studio-modes');
+    this.closeBtn = button(T.closeLoop, actions.closeLoop, { icon: '↻', class: 'compact' });
+    this.locateBtn = button(T.locate, actions.locateIssue, { icon: '⌖', class: 'compact' });
+    this.previewBtn = button(S.preview, actions.preview, { icon: '◈', class: 'compact' });
+    this.toolHint = h('span', { class: 'studio-tool-hint' });
+    const tools = h('div', { class: 'tools' }, this.undoBtn, this.redoBtn);
+    const toolbar = h('div', { class: 'studio-toolbar' }, this.toolMode.el, tools,
+      button(T.blank, actions.clear, { icon: '+', class: 'compact studio-blank' }), this.previewBtn,
+      button(T.guide, () => this.help.showModal(), { icon: '?', class: 'compact studio-guide' }));
+    this.top = h('div', { class: 'bar top' }, toolbar,
+      h('div', { class: 'studio-status' }, this.message, this.closeBtn, this.locateBtn), this.toolHint);
 
     // ------------------------------------------------------------- sidebar
     this.name = h('input', { class: 'text-input' });
     this.name.type = 'text';
+    this.name.setAttribute('aria-label', STR.editor.optName);
     this.name.maxLength = 32;
     this.name.placeholder = STR.editor.optName;
     this.name.addEventListener('input', () => actions.rename(this.name.value));
@@ -188,14 +228,6 @@ export class EditorUI {
     });
 
     const opt = actions.setOptions;
-    const ctlMode = segmented<EditorMode>(
-      [
-        ['draw', STR.editor.modeDraw, '✎'],
-        ['dots', STR.editor.modeDots, '●'],
-        ['height', STR.editor.modeHeight, '▲'],
-      ],
-      actions.setMode,
-    );
     const smoothing = segmented<SmoothingLevel>(
       [
         ['sharp', STR.editor.smoothing.sharp],
@@ -296,7 +328,6 @@ export class EditorUI {
     const minimap = checkbox(S.minimap, (on) => actions.setDisplay({ minimap: on }));
     const cornerLabels = checkbox(S.cornerLabels, (on) => actions.setDisplay({ cornerLabels: on }));
     this.ctl = {
-      mode: ctlMode,
       smoothing,
       snap: snap.input,
       soft: soft.input,
@@ -320,22 +351,44 @@ export class EditorUI {
       cornerLabels: cornerLabels.input,
     };
 
+    this.pointLabel = h('p', { class: 'studio-point-label', text: T.pointNone });
+    this.prevPoint = button('', () => actions.selectPoint(-1), { icon: '‹', title: T.prevPoint });
+    this.nextPoint = button('', () => actions.selectPoint(1), { icon: '›', title: T.nextPoint });
+    this.pointControls = h('div', { class: 'studio-point-controls' },
+      button('', () => actions.nudgePoint(-1, 0), { icon: '←', title: T.moveLeft }),
+      button('', () => actions.nudgePoint(0, -1), { icon: '↑', title: T.moveUp }),
+      button('', () => actions.nudgePoint(0, 1), { icon: '↓', title: T.moveDown }),
+      button('', () => actions.nudgePoint(1, 0), { icon: '→', title: T.moveRight }),
+      button('−h', () => actions.nudgePoint(0, 0, -0.5), { title: T.lower }),
+      button('+h', () => actions.nudgePoint(0, 0, 0.5), { title: T.raise }),
+      button('', actions.deletePoint, { icon: '×', title: T.deletePoint }));
+    const pointInspector = h('div', { class: 'studio-point' }, h('span', { class: 'label', text: T.point }),
+      h('div', { class: 'row' }, this.prevPoint, this.pointLabel, this.nextPoint), this.pointControls,
+      h('p', { class: 'help', text: T.pointHelp }));
+
     const bodies: [string, HTMLElement[]][] = [
       [
         S.sections.draw,
         [
-          field(S.tool, ctlMode.el),
+          h('div', { class: 'studio-section-intro' },
+            h('span', { class: 'label', text: T.starterLabel }),
+            h('p', { class: 'help', text: 'A starting point, never a finished idea.' })),
+          this.starterCards(actions, false),
+          button(T.surprise, actions.surprise, { icon: '⤨', class: 'studio-surprise', title: T.surpriseHint }),
+          button(T.blank, actions.clear, { icon: '+', class: 'compact' }),
           heightTools,
           field(STR.editor.optSmoothing, smoothing.el),
           snap.el,
           soft.el,
-          field(STR.editor.optSamples, samples),
-          h('p', { class: 'help', text: STR.editor.optHelp }),
+          h('details', { class: 'studio-details' }, h('summary', { text: STR.editor.optSamples }), samples),
+          pointInspector,
+          h('details', { class: 'studio-details' }, h('summary', { text: 'More editing tips' }), h('p', { class: 'help', text: STR.editor.optHelp })),
         ],
       ],
       [
         S.sections.shape,
         [
+          button(T.soften, actions.soften, { icon: '∿', class: 'compact' }),
           field(S.roadWidth, width.el),
           h('div', { class: 'row wrap' }, ...[10, 12, 15].map((w) => button(fmt(S.widthValue, { w }), () => opt({ width: w }), { class: 'compact' }))),
           field(
@@ -383,32 +436,37 @@ export class EditorUI {
       const head = h(
         'button',
         { class: 'sec-head' },
-        h('span', { class: 'sec-num', text: String(i + 1) }),
+        h('span', { class: 'sec-num', text: ['✎', '⤢', '∿', '⚑', '▥', '☀', '⚙'][i] }),
         h('span', { class: 'sec-text' }, h('span', { class: 'sec-title', text: title }), summary),
         h('span', { class: 'sec-chev', text: '▸' }),
       );
       head.type = 'button';
-      head.tabIndex = -1;
+      head.tabIndex = 0;
       head.title = title;
       head.addEventListener('mousedown', (e) => e.preventDefault());
       head.addEventListener('click', () => this.toggleSection(i));
       const body = h('div', { class: 'sec-body' }, ...content);
       const root = h('div', { class: 'sec' }, head, body);
-      this.sections.push({ root, summary, body });
+      body.id = `studio-section-${i}`;
+      head.setAttribute('aria-controls', body.id);
+      this.sections.push({ root, summary, body, head });
       list.append(root);
     });
 
     this.raceBtn = button(STR.buttons.raceIt, actions.race, { key: k.race, icon: '▶', class: 'primary race' });
     this.saveBtn = button(S.save, actions.save, { icon: '⬇', class: 'compact save', title: S.save });
-    this.practiceBtn = button(STR.buttons.practice, actions.practice, { icon: '⟳', class: 'compact', title: STR.menu.practiceHint });
+    this.practiceBtn = button('Test drive', actions.practice, { icon: '⟳', class: 'compact', title: `Test drive: ${STR.menu.practiceHint}` });
+    this.restoreBtn = button(T.restore, actions.restoreDraft, { icon: '↺', class: 'compact studio-restore' });
+    this.draftStatus = h('span', { class: 'studio-draft', title: T.draftHint });
+    this.shareBtn = button(STR.buttons.share, actions.share, { icon: '⧉', class: 'compact' });
     const foot = h(
       'div',
       { class: 'side-foot' },
+      h('div', { class: 'studio-draft-row' }, this.draftStatus, this.restoreBtn),
       h(
         'div',
         { class: 'row' },
-        button(S.preview, actions.preview, { icon: '◈', class: 'compact', title: `${S.preview} (V)` }),
-        button(STR.buttons.share, actions.share, { icon: '⧉', class: 'compact', title: STR.buttons.share }),
+        this.shareBtn,
         this.saveBtn,
         button(STR.buttons.myTracks, actions.myTracks, { icon: '☰', class: 'compact', title: STR.buttons.myTracks }),
         this.practiceBtn,
@@ -419,9 +477,9 @@ export class EditorUI {
       'div',
       { class: 'side-head' },
       button('', actions.back, { icon: '✕', class: 'tool', title: `${STR.buttons.back} (${k.back})` }),
-      h('span', { class: 'side-title', text: S.title }),
+      h('span', { class: 'side-title', text: T.title }),
     );
-    this.sidebar = h('aside', { class: 'sidebar' }, head, h('div', { class: 'side-name' }, this.name), list, foot);
+    this.sidebar = h('aside', { class: 'sidebar' }, head, h('div', { class: 'side-name' }, h('label', { class: 'label', text: STR.editor.optName }), this.name), list, foot);
 
     // ------------------------------------------------------ stats + zoom
     const cell = (label: string) => {
@@ -445,9 +503,45 @@ export class EditorUI {
       button('', () => actions.zoom('out'), { icon: '−', class: 'round', title: `${STR.editor.zoomOut} (${k.zoomOut})` }),
       button('', () => actions.zoom('fit'), { icon: '⤢', class: 'round', title: `${STR.editor.zoomFit} (${k.zoomFit})` }),
     );
-    this.root = h('div', { class: 'screen editor' }, this.top, this.statsBar, this.zoomBox, this.sidebar);
+    this.welcome = h('div', { class: 'studio-welcome' },
+      h('span', { class: 'studio-eyebrow', text: T.eyebrow }), h('h1', { text: T.intro }),
+      h('p', { text: T.description }), this.starterCards(actions, true),
+      h('div', { class: 'row' }, button(T.start, () => { this.welcomeDismissed = true; actions.setMode('draw'); }, { icon: '✎', class: 'primary' }),
+        button(T.surprise, actions.surprise, { icon: '⤨' })));
+    this.help = h('dialog', { class: 'studio-help' },
+      h('div', { class: 'studio-help-head' }, h('h2', { text: T.guide }), button('Close guide', () => this.help.close(), { icon: '×' })),
+      ...T.guideCards.map(([title, text]) => h('section', {}, h('h3', { text: title }), h('p', { text }))),
+      h('p', { class: 'help', text: T.navigationHelp }));
+    this.help.setAttribute('aria-label', T.guide);
+    this.help.addEventListener('click', (event) => { if (event.target === this.help) { const r = this.help.getBoundingClientRect(); if (event.clientX < r.left || event.clientX > r.right || event.clientY < r.top || event.clientY > r.bottom) this.help.close(); } });
+    this.root = h('div', { class: 'screen editor' }, this.top, this.statsBar, this.zoomBox, this.sidebar, this.welcome, this.help);
+    this.enableKeyboard();
     this.applySections();
   }
+
+  /** Editor controls remain reachable by Tab without stealing game shortcuts. */
+  private enableKeyboard(): void {
+    this.root.querySelectorAll<HTMLButtonElement | HTMLInputElement>('button, input').forEach((el) => { el.tabIndex = 0; });
+  }
+
+  private starterCards(actions: EditorActions, large: boolean): HTMLElement {
+    const cards = STARTERS.map((starter) => {
+      const b = button('', () => actions.starter(starter.id), { class: 'studio-template', title: `${starter.name}: ${starter.hint}` });
+      const points = sampleClosedCatmullRom(starterTrack(starter.id).control);
+      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      svg.setAttribute('viewBox', '-330 -190 660 380');
+      svg.setAttribute('aria-hidden', 'true');
+      const path = document.createElementNS(svg.namespaceURI, 'path');
+      path.setAttribute('d', points.map((p, i) => `${i ? 'L' : 'M'}${p.x},${p.y}`).join(' ') + 'Z');
+      svg.append(path);
+      b.append(svg, h('span', { class: 'studio-template-name', text: starter.name }));
+      if (large) b.append(h('span', { class: 'studio-template-hint', text: starter.hint }));
+      return b;
+    });
+    return h('div', { class: `studio-templates ${large ? 'large' : ''}` }, ...cards);
+  }
+
+  closeHelp(): void { this.help.close(); }
 
   // ------------------------------------------------------------- layout
 
@@ -471,7 +565,9 @@ export class EditorUI {
 
   /** Keeps the zoom buttons in the free area on the right. */
   placeZoom(top: number, bottom: number): void {
+    this.root.style.setProperty('--studio-top', `${top}px`);
     this.zoomBox.style.top = `${top}px`;
+    this.root.style.setProperty('--studio-bottom', `${bottom}px`);
     this.zoomBox.style.bottom = `${bottom}px`;
   }
 
@@ -529,42 +625,10 @@ export class EditorUI {
     this.root.classList.toggle('docked', this.docked);
     this.root.classList.toggle('rail', !this.docked);
     this.sidebar.classList.toggle('open', this.docked || this.overlay);
-    this.sections.forEach((s, i) => s.root.classList.toggle('expanded', i === this.open));
+    this.sections.forEach((s, i) => { s.root.classList.toggle('expanded', i === this.open); s.head.setAttribute('aria-expanded', String(i === this.open && (this.docked || this.overlay))); });
   }
 
   // -------------------------------------------------------------- state
-
-  setInk(left: number, out = false): void {
-    const pct = Math.max(0, Math.min(1, left));
-    this.inkFill.style.width = `${(pct * 100).toFixed(1)}%`;
-    const t = fmt(STR.editor.inkLeft, { pct: Math.round(pct * 100) });
-    if (this.inkValue.textContent !== t) this.inkValue.textContent = t;
-    this.inkBox.classList.toggle('low', pct < 0.15);
-    this.inkBox.classList.toggle('out', out);
-  }
-
-  /** Final multiplier of a finished track, or `null` for none. */
-  setMultiplier(ink: InkStats | null): void {
-    this.multValue.classList.remove('projected');
-    if (!ink) {
-      this.multValue.textContent = '—';
-      this.multDetail.textContent = '';
-      return;
-    }
-    this.multValue.textContent = fmt(STR.editor.multiplier, { mult: ink.multiplier.toFixed(2) });
-    this.multDetail.textContent = fmt(STR.editor.multiplierBreakdown, {
-      ink: ink.inkMult.toFixed(2),
-      corners: ink.tightCorners,
-      bonus: ink.cornerBonus.toFixed(2),
-    });
-  }
-
-  /** Live estimate while drawing (ink part only; corners are counted when the loop closes). */
-  setProjectedMultiplier(value: number): void {
-    this.multValue.classList.add('projected');
-    this.multValue.textContent = fmt(STR.editor.multiplier, { mult: value.toFixed(2) });
-    this.multDetail.textContent = STR.editor.multiplierProjected;
-  }
 
   setMessage(text: string, kind: MessageKind = 'info'): void {
     if (this.message.textContent !== text) this.message.textContent = text;
@@ -574,6 +638,22 @@ export class EditorUI {
 
   setState(s: EditorViewState): void {
     const S = STR.sidebar;
+    const T = STR.studio;
+    if (s.empty && !this.wasEmpty) this.welcomeDismissed = false;
+    this.wasEmpty = s.empty;
+    this.welcome.hidden = !s.empty || s.drawing || this.welcomeDismissed;
+    this.root.classList.toggle('is-drawing', s.drawing);
+    this.toolMode.set(s.panActive ? 'pan' : s.mode);
+    this.toolHint.textContent = s.panActive ? 'Drag the map to look around. Choose another tool to keep building.' : s.mode === 'draw' ? T.drawHint : s.mode === 'dots' ? T.reshapeHint : T.heightHint;
+    this.closeBtn.hidden = s.closed || s.pointCount < 3;
+    this.locateBtn.hidden = !s.hasProblem;
+    this.restoreBtn.hidden = !s.hasDraft;
+    this.draftStatus.textContent = s.draftSaved ? `✓ ${T.draftSaved}` : 'Make something worth a lap.';
+    this.previewBtn.disabled = !s.canRace;
+    this.shareBtn.disabled = !s.canRace;
+    this.pointLabel.textContent = s.selected >= 0 ? fmt(T.pointValue, { i: s.selected + 1, n: s.pointCount, h: s.selectedHeight.toFixed(1) }) : T.pointNone;
+    this.prevPoint.disabled = this.nextPoint.disabled = !s.pointCount;
+    this.pointControls.querySelectorAll('button').forEach((b) => (b.disabled = s.selected < 0));
     const c = this.ctl;
     const o = s.options;
     this.undoBtn.disabled = !s.canUndo;
@@ -585,7 +665,6 @@ export class EditorUI {
     const saveText = s.saved ? `${STR.sidebar.savedTick} ✓` : STR.sidebar.save;
     if (saveLabel && saveLabel.textContent !== saveText) saveLabel.textContent = saveText;
     this.saveBtn.classList.toggle('unsaved', s.canRace && !s.saved);
-    c.mode.set(s.mode);
     c.heightTools.hidden = s.mode !== 'height';
     c.smoothing.set(s.smoothing);
     c.snap.checked = s.snap;
@@ -635,6 +714,7 @@ export class EditorUI {
         ...(s.corners.length && a
           ? s.corners.map((_, i) => {
               const sl = slider(0, 30, 1, (v) => a.cornerBank(i, v), a.commitLive, (v) => `${Math.round(v)}°`);
+              const input = sl.el.querySelector('input')!; input.tabIndex = 0; input.setAttribute('aria-label', `Corner ${i + 1} bank angle`);
               const auto = h('button', { class: 'corner-auto', 'data-auto': String(i), text: S.auto, title: S.autoTitle });
               const label = h('span', { class: 'corner-text' });
               this.cornerRows.push({ slider: sl, auto, label });

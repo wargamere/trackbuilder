@@ -1,10 +1,11 @@
 import { STR, fmt } from '../config/strings.ts';
-import { DOTS, INK, TRACK, WORLD, type SmoothingLevel, type TrackOptions } from '../config/track.ts';
-import { clamp, dist, dist2, polylineLength, type Dot, type Vec2 } from '../core/math.ts';
+import { DOTS, TRACK, WORLD, type SmoothingLevel, type TrackOptions } from '../config/track.ts';
+import { clamp, dist, dist2, type Dot, type Vec2 } from '../core/math.ts';
 import { rng } from '../core/random.ts';
 import type { GameContext, Screen } from '../core/screen.ts';
 import { settings, updateSettings } from '../core/settings.ts';
-import { inkLeftWhileDrawing, inkMultiplier } from '../track/ink.ts';
+import { readDraft, writeDraft, type EditorDraft } from './draft.ts';
+import { starterTrack, surpriseTrack, type StarterId } from './starters.ts';
 import { sampleAt, sampleOpenCatmullRom } from '../track/spline.ts';
 import { buildTrack, contentId, trackOptions, type TrackDef } from '../track/track.ts';
 import { EditorUI, type CornerInfo, type DisplaySettings, type EditorMode, type MessageKind, type Terrain } from '../ui/editorUI.ts';
@@ -34,12 +35,12 @@ import {
   flagRect,
   toScreen,
 } from './render2d.ts';
-import { quantizeBank, reverseDots, rotateDots, snapDot } from './smoothing.ts';
+import { relaxTightCorners, quantizeBank, reverseDots, rotateDots, snapDot } from './smoothing.ts';
 import { nearestSample, planSection, spliceSection } from './splice.ts';
 import { crossingKind, crossingsOf, type TrackIssue } from './validation.ts';
 import { Viewport, ZOOM } from './viewport.ts';
 
-type Failed = { stroke: Vec2[]; issue: TrackIssue | 'not-closed-ink'; at?: Vec2 };
+type Failed = { stroke: Vec2[]; issue: TrackIssue; at?: Vec2 };
 
 /** One undo step. */
 interface Snapshot {
@@ -88,8 +89,7 @@ const PEN_PX: Record<SmoothingLevel, number> = { sharp: 3, normal: 7, smooth: 12
  * through them. Draw mode turns one freehand stroke into dots (or redraws part
  * of the track); Dots mode places them one by one; Height mode raises and
  * lowers them. Every dot can be dragged, the start flag can be moved, the
- * paper can be zoomed and panned, and the track is validated live. Every metre
- * spends ink.
+ * paper can be zoomed and panned, and the track is validated live. Unfinished edits are backed up automatically.
  */
 export class EditorScreen implements Screen {
   readonly layer = '2d';
@@ -120,6 +120,9 @@ export class EditorScreen implements Screen {
 
   // Derived, rebuilt when dirty.
   private dirty = true;
+  private recoverableDraft: EditorDraft | null = null;
+  private draftDue = 0;
+  private draftSaved = false;
   private built: BuildResult | null = null;
   private crossings = 0;
   private bridges = 0;
@@ -129,6 +132,7 @@ export class EditorScreen implements Screen {
   private dotPos: number[] = [];
 
   // Interaction.
+  private panActive = false;
   private pointerId = -1;
   private readonly pointers = new Map<number, Vec2>();
   private drag: Drag | null = null;
@@ -141,7 +145,6 @@ export class EditorScreen implements Screen {
   /** The current stroke started on the road: it redraws a section. */
   private section = false;
   private strokeLen = 0;
-  private outOfInk = false;
   private closing = false;
   private spaceDown = false;
   private pointerType = 'mouse';
@@ -159,12 +162,22 @@ export class EditorScreen implements Screen {
     this.ui = new EditorUI(
       {
         back: () => this.game.go('menu'),
+        starter: (id) => this.loadStarter(id),
+        surprise: () => this.loadLayout(surpriseTrack(Date.now() ^ Math.floor(Math.random() * 0x7fffffff))),
+        restoreDraft: () => this.restoreDraft(),
+        closeLoop: () => this.closeLoop(),
+        locateIssue: () => this.locateIssue(),
+        soften: () => this.softenCorners(),
+        selectPoint: (direction) => this.selectPoint(direction),
+        nudgePoint: (dx, dy, dh) => this.nudgePoint(dx, dy, dh),
+        deletePoint: () => this.deleteDot(this.selected),
         practice: () => this.race('practice'),
         undo: () => this.undo(),
         redo: () => this.redo(),
         clear: () => this.clear(),
         race: () => this.race(),
         setMode: (m) => this.setMode(m),
+        pan: () => { if (!this.drag) this.panActive = !this.panActive; },
         setSmoothing: (s) => {
           this.smoothing = s;
           updateSettings({ smoothing: s });
@@ -177,7 +190,7 @@ export class EditorScreen implements Screen {
         setOptions: (o) => this.setOptions(o),
         reverse: () => this.reverse(),
         sample: (i) => this.loadSample(i),
-        rename: (n) => (this.name = n.trim() || STR.editor.customName),
+        rename: (n) => { this.name = n.trim() || STR.editor.customName; this.scheduleDraft(); },
         myTracks: () => this.game.go('library'),
         share: () => this.shareTrack(),
         hills: () => this.randomHills(),
@@ -213,6 +226,8 @@ export class EditorScreen implements Screen {
       this.failed = null;
       this.name = t.def.name;
       this.options = { ...t.options };
+      this.draftDue = 0;
+      this.draftSaved = false;
       this.history = [];
       this.future = [];
       this.note = this.modeTip();
@@ -221,6 +236,7 @@ export class EditorScreen implements Screen {
       this.dirty = true;
       this.vp.reset();
     }
+    this.recoverableDraft = readDraft();
     this.cancelPointer();
     this.ui.closeOverlay();
     this.game.ui.append(this.ui.root);
@@ -241,6 +257,8 @@ export class EditorScreen implements Screen {
     c.addEventListener('wheel', (e) => this.onWheel(e), { signal: this.abort.signal, passive: false });
     c.addEventListener('contextmenu', (e) => e.preventDefault(), opts);
     window.addEventListener('keydown', (e) => this.onKey(e), opts);
+    window.addEventListener('pagehide', () => this.flushDraft(), opts);
+    document.addEventListener('visibilitychange', () => { if (document.hidden) this.flushDraft(); }, opts);
     window.addEventListener('keyup', (e) => {
       if (e.code === 'Space') this.spaceDown = false;
     }, opts);
@@ -249,6 +267,8 @@ export class EditorScreen implements Screen {
   }
 
   exit(): void {
+    this.flushDraft();
+    this.ui.closeHelp();
     updateSettings({ sidebarSection: this.ui.openSection });
     this.abort?.abort();
     this.abort = null;
@@ -266,6 +286,7 @@ export class EditorScreen implements Screen {
     const inset = this.ui.insets();
     const profH = heights ? clamp(Math.round(s.h * 0.2), 72, 150) : 0;
     const gap = profH ? 8 : 0;
+    this.ui.placeStats(profH + gap);
     this.profile = heights ? { x: inset.left + 8, y: s.h - inset.bottom - profH - 2, w: s.w - inset.left - 16, h: profH } : null;
     // Leave room on the right for the zoom buttons.
     this.vp.setScreen(s.w, s.h, inset.top, inset.bottom + profH + gap, inset.left, 44);
@@ -296,6 +317,7 @@ export class EditorScreen implements Screen {
     this.options = { ...s.options };
     this.selected = this.hover = -1;
     this.dirty = true;
+    this.scheduleDraft();
   }
 
   /** Records `before` as an undo step (call after changing the state). */
@@ -305,6 +327,7 @@ export class EditorScreen implements Screen {
     this.future = [];
     this.note = note;
     this.dirty = true;
+    this.scheduleDraft();
   }
 
   private undo(): void {
@@ -325,9 +348,85 @@ export class EditorScreen implements Screen {
 
   // ------------------------------------------------------------- actions
 
+  private scheduleDraft(): void {
+    this.draftDue = this.dots.length ? performance.now() + 700 : 0;
+    this.draftSaved = false;
+  }
+
+  private flushDraft(): void {
+    if (!this.draftDue || !this.dots.length) return;
+    writeDraft({ dots: this.dots, closed: this.closed, name: this.name, options: this.options });
+    this.draftDue = 0;
+    this.draftSaved = true;
+  }
+
+  private restoreDraft(): void {
+    const draft = this.recoverableDraft;
+    if (!draft) return;
+    const before = this.snapshot();
+    this.restore({ ...draft, failed: null });
+    this.base = null;
+    this.commit(before, { text: STR.studio.draftRestored, kind: 'ok' });
+    this.recoverableDraft = null;
+    this.vp.reset();
+    this.ui.closeOverlay();
+  }
+
+  private loadStarter(id: StarterId): void { this.loadLayout(starterTrack(id)); }
+
+  private loadLayout(def: TrackDef): void {
+    const before = this.snapshot();
+    this.dots = def.control.map((p) => ({ ...p }));
+    this.options = trackOptions(def);
+    this.name = def.name;
+    this.closed = true;
+    this.failed = null;
+    this.selected = this.hover = -1;
+    this.base = null;
+    this.setMode('dots');
+    this.commit(before, { text: fmt(STR.studio.loaded, { name: def.name }), kind: 'ok' });
+    this.vp.reset();
+    this.ui.closeOverlay();
+  }
+
+  private locateIssue(): void {
+    this.rebuild();
+    const at = this.failed?.at ?? (this.built && !this.built.ok ? this.built.at : undefined);
+    if (at) this.vp.centerOn(at, 3);
+    this.ui.closeOverlay();
+  }
+
+  private softenCorners(): void {
+    if (!this.closed || this.dots.length < 3) return;
+    const before = this.snapshot();
+    this.dots = relaxTightCorners(this.dots, 12);
+    this.commit(before, { text: STR.studio.softened, kind: 'ok' });
+  }
+
+  private selectPoint(direction: number): void {
+    if (!this.dots.length) return;
+    this.setMode(this.mode === 'height' ? 'height' : 'dots');
+    this.selected = this.selected < 0 ? (direction > 0 ? 0 : this.dots.length - 1) : (this.selected + direction + this.dots.length) % this.dots.length;
+    this.note = null;
+    this.vp.centerOn(this.dots[this.selected], this.vp.zoom);
+  }
+
+  private nudgePoint(dx: number, dy: number, dh = 0): void {
+    if (this.selected < 0 || this.selected >= this.dots.length) return;
+    const before = this.snapshot();
+    const p = this.dots[this.selected];
+    this.dots[this.selected] = { ...p,
+      x: clamp(p.x + dx, -WORLD.width / 2, WORLD.width / 2),
+      y: clamp(p.y + dy, -WORLD.height / 2, WORLD.height / 2),
+      ...(dh ? { h: clampHeight((p.h ?? 0) + dh) } : {}),
+    };
+    this.commit(before);
+  }
+
   private setMode(m: EditorMode): void {
     if (this.drag) return;
     const layout = (m === 'height') !== (this.mode === 'height');
+    this.panActive = false;
     this.mode = m;
     this.note = this.modeTip();
     this.cursor = null;
@@ -363,6 +462,7 @@ export class EditorScreen implements Screen {
 
   private clear(): void {
     if (!this.dots.length && !this.failed) return;
+    this.flushDraft();
     const before = this.snapshot();
     this.dots = [];
     this.closed = false;
@@ -370,7 +470,8 @@ export class EditorScreen implements Screen {
     this.name = STR.editor.customName;
     this.selected = -1;
     this.commit(before, { text: STR.editor.cleared, kind: 'info' });
-    if (this.mode === 'height') this.setMode('draw');
+    this.setMode('draw');
+    this.ui.closeOverlay();
   }
 
   private reverse(): void {
@@ -685,7 +786,7 @@ export class EditorScreen implements Screen {
   private dotAt(sx: number, sy: number): number {
     let best = -1;
     // In Draw mode dots are small and a press near one more often starts a line on the road.
-    const grab = this.mode === 'draw' && this.closed ? 8 : DOTS.grabPx;
+    const grab = this.pointerType === 'touch' ? 22 : this.mode === 'draw' && this.closed ? 10 : DOTS.grabPx;
     let bestD = grab * grab;
     this.dots.forEach((d, i) => {
       const s = toScreen(this.view, d);
@@ -781,7 +882,7 @@ export class EditorScreen implements Screen {
     if (this.pointerId !== -1 || this.drag || this.pointers.size > 1) return;
 
     // Pan: middle button, or Space held.
-    if (e.pointerType === 'mouse' && (e.button === 1 || (e.button === 0 && this.spaceDown))) {
+    if ((e.button === 0 && this.panActive) || (e.pointerType === 'mouse' && (e.button === 1 || (e.button === 0 && this.spaceDown)))) {
       e.preventDefault();
       this.capture(e);
       this.drag = { kind: 'pan', x, y };
@@ -947,7 +1048,7 @@ export class EditorScreen implements Screen {
 
   private updateHover(x: number, y: number): void {
     const canvas = this.game.surface.canvas;
-    if (this.spaceDown) {
+    if (this.spaceDown || this.panActive) {
       canvas.style.cursor = 'grab';
       return;
     }
@@ -1168,27 +1269,18 @@ export class EditorScreen implements Screen {
     this.stroke = [this.pen.start(w, px / this.view.scale)];
     this.section = section;
     this.strokeLen = 0;
-    this.outOfInk = false;
     this.closing = false;
     this.selected = -1;
   }
 
   private addPoint(p: Vec2): void {
     const s = this.stroke;
-    if (!s || this.outOfInk) return;
+    if (!s) return;
     const last = s[s.length - 1];
     const d = dist(last, p);
-    if (d < INK.minStep) return;
-    const remaining = INK.max - this.strokeLen;
-    if (d >= remaining) {
-      const t = remaining / d;
-      s.push({ x: last.x + (p.x - last.x) * t, y: last.y + (p.y - last.y) * t });
-      this.strokeLen = INK.max;
-      this.outOfInk = true;
-    } else {
-      s.push(p);
-      this.strokeLen += d;
-    }
+    if (d < TRACK.strokeMinStep) return;
+    s.push(p);
+    this.strokeLen += d;
     this.closing = !this.section && this.strokeLen > TRACK.minLength * 0.5 && dist(s[s.length - 1], s[0]) <= TRACK.closeRadius;
   }
 
@@ -1205,7 +1297,6 @@ export class EditorScreen implements Screen {
     const tail = this.pen.finish();
     if (tail) this.addPoint(tail);
     const stroke = this.stroke;
-    const outOfInk = this.outOfInk;
     this.stroke = null;
     if (!stroke || stroke.length < 3) return; // a tap: keep what was there
     const before = this.snapshot();
@@ -1236,10 +1327,9 @@ export class EditorScreen implements Screen {
       this.name = STR.editor.customName;
       this.commit(before, res.autoClosed ? { text: STR.editor.autoClosed, kind: 'ok' } : null);
     } else {
-      const issue = res.issue === 'not-closed' && outOfInk ? 'not-closed-ink' : res.issue;
       this.dots = [];
       this.closed = false;
-      this.failed = { stroke, issue, at: res.at };
+      this.failed = { stroke, issue: res.issue, at: res.at };
       this.commit(before);
     }
   }
@@ -1248,9 +1338,12 @@ export class EditorScreen implements Screen {
 
   private onKey(e: KeyboardEvent): void {
     if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || this.share.isOpen) return;
-    if (e.altKey) return;
+    if (e.altKey || (e.target instanceof Element && e.target.closest('dialog[open]'))) return;
+    // Focused controls retain their native Enter/Space activation.
+    if (e.target instanceof HTMLButtonElement && ['Enter', 'NumpadEnter', 'Space'].includes(e.code)) return;
     const mod = e.ctrlKey || e.metaKey;
     // With Ctrl/Cmd only undo/redo are ours; everything else (browser zoom included) belongs to the browser.
+    if (mod && e.code === 'KeyS') { e.preventDefault(); this.saveTrack(); return; }
     if (mod && e.code !== 'KeyZ' && e.code !== 'KeyY') return;
     if (e.code === 'Space') {
       e.preventDefault();
@@ -1258,6 +1351,13 @@ export class EditorScreen implements Screen {
       return;
     }
     const busy = !!this.stroke || !!this.drag;
+    if (!busy && this.selected >= 0 && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.code)) {
+      e.preventDefault();
+      const step = e.shiftKey ? 5 : 1;
+      if (this.mode === 'height' && ['ArrowUp', 'ArrowDown'].includes(e.code)) this.nudgePoint(0, 0, (e.code === 'ArrowUp' ? 0.5 : -0.5) * step);
+      else this.nudgePoint(e.code === 'ArrowLeft' ? -step : e.code === 'ArrowRight' ? step : 0, e.code === 'ArrowUp' ? -step : e.code === 'ArrowDown' ? step : 0);
+      return;
+    }
     const nextMode: Record<EditorMode, EditorMode> = { draw: 'dots', dots: 'height', height: 'draw' };
     const actions: Record<string, () => void> = {
       KeyZ: () => (e.shiftKey ? this.redo() : this.undo()),
@@ -1297,6 +1397,16 @@ export class EditorScreen implements Screen {
     const ui = this.ui;
     const t = this.built?.track;
     ui.setState({
+      panActive: this.panActive,
+      empty: !this.dots.length && !this.failed,
+      drawing: !!this.stroke,
+      closed: this.closed,
+      pointCount: this.dots.length,
+      selected: this.selected,
+      selectedHeight: this.dots[this.selected]?.h ?? 0,
+      hasProblem: !!this.failed?.at || !!(this.built && !this.built.ok && this.built.at),
+      hasDraft: !!this.recoverableDraft,
+      draftSaved: this.draftSaved,
       canUndo: this.history.length > 0,
       canRedo: this.future.length > 0,
       canRace: !!this.built?.ok && this.closed && !this.stroke,
@@ -1314,11 +1424,7 @@ export class EditorScreen implements Screen {
     });
 
     if (this.stroke && !this.section) {
-      const left = inkLeftWhileDrawing(this.strokeLen);
-      ui.setInk(left, this.outOfInk);
-      ui.setProjectedMultiplier(inkMultiplier(left));
       if (this.closing) ui.setMessage(STR.editor.releaseToClose, 'ok');
-      else if (this.outOfInk) ui.setMessage(STR.editor.outOfInk, 'warn');
       else ui.setMessage(STR.editor.drawing, 'info');
       return;
     }
@@ -1328,21 +1434,9 @@ export class EditorScreen implements Screen {
       return;
     }
 
-    if (t) {
-      ui.setInk(1 - t.center.length / INK.max, t.center.length > INK.max);
-      ui.setMultiplier(t.ink);
-    } else if (this.openLine.length) {
-      const left = inkLeftWhileDrawing(polylineLength(this.openLine));
-      ui.setInk(left, left <= 0);
-      ui.setProjectedMultiplier(inkMultiplier(left));
-    } else {
-      ui.setInk(1);
-      ui.setMultiplier(null);
-    }
-
     // A problem with the track beats a tip or an "Undone." note.
     const problem = !!this.failed || (!!this.built && !this.built.ok);
-    if (this.note && (this.note.kind !== 'info' || !problem)) ui.setMessage(this.note.text, this.note.kind);
+    if (this.note && !problem) ui.setMessage(this.note.text, this.note.kind);
     else if (this.failed) ui.setMessage(STR.editor.errors[this.failed.issue], 'error');
     else if (this.built && !this.built.ok) ui.setMessage(STR.editor.errors[this.built.issue], 'error');
     else if (this.built?.ok && t) {
@@ -1350,9 +1444,9 @@ export class EditorScreen implements Screen {
         (this.crossings ? fmt(STR.editor.readyCrossings, { n: this.crossings }) : '') +
         (this.bridges ? (this.bridges === 1 ? STR.editor.readyBridge : fmt(STR.editor.readyBridges, { n: this.bridges })) : '') +
         (t.center.eased > 0.25 ? STR.editor.readyEased : '');
-      ui.setMessage(fmt(STR.editor.ready, { len: Math.round(t.center.length), corners: t.ink.tightCorners, crossings }), 'ok');
+      ui.setMessage(fmt(STR.editor.ready, { len: Math.round(t.center.length), corners: t.tightCorners.length, crossings }), 'ok');
     } else if (this.dots.length) ui.setMessage(fmt(STR.editor.openPath, { n: this.dots.length }), 'info');
-    else ui.setMessage(`${this.mode === 'draw' ? STR.editor.hintDraw : STR.editor.hintDots} ${STR.editor.hintInk}`, 'info');
+    else ui.setMessage(`${this.mode === 'draw' ? STR.editor.hintDraw : STR.editor.hintDots} ${STR.studio.unlimited}`, 'info');
   }
 
   /** Dots worth a height tag: the one being worked on, and the tops of hills. */
@@ -1374,6 +1468,7 @@ export class EditorScreen implements Screen {
   // --------------------------------------------------------------- render
 
   frame(_dt: number, time: number): void {
+    if (this.draftDue && performance.now() >= this.draftDue && !this.drag) this.flushDraft();
     this.rebuild();
     this.refreshUI();
     const s = this.game.surface;

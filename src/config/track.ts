@@ -1,4 +1,4 @@
-/** Track geometry, editor and "limited ink" tuning. All distances are metres. */
+/** Track geometry and editor tuning. All distances are metres. */
 
 export const WORLD = {
   /** Drawable area. The editor fits this rectangle to the screen. */
@@ -16,6 +16,11 @@ export const TRACK = {
   maxWidth: 20,
   /** Spacing of the final evenly sampled centreline. */
   centerSpacing: 2.5,
+  /** Minimum spacing between freehand samples (metres). */
+  strokeMinStep: 2,
+  /** Corners counted in track statistics. */
+  cornerRadius: 35,
+  cornerMinTurn: (50 * Math.PI) / 180,
   /** A freehand stroke is resampled to this spacing before smoothing. */
   controlSpacing: 6,
   /** Dots are rounded to this grid so a track rebuilds identically everywhere. */
@@ -134,26 +139,4 @@ export const DOTS = {
   snap: 10,
   /** How close (in screen pixels) a pointer must be to grab a dot. */
   grabPx: 14,
-} as const;
-
-/**
- * THE TWIST — limited ink.
- * Every track is drawn from one pot of ink. Ink you don't spend becomes a score
- * multiplier, and every tight corner adds a bonus on top. Short, twisty tracks are
- * harder to drive fast but pay out more.
- */
-export const INK = {
-  /** Total ink, in metres of road. */
-  max: 2400,
-  /** Raw stroke points closer than this are merged (keeps hand jitter from eating ink). */
-  minStep: 2,
-  /** Multiplier gained per fraction of unused ink: 1 + leftWeight * (inkLeft / max). */
-  leftWeight: 1.5,
-  /** A "tight corner" is a run of road tighter than this radius ... */
-  cornerRadius: 35,
-  /** ... that turns at least this much in total (radians). */
-  cornerMinTurn: (50 * Math.PI) / 180,
-  /** Bonus per tight corner, and the cap on the total corner bonus. */
-  cornerBonus: 0.15,
-  cornerBonusMax: 1.2,
 } as const;
