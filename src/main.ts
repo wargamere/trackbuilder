@@ -1,4 +1,5 @@
 import css from './ui/style.css?inline';
+import { installCommonFixes } from './core/browserInput.ts';
 import { audio } from './audio/audio.ts';
 import { STR } from './config/strings.ts';
 import type { DriveMode, GameContext, RaceSetup, Screen, ScreenId } from './core/screen.ts';
@@ -188,20 +189,6 @@ function bootTrack(): Track {
     if (res.ok) return res.track;
   }
   return getSampleTrack(0);
-}
-
-/**
- * Browser defaults that get in a game's way (CrazyGames "common fixes"): page
- * scroll from the wheel, the context menu, and Space / arrow keys scrolling the
- * host page (except while typing in a text field).
- */
-function installCommonFixes(): void {
-  window.addEventListener('wheel', (e) => e.preventDefault(), { passive: false });
-  document.addEventListener('contextmenu', (e) => e.preventDefault());
-  window.addEventListener('keydown', (e) => {
-    const typing = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement;
-    if (!typing && [' ', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) e.preventDefault();
-  });
 }
 
 /**

@@ -1338,6 +1338,7 @@ export class EditorScreen implements Screen {
 
   private onKey(e: KeyboardEvent): void {
     if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || this.share.isOpen) return;
+    if (e.target instanceof Element && e.target.closest('summary, select, [contenteditable="true"]')) return;
     if (e.altKey || (e.target instanceof Element && e.target.closest('dialog[open]'))) return;
     // Focused controls retain their native Enter/Space activation.
     if (e.target instanceof HTMLButtonElement && ['Enter', 'NumpadEnter', 'Space'].includes(e.code)) return;

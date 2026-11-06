@@ -26,11 +26,15 @@ try {
   await page.locator('.studio-blank').click();
   await page.locator('.studio-welcome:not([hidden])').waitFor();
   await page.screenshot({ path: 'test-results/studio-welcome.png' });
-  await page.locator('.studio-welcome .studio-template').first().click();
+  await page.locator('.studio-welcome .studio-template').first().focus();
+  await page.keyboard.press('Space');
   await page.waitForFunction(() => document.querySelector('.studio-welcome')?.hidden);
   const name = page.getByRole('textbox', { name: 'Track name', exact: true });
   assert.equal(await name.inputValue(), 'Easy oval');
   assert.equal(await page.locator('.editor .ink, .editor .mult').count(), 0);
+  await page.locator('.sections').hover();
+  await page.mouse.wheel(0, 400);
+  await page.waitForFunction(() => document.querySelector('.sections')?.scrollTop > 0);
   await page.getByRole('button', { name: 'Next point', exact: true }).click();
   await page.keyboard.press('ArrowRight');
   await page.getByRole('button', { name: 'Raise point 0.5 m', exact: true }).click();

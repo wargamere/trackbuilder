@@ -19,7 +19,10 @@ const { settings } = await import('../src/core/settings.ts');
 const canvas = win.document.createElement('canvas');
 const ctx = new Proxy({}, { get: (_target, key) => key === 'measureText' ? (text: string) => ({ width: text.length * 7 }) : () => {} });
 const ui = win.document.createElement('div');
+ui.id = 'ui';
 win.document.body.append(canvas, ui);
+const { installCommonFixes } = await import('../src/core/browserInput.ts');
+installCommonFixes();
 let drove = '';
 const game: GameContext = {
   track: getSampleTrack(0),
@@ -56,6 +59,19 @@ test('studio has keyboard reachable tools, named fields and no ink controls', ()
   const tool = ui.querySelector('.studio-modes');
   assert.equal(tool?.getAttribute('role'), 'group');
   assert.equal(tool?.querySelector('[aria-pressed="true"]')?.textContent?.includes('Reshape'), settings().editorMode === 'dots');
+});
+
+test('UI scrolling and native keyboard activation are not swallowed by game input', () => {
+  const button = ui.querySelector('button')!;
+  const space = new win.KeyboardEvent('keydown', { key: ' ', code: 'Space', bubbles: true, cancelable: true });
+  button.dispatchEvent(space);
+  assert.equal(space.defaultPrevented, false, 'Space activates a focused control');
+  const wheel = new win.WheelEvent('wheel', { deltaY: 100, bubbles: true, cancelable: true });
+  ui.querySelector('.sections')!.dispatchEvent(wheel);
+  assert.equal(wheel.defaultPrevented, false, 'the sidebar can scroll');
+  const canvasWheel = new win.WheelEvent('wheel', { deltaY: 100, bubbles: true, cancelable: true });
+  canvas.dispatchEvent(canvasWheel);
+  assert.equal(canvasWheel.defaultPrevented, true, 'canvas wheel is reserved for zoom');
 });
 
 test('blank workspace offers starters; loading and undoing a template is reversible', () => {

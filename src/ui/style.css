@@ -2275,3 +2275,5 @@ body {
 
 /* Drawing and menus work in portrait; driving still asks for landscape. */
 html:not([data-screen="race"]) .rotate-prompt { display: none; }
+
+.studio-welcome .row, .studio-point .row { display: flex; }
