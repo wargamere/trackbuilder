@@ -4,7 +4,7 @@
  *    make a valid, crossing-free road an AI can lap;
  *  - 30 real-world circuit layouts, from the open GeoJSON outlines in
  *    bacinger/f1-circuits (MIT licence, see THIRD_PARTY_NOTICES.md), scaled
- *    to fit the drawing area and the ink pot.
+ *    to fit the drawing area.
  *
  * Usage: node scripts/buildTracks.ts <path to a checkout of bacinger/f1-circuits>
  * The output is plain data; the game never runs this.
@@ -22,7 +22,7 @@ import { AuthorLap } from '../src/race/medals.ts';
 import { resampleClosed } from '../src/track/spline.ts';
 import type { Track } from '../src/track/track.ts';
 
-/** Longest a built-in may be (a little under the ink pot), and the box it must fit in (m, centred). */
+/** Longest a built-in may be (the catalog's compact layout target), and the box it must fit in (m, centred). */
 const MAX_LENGTH = 2350;
 const BOX = { w: 600, h: 330 };
 
@@ -285,7 +285,7 @@ function outline(dir: string, file: string): Vec2[] {
   return p;
 }
 
-/** Turned so it fills the box best (a whole number of degrees), then fitted to it and the ink pot. */
+/** Turned so it fills the box best (a whole number of degrees), then fitted to the canvas. */
 function bestTurn(p: readonly Vec2[]): Vec2[] {
   let best: Vec2[] = [];
   let bestScale = 0;

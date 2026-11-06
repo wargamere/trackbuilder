@@ -2,7 +2,7 @@
 
 Draw a racetrack, freehand or dot by dot, then race it in 3D against your own ghost. Built for CrazyGames (HTML5), and also playable as a standalone web build.
 
-**Twist: limited ink.** Every track is drawn from one pot of ink (2400 m of road). The ink you don't use becomes a score multiplier, and every tight corner adds a bonus on top. Short, twisty tracks are harder to drive fast but pay out more. The ink meter and a live multiplier are shown while you draw. All of these values can be tuned in `src/config/track.ts` (`INK`).
+**Build for the fun of it.** Circuit Studio has no ink budget or length-based multiplier. Start freehand, place points, pick one of four visual starter layouts, or remix a surprise circuit. Track geometry still needs to be drivable; the editor explains problems and can zoom straight to them.
 
 ## Commands
 
@@ -10,7 +10,9 @@ Draw a racetrack, freehand or dot by dot, then race it in 3D against your own gh
 npm install
 npm run dev          # web build, dev server
 npm run dev:cg       # same, with PLATFORM = 'crazygames'
-npm test             # geometry/validation unit tests (Node test runner)
+npm test             # geometry, physics, racing and editor interaction tests
+npx playwright install chromium # one-time browser test setup
+npm run test:browser  # real-browser editor checks + screenshots in test-results/
 npm run build:web    # -> dist/web, prints the build size
 npm run build:cg     # -> dist/crazygames, prints the build size (ads off: Basic Launch)
 npm run build:cg:ads # same with video ads enabled (Full Launch)
@@ -26,7 +28,7 @@ Each build is `index.html` at the root plus one JS file. All paths are relative 
 
 ```
 src/
-  config/     strings.ts (all UI text), track.ts (track + ink tuning), themes.ts,
+  config/     strings.ts (all UI text), track.ts (track geometry tuning), themes.ts,
               handling.ts (all car, input and camera tuning), race.ts (race rules)
   core/       math, screen/state types, 2D canvas surface, fixedStep.ts
   editor/     drawing.ts (editor screen + input), smoothing.ts, validation.ts,
@@ -35,7 +37,7 @@ src/
               (soft editing, hills), profile.ts (height profile graph),
               transform.ts (resize / rotate / mirror), preview.ts (3D view)
   track/      spline.ts (centripetal Catmull-Rom -> evenly spaced centre line),
-              corners.ts, ink.ts, track.ts (TrackDef/Track), samples.ts,
+              corners.ts, track.ts (TrackDef/Track), samples.ts,
               catalog.ts + data/ (the built-in tracks: generated and real circuits),
               mesh.ts (road ribbon, kerbs, barriers, bridge decks), surface.ts
               (terrain, decks, barrier and pillar placement), pits.ts (pit
@@ -101,14 +103,14 @@ Physics runs at a fixed 120 Hz from an accumulator (`core/fixedStep.ts`), and re
 A track is a closed loop of **dots** with a smooth spline through them (`TrackDef.control`), plus its options, and that is the only thing stored.
 
 **Layout.**
-- **Sidebar:** seven numbered sections, each with a one-line summary, plus the Race button. On screens 1100 px or wider it is docked; on narrower ones it folds into a rail of numbers that opens over the map.
-- **Top bar:** undo, redo, clear, 3D view, the message line, the ink meter and the multiplier.
+- **Sidebar:** seven named sections with icons and summaries. Docked at 900 px and wider; an expandable icon rail on smaller screens. Save, Share, Test drive and Race are grouped at the bottom.
+- **Top bar:** visible Freehand / Reshape / Elevation / Pan tools, undo/redo, a fresh page, 3D view and a Quick guide. A status line explains the next step; Close loop and Show me appear when useful.
 - **Stats strip** along the bottom: length, corners, longest straight, max gradient, elevation change and tightest radius.
 - **On the map:** numbered corners with their bank angle, the pit building, and the run-off colour.
 
 | Section | What's in it |
 |---|---|
-| 1 Draw | Freehand / Dots / Height tool, hill tools in Height mode, freehand smoothing, snap to grid, soft editing, sample tracks |
+| 1 Draw | Four visual starter layouts, Surprise me remixes, a blank page, smoothing, snap, soft editing, sample tracks and precise point controls |
 | 2 Size & shape | Road width slider (8–20 m, with 10 / 12 / 15 m shortcuts), smaller / bigger / rotate / mirror the whole track, terrain (flat / rolling / hilly random hills, smooth) |
 | 3 Corners | Banking level for the whole track (off / normal / steep), and a bank slider (0–30°) for every numbered corner, with Auto to go back to the level; tap a corner's number to zoom to it |
 | 4 Start & pits | Laps per race (1 / 3 / 5), pit building on/off, move the start/finish line 10 m back or on, reverse direction |
@@ -116,15 +118,21 @@ A track is a closed loop of **dots** with a smooth spline through them (`TrackDe
 | 6 Scenery & world | Meadow / Desert / Snow, day / sunset, few / normal / lots of trees |
 | 7 Display | Graphics full / fast, km/h or mph, minimap in the race, corner numbers on the map (player settings, not part of the track) |
 
+**Fast starts and accessible editing.** Starter cards show the real layout before loading it. Surprise me uses the tested generated-track catalog, with mirrored and reversed variants, and creates an editable copy. Every layout change is undoable. Reshape is the initial tool for an existing track; a new blank page switches to Freehand.
+
+**Precise controls.** Select a dot on the canvas or use Previous/Next point in Draw. Move it with the arrow buttons or keyboard (Shift = 5 m); in Elevation, ↑/↓ changes height. Raise/lower and Delete have visible controls. Size & shape includes Soften tight corners. Larger touch hit areas make dots easier to grab. Inputs and buttons are keyboard reachable, fields are named, tool selection and sidebar expansion are exposed to assistive technology, and status messages are announced.
+
+**Draft recovery.** Changes are backed up after a short idle period, when leaving the editor, and when the page is hidden. Recover last draft restores unfinished work and is itself undoable. A blank page preserves the last useful draft. Save remains the deliberate way to add a finished track to My tracks. Drafts use the existing platform store and are separate from saved tracks. Editing and menus are available in portrait; racing keeps the landscape prompt.
+
 The **3D view** (V, or the ◈ button) shows the track being edited from an orbiting camera. Drag to look around and scroll or pinch to zoom. Esc goes back to the editor with the edit untouched, and Enter races it.
 
-- **Draw mode:**
+- **Freehand mode:**
   - draw one stroke; if you stop short of the start, the loop closes itself;
-  - the pen is "lazy": the ink trails the pointer on a short string, so hand wobble never reaches the paper. The string is longer with more smoothing, and a little longer for fingers;
+  - the pen is "lazy": the pen tip trails the pointer on a short string, so hand wobble never reaches the paper. The string is longer with more smoothing, and a little longer for fingers;
   - **redraw part of a track:** start a line on the road and end it on the road. The stretch between is replaced (shown in red while drawing), and the other dots don't move. Drawing against the direction of travel replaces the stretch behind;
   - Smoothing (sidebar, section 1) sets how much wobble is removed and how tight a drawn corner may stay: Sharp 6 m, Normal 10 m, Smooth 22 m.
-- **Dots mode:** click to place dots, then click the first dot (or press Enter) to close the loop. Click the road to insert a dot.
-- **Height mode:**
+- **Reshape mode:** click to place dots, then click the first dot (or press Enter) to close the loop. Click the road to insert a dot.
+- **Elevation mode:**
   - drag dots up and down on the map, or by their handles in the height profile along the bottom (amber where the road is as steep as allowed; crossings marked grey for level, blue for bridges);
   - click the road to add a dot at the road's height there;
   - Random hills (H) makes rolling hills that keep every crossing level or a proper bridge; there are also Smooth and Flatten;
@@ -137,7 +145,7 @@ The **3D view** (V, or the ◈ button) shows the track being edited from an orbi
   - Undo (Z) and Redo (Y / Shift+Z), Clear (C), switch mode (M), Reverse direction (R);
   - O opens or closes the sidebar section; the track name is at the top of the sidebar.
 - **Validation runs live** and marks the problem spot:
-  - too short or too long (out of ink);
+  - too short to drive (there is no maximum length budget);
   - corner tighter than 4.5 m;
   - two stretches too close together (unless one passes 6 m over the other);
   - where the road crosses itself, the two roads must be level (within 1 m), or one at least 6 m higher for a bridge;
@@ -157,7 +165,7 @@ The game boots to the **main menu**, with the current track turning slowly in 3D
 - **Race this track** (Enter) opens the race setup (below);
 - **Draw a track** (E), the **Track library** (L), and sound / graphics / units toggles.
 
-The **Track library** (`ui/libraryScreen.ts`) has the same three lists as tabs (yours first if you have any), with thumbnails, length, multiplier and your best for each, plus Race, Edit and Share (and Delete for yours), and a box to paste a friend's track code.
+The **Track library** (`ui/libraryScreen.ts`) has the same three lists as tabs (yours first if you have any), with thumbnails, length and your best for each, plus Race, Edit and Share (and Delete for yours), and a box to paste a friend's track code.
 
 ### Built-in tracks
 
@@ -168,7 +176,7 @@ Built-in tracks (`track/catalog.ts`, listed by `builtInTracks()` in `editor/pipe
   - A loop is kept only if it's a valid road with no crossings, 1.1–2.4 km with at least 5 real bends, and an AI can lap it at medal pace and flat out.
 - **Real circuits (30):** real-world layouts (`track/data/world.ts`), made from the open GeoJSON outlines in [bacinger/f1-circuits](https://github.com/bacinger/f1-circuits) (MIT licence, see `THIRD_PARTY_NOTICES.md`; the game shows it too, under the Real circuits tab). They're named after their place, with no series branding, and are unofficial.
   - The tracks: Sakhir, Jeddah, Melbourne, Suzuka, Shanghai, Miami, Imola, Monaco, Montréal, Barcelona, Spielberg, Silverstone, Budapest, Spa-Francorchamps, Zandvoort, Monza, Baku, Singapore, Austin, Mexico City, São Paulo, Las Vegas, Lusail, Yas Marina, Portimão, Istanbul, Sepang, Hockenheim, Nürburg and Mugello.
-  - *Fitting:* each outline is turned to fill the drawing area best, then scaled down to fit it and the ink pot (1.3–2.35 km; the real ones are 3.3–7 km).
+  - *Fitting:* each outline is turned to fill the drawing area best, then scaled down to fit the canvas (1.3–2.35 km; the real ones are 3.3–7 km).
   - *Start and direction:* the start is moved back up the straight if the outline began right by a bend, and they run the way the race does (Singapore's outline is drawn the other way, so it's reversed).
   - *Making it drivable:* corners too tight for the car are opened up a little. Where the real road comes back close by, the road is narrowed to 10 m (Jeddah, Miami, Monaco, Baku, Suzuka), and only if even that's not enough are those stretches pushed apart a little (Jeddah, Baku).
   - Suzuka's crossover is a bridge, the later road rising 7.5 m over the earlier one.
@@ -337,7 +345,7 @@ Lap times against AI cars count for bests, the ghost, medals and the score as us
 
 3-2-1-GO, then the setup's number of laps (1–10). The timer starts when you cross the line. Ten checkpoints sit around the lap, to be passed in order, driving along the track (anywhere up to 25 m beyond the road's edge counts). A jump of more than 3 m along the track in one physics tick (cutting across the grass to another stretch, or a reset) never passes a checkpoint. A lap that misses one still counts towards the race (and towards finishing), but like a track-limits lap its time doesn't: it's marked invalid, and can't be a best, a ghost or a medal. Lap times are interpolated within the 120 Hz tick. Each checkpoint shows a split against your best lap, and driving backwards shows "Wrong way!".
 
-Your best lap is recorded tick by tick and replayed as a translucent ghost. The results screen shows the total time, each lap, the best lap and a score: average speed on your best lap × ink multiplier × 10.
+Your best lap is recorded tick by tick and replayed as a translucent ghost. The results screen shows the total time, each lap, the best lap and a score: average speed on your best clean lap × 10. Old multiplier-based high scores reset; lap times and ghosts are preserved.
 
 **Medals.** The first time a track is raced, a 75 % AI drives a flying lap of it in the background (in slices, during the countdown). Its lap is the gold time; silver is +10% and bronze +25%. Medal times are measured again whenever the AI changes (`AUTHOR_VERSION`). The targets show under the lap timer and light up as you beat them. The results screen shows the medal for the run and the next one to aim for, and My tracks shows each track's medal. Author times are saved with the track's records.
 
@@ -358,7 +366,7 @@ A **minimap** in the top-right corner shows the track (bridges drawn on top), yo
 - **My tracks** (Pause → My tracks, Results, editor Options):
   - only tracks you save are kept: Save in the editor (it shows ✓ once the track as it is now is saved), Save track on the results screen, or Save next to a pasted code. Racing a track never saves it. (Older versions saved every raced track; that list is cleared once on the first start of this version.)
   - Delete all (tap twice);
-  - thumbnails, length, multiplier, best lap and score;
+  - thumbnails, length, best lap and score;
   - Race / Edit / Share / Delete (tap Delete twice to confirm);
   - a box to paste a friend's code.
 - **Sound:**
@@ -407,3 +415,7 @@ Tested against the real SDK in its `local` mode (localhost): the SDK's own log s
 - [x] Editor sidebar (7 sections), stats strip, numbered corners, road width, kerb / run-off / barrier styles, pits, sunset, laps, tree density, display settings, 3D view
 - [x] Race setup menu (practice / race, laps 1–10, ghost on / off, 1–12 cars, grid: qualifying / random / pick your slot), AI cars with difficulty 1–100 %, car-to-car contact, positions; double-tap R restarts a practice lap
 - [x] AI racing line and speed plan; box-shaped car contact; racing in traffic (lane planner, passing, letting quicker cars by) and slipstream
+
+## Validation for Circuit Studio
+
+`npm test` includes starter/remix validity, draft recovery and corruption handling, the former length-limit regression, score migration, and DOM interaction tests for keyboard editing, undo/redo and narrow layouts. `npm run build` typechecks and packages both web and CrazyGames variants. `.github/workflows/checks.yml` runs these checks on pull requests, then exercises the editor in Chromium and uploads desktop and mobile screenshots.

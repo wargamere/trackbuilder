@@ -39,9 +39,9 @@ export function button(label: string, onPress: () => void, opts: ButtonOpts = {}
     b.title = opts.title;
     b.setAttribute('aria-label', opts.title);
   }
-  if (opts.icon) b.append(h('span', { class: 'btn-icon', text: opts.icon }));
+  if (opts.icon) { const icon = h('span', { class: 'btn-icon', text: opts.icon }); icon.setAttribute('aria-hidden', 'true'); b.append(icon); }
   if (label) b.append(h('span', { class: 'btn-label', text: label }));
-  if (opts.key) b.append(h('kbd', { text: opts.key }));
+  if (opts.key) { const key = h('kbd', { text: opts.key }); key.setAttribute('aria-hidden', 'true'); b.append(key); }
   b.addEventListener('mousedown', (e) => e.preventDefault()); // keep focus off the button
   b.addEventListener('click', (e) => {
     e.preventDefault();
@@ -59,6 +59,7 @@ export interface Choice<T> {
 export function segmented<T extends string | number | boolean>(items: [T, string, string?][], onPick: (v: T) => void): Choice<T> {
   const btns = new Map<T, HTMLButtonElement>();
   const el = h('div', { class: 'segmented' });
+  el.setAttribute('role', 'group');
   for (const [value, label, icon] of items) {
     const b = button(label, () => onPick(value), { icon });
     btns.set(value, b);
@@ -67,7 +68,7 @@ export function segmented<T extends string | number | boolean>(items: [T, string
   return {
     el,
     set(v: T) {
-      for (const [k, b] of btns) b.classList.toggle('on', k === v);
+      for (const [k, b] of btns) { b.classList.toggle('on', k === v); b.setAttribute('aria-pressed', String(k === v)); }
     },
   };
 }

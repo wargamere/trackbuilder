@@ -16,7 +16,7 @@ export interface Corner {
 
 /**
  * Finds every run of road tighter than `radius` that turns at least `minTurn`.
- * Used for the ink corner bonus, and for placing kerbs on the outside of corners.
+ * Used for track statistics and placing kerbs on the outside of corners.
  */
 export function findCorners(c: Centerline, radius: number, minTurn: number): Corner[] {
   const n = c.points.length;

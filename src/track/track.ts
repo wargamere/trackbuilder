@@ -1,8 +1,7 @@
-import { DEFAULT_OPTIONS, INK, TRACK, type TrackOptions } from '../config/track.ts';
+import { DEFAULT_OPTIONS, TRACK, type TrackOptions } from '../config/track.ts';
 import type { Dot } from '../core/math.ts';
 import { hashString } from '../core/random.ts';
 import { findCorners, type Corner } from './corners.ts';
-import { inkStats, type InkStats } from './ink.ts';
 import { buildCenterline, type Centerline } from './spline.ts';
 
 /**
@@ -27,11 +26,10 @@ export interface Track {
   def: TrackDef;
   options: TrackOptions;
   center: Centerline;
-  /** Corners tight enough to count for the ink bonus. */
+  /** Tight corners used in track statistics. */
   tightCorners: Corner[];
   /** Corners that get red/white kerbs on their outside edge. */
   kerbs: Corner[];
-  ink: InkStats;
 }
 
 export const trackOptions = (def: Pick<TrackDef, 'options'>): TrackOptions => ({ ...DEFAULT_OPTIONS, ...def.options });
@@ -39,9 +37,9 @@ export const trackOptions = (def: Pick<TrackDef, 'options'>): TrackOptions => ({
 export function buildTrack(def: TrackDef): Track {
   const options = trackOptions(def);
   const center = buildCenterline(def.control, options.banking, undefined, options.width);
-  const tightCorners = findCorners(center, INK.cornerRadius, INK.cornerMinTurn);
+  const tightCorners = findCorners(center, TRACK.cornerRadius, TRACK.cornerMinTurn);
   const kerbs = findCorners(center, TRACK.kerbRadius, TRACK.kerbMinTurn);
-  return { def, options, center, tightCorners, kerbs, ink: inkStats(center.length, tightCorners) };
+  return { def, options, center, tightCorners, kerbs };
 }
 
 /** Short random id for user-drawn tracks. */

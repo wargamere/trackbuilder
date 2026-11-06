@@ -14,12 +14,12 @@ export interface View {
 }
 
 export const PAPER = {
-  bg: '#f4efe1',
-  gridMinor: 'rgba(60, 100, 170, 0.10)',
-  gridMajor: 'rgba(60, 100, 170, 0.22)',
-  border: 'rgba(27, 58, 138, 0.35)',
-  ink: '#1b3a8a',
-  inkWash: 'rgba(27, 58, 138, 0.13)',
+  bg: '#f2f3e9',
+  gridMinor: 'rgba(83, 116, 82, 0.07)',
+  gridMajor: 'rgba(83, 116, 82, 0.14)',
+  border: 'rgba(67, 104, 76, 0.25)',
+  ink: '#12665c',
+  inkWash: 'rgba(18, 102, 92, 0.13)',
   asphalt: '#4a4f58',
   edge: '#f8f8f4',
   kerbRed: '#d8342c',
@@ -72,7 +72,7 @@ export function drawPaper(ctx: CanvasRenderingContext2D, v: View, w: number, h: 
   grid(WORLD.gridMajor, PAPER.gridMajor);
 
   // Shade outside the drawable area slightly.
-  ctx.fillStyle = 'rgba(27, 58, 138, 0.05)';
+  ctx.fillStyle = 'rgba(67, 104, 76, 0.035)';
   ctx.beginPath();
   ctx.rect(0, 0, w, h);
   ctx.rect(x0, y0, x1 - x0, y1 - y0);
