@@ -159,6 +159,8 @@ test('small screens expose sidebar sections by name with expansion state', () =>
   head.click();
   assert.equal(head.getAttribute('aria-expanded'), 'true');
   assert.ok(head.getAttribute('aria-controls'));
+  ui.querySelector('.sections')!.scrollTop = 200;
   head.click();
   assert.equal(head.getAttribute('aria-expanded'), 'false');
+  assert.equal(ui.querySelector('.sections')!.scrollTop, 0);
 });

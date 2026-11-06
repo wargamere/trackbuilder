@@ -625,6 +625,7 @@ export class EditorUI {
     this.root.classList.toggle('docked', this.docked);
     this.root.classList.toggle('rail', !this.docked);
     this.sidebar.classList.toggle('open', this.docked || this.overlay);
+    if (!this.docked && !this.overlay) this.sidebar.querySelector('.sections')!.scrollTop = 0;
     this.sections.forEach((s, i) => { s.root.classList.toggle('expanded', i === this.open); s.head.setAttribute('aria-expanded', String(i === this.open && (this.docked || this.overlay))); });
   }
 

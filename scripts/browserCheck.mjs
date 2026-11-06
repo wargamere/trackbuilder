@@ -63,9 +63,22 @@ try {
   await page.locator('.sidebar.open').waitFor();
   await page.locator('.sidebar.open #studio-section-0 button[title="New blank track"]').click();
   await page.locator('.studio-welcome:not([hidden])').waitFor();
+  const firstTool = await page.locator('.sec-head').first().boundingBox();
+  assert.ok(firstTool && firstTool.y >= 0, 'collapsed rail starts with the first tool');
   await page.screenshot({ path: 'test-results/studio-mobile.png' });
   const bounds = await page.locator('.studio-welcome').boundingBox();
   assert.ok(bounds && bounds.x >= 0 && bounds.y >= 0 && bounds.x + bounds.width <= 844 && bounds.y + bounds.height <= 390, 'mobile welcome stays within viewport');
+  const phone = await browser.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+  phone.on('pageerror', (error) => errors.push(error.message));
+  await phone.goto('http://127.0.0.1:5178');
+  await phone.waitForFunction(() => window.__game);
+  await phone.getByRole('button', { name: 'Draw a track', exact: true }).click();
+  await phone.locator('.editor').waitFor();
+  assert.equal(await phone.locator('.rotate-prompt').isVisible(), false, 'portrait editing is not blocked');
+  await phone.locator('.sec-head').first().click();
+  await phone.locator('.sidebar.open #studio-section-0 button[title="New blank track"]').click();
+  await phone.locator('.studio-welcome:not([hidden])').waitFor();
+  await phone.screenshot({ path: 'test-results/studio-phone.png' });
   assert.deepEqual(errors, [], 'no browser runtime errors');
   console.log('Browser checks passed: templates, keyboard editing, heights, guide, practice, draft recovery, mobile layout.');
 } catch (error) {
