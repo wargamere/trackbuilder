@@ -74,6 +74,8 @@ try {
   await phone.waitForFunction(() => window.__game);
   await phone.getByRole('button', { name: 'Draw a track', exact: true }).click();
   await phone.locator('.editor').waitFor();
+  const panBounds = await phone.getByRole('button', { name: 'Pan', exact: true }).boundingBox();
+  assert.ok(panBounds && panBounds.x + panBounds.width <= 390, 'all phone drawing tools fit on screen');
   assert.equal(await phone.locator('.rotate-prompt').isVisible(), false, 'portrait editing is not blocked');
   await phone.locator('.sec-head').first().click();
   await phone.locator('.sidebar.open #studio-section-0 button[title="New blank track"]').click();

@@ -2277,3 +2277,10 @@ body {
 html:not([data-screen="race"]) .rotate-prompt { display: none; }
 
 .studio-welcome .row, .studio-point .row { display: flex; }
+@media (max-width: 450px) {
+  .editor .studio-modes { min-width: 0; max-width: 100%; flex-wrap: wrap; gap: 0; }
+  .editor .studio-modes .btn { font-size: 10px; padding: 5px 6px; }
+  .editor .studio-modes .btn-icon { font-size: 13px; }
+  .editor .stat-cell:nth-child(n+3) { display: none; }
+  .editor .message { max-height: 3em; padding: 0; }
+}
