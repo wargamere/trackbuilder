@@ -1,11 +1,12 @@
 // Real browser smoke coverage. Run `npx playwright install chromium` once first.
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdir } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { chromium } from 'playwright';
 
 const server = spawn(process.execPath, ['node_modules/vite/bin/vite.js', '--mode', 'web', '--host', '127.0.0.1', '--port', '5178', '--strictPort'], { stdio: 'inherit' });
 let browser;
+let page;
 try {
   let ready = false;
   for (let i = 0; i < 100; i++) {
@@ -15,7 +16,7 @@ try {
   assert.ok(ready, 'Vite starts');
   await mkdir('test-results', { recursive: true });
   browser = await chromium.launch({ args: ['--enable-unsafe-swiftshader'] });
-  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   const errors = [];
   page.on('pageerror', (error) => errors.push(error.message));
   await page.goto('http://127.0.0.1:5178');
@@ -56,13 +57,19 @@ try {
   await page.waitForFunction(() => document.querySelector('.editor')?.classList.contains('rail'));
   await page.locator('.sec-head').first().click();
   await page.locator('.sidebar.open').waitFor();
-  await page.locator('.sec-body').first().getByRole('button', { name: 'New blank track', exact: true }).click();
+  await page.locator('.sidebar.open #studio-section-0 button[title="New blank track"]').click();
   await page.locator('.studio-welcome:not([hidden])').waitFor();
   await page.screenshot({ path: 'test-results/studio-mobile.png' });
   const bounds = await page.locator('.studio-welcome').boundingBox();
   assert.ok(bounds && bounds.x >= 0 && bounds.y >= 0 && bounds.x + bounds.width <= 844 && bounds.y + bounds.height <= 390, 'mobile welcome stays within viewport');
   assert.deepEqual(errors, [], 'no browser runtime errors');
   console.log('Browser checks passed: templates, keyboard editing, heights, guide, practice, draft recovery, mobile layout.');
+} catch (error) {
+  if (page) {
+    await page.screenshot({ path: 'test-results/studio-failure.png' });
+    await writeFile('test-results/studio-failure.txt', await page.locator('body').ariaSnapshot());
+  }
+  throw error;
 } finally {
   await browser?.close();
   server.kill('SIGTERM');

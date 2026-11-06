@@ -375,7 +375,7 @@ export class EditorUI {
             h('p', { class: 'help', text: 'A starting point, never a finished idea.' })),
           this.starterCards(actions, false),
           button(T.surprise, actions.surprise, { icon: '⤨', class: 'studio-surprise', title: T.surpriseHint }),
-          button(T.blank, actions.clear, { icon: '+', class: 'compact' }),
+          button(T.blank, actions.clear, { icon: '+', class: 'compact', title: T.blank }),
           heightTools,
           field(STR.editor.optSmoothing, smoothing.el),
           snap.el,
