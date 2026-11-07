@@ -2082,6 +2082,88 @@ body {
   margin: 0.2rem 0 0;
 }
 
+/* Left-aligned like the race setup (beats .overlay .panel's centring). */
+.overlay .panel.controls-panel,
+.overlay .panel.assists-panel {
+  text-align: left;
+}
+
+/* Keyboard controls panel. */
+.controls-overlay {
+  z-index: 12;
+}
+
+.controls-panel {
+  width: min(30rem, calc(100vw - 24px));
+  max-height: calc(100dvh - 24px);
+  overflow-y: auto;
+  text-align: left;
+}
+
+.controls-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin-bottom: 0.5rem;
+}
+
+.controls-row {
+  display: grid;
+  grid-template-columns: 1fr 6.5rem 6.5rem;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.controls-action {
+  font-weight: 700;
+  color: #2a3150;
+}
+
+.controls-missing {
+  color: var(--error);
+  font-weight: 700;
+  font-size: 0.85em;
+}
+
+.controls-row .btn.key-btn {
+  justify-content: center;
+  min-height: 2.1rem;
+  font-size: 0.9rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.controls-row .btn.key-btn.empty {
+  color: #8a90a8;
+  border-style: dashed;
+  box-shadow: none;
+}
+
+.controls-row .btn.key-btn.capturing {
+  background: var(--highlight);
+  border-color: #1b1b1b;
+  color: #1b1b1b;
+  animation: key-wait 0.9s ease-in-out infinite;
+}
+
+@keyframes key-wait {
+  50% {
+    background: #fff6d6;
+  }
+}
+
+.controls-note {
+  min-height: 1.2em;
+  margin: 0 0 0.3rem;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--ok);
+}
+
+.controls-panel .menu.row {
+  justify-content: space-between;
+  margin: 0.4rem 0 0;
+}
+
 .setup-hint {
   margin: 0;
   font-size: 0.75rem;

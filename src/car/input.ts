@@ -1,5 +1,7 @@
 import { INPUT } from '../config/handling.ts';
 import { clamp } from '../core/math.ts';
+import { settings } from '../core/settings.ts';
+import { actionMap, type DriveAction, type KeyBindings } from './bindings.ts';
 import type { DriveInput } from './physics.ts';
 
 export type InputAction = 'pause' | 'reset' | 'camera' | 'mute';
@@ -15,23 +17,8 @@ export interface TouchState {
   shift: number;
 }
 
-const KEYS = {
-  throttle: ['KeyW', 'ArrowUp'],
-  brake: ['KeyS', 'ArrowDown'],
-  left: ['KeyA', 'ArrowLeft'],
-  right: ['KeyD', 'ArrowRight'],
-} as const;
-
-/** Gear changes (manual gearbox): one per press. */
-const SHIFT_KEYS: Record<string, number> = { KeyE: 1, KeyQ: -1 };
-
-const ACTION_KEYS: Record<string, InputAction> = {
-  Escape: 'pause',
-  KeyP: 'pause',
-  KeyR: 'reset',
-  KeyC: 'camera',
-  KeyM: 'mute',
-};
+/** Bound actions that fire once per press (the rest are held). */
+const PRESS_ACTIONS: Partial<Record<DriveAction, InputAction>> = { pause: 'pause', reset: 'reset', camera: 'camera', mute: 'mute' };
 
 /** Standard-mapping gamepad buttons. */
 const PAD = { a: 0, b: 1, x: 2, y: 3, lb: 4, rb: 5, lt: 6, rt: 7, back: 8, start: 9, left: 14, right: 15 } as const;
@@ -41,7 +28,6 @@ const PAD_ACTIONS: [number, InputAction][] = [
   [PAD.y, 'camera'],
 ];
 
-const ALL_DRIVE_KEYS = new Set<string>([...Object.values(KEYS).flat(), ...Object.keys(SHIFT_KEYS)]);
 
 /**
  * Merges keyboard, gamepad and touch into one DriveInput. Driving keys are read
@@ -55,6 +41,19 @@ export class InputManager {
   readonly touch: TouchState = { throttle: false, brake: false, steer: 0, shift: 0 };
   /** Gear changes asked for (keyboard and gamepad) and not yet made. */
   private shifts = 0;
+  /** The key bindings in use, and what each key does (rebuilt when they change). */
+  private bound: KeyBindings | null = null;
+  private keyActions = new Map<string, DriveAction>();
+
+  /** The current bindings (from the settings; they can change between races). */
+  private bindings(): KeyBindings {
+    const b = settings().keys;
+    if (b !== this.bound) {
+      this.bound = b;
+      this.keyActions = actionMap(b);
+    }
+    return b;
+  }
 
   private readonly keys = new Set<string>();
   private readonly pad: DriveInput = { throttle: 0, brake: 0, steer: 0, handbrake: false };
@@ -89,14 +88,19 @@ export class InputManager {
 
   private onKey(e: KeyboardEvent, down: boolean): void {
     if (e.ctrlKey || e.metaKey || e.altKey) return; // never interfere with browser shortcuts
-    const action = ACTION_KEYS[e.code];
-    if (!ALL_DRIVE_KEYS.has(e.code) && !action) return;
+    this.bindings();
+    const bound = this.keyActions.get(e.code);
+    if (!bound) return;
     e.preventDefault(); // arrows would otherwise scroll the host page
     this.lastDevice = 'keyboard';
     if (down) {
       this.keys.add(e.code);
-      if (action && !e.repeat) this.onAction(action);
-      if (SHIFT_KEYS[e.code] && !e.repeat) this.shifts += SHIFT_KEYS[e.code];
+      if (e.repeat) return;
+      const action = PRESS_ACTIONS[bound];
+      if (action) this.onAction(action);
+      // Gear changes (manual gearbox): one per press.
+      if (bound === 'gearUp') this.shifts++;
+      if (bound === 'gearDown') this.shifts--;
     } else {
       this.keys.delete(e.code);
     }
@@ -143,11 +147,12 @@ export class InputManager {
 
   /** The combined input for one physics tick. */
   sample(out: DriveInput): DriveInput {
+    const b = this.bindings();
     const held = (codes: readonly string[]) => codes.some((c) => this.keys.has(c));
     const t = this.touch;
-    const keySteer = (held(KEYS.right) ? 1 : 0) - (held(KEYS.left) ? 1 : 0);
-    out.throttle = Math.max(held(KEYS.throttle) ? 1 : 0, this.pad.throttle, t.throttle ? 1 : 0);
-    out.brake = Math.max(held(KEYS.brake) ? 1 : 0, this.pad.brake, t.brake ? 1 : 0);
+    const keySteer = (held(b.right) ? 1 : 0) - (held(b.left) ? 1 : 0);
+    out.throttle = Math.max(held(b.throttle) ? 1 : 0, this.pad.throttle, t.throttle ? 1 : 0);
+    out.brake = Math.max(held(b.brake) ? 1 : 0, this.pad.brake, t.brake ? 1 : 0);
     out.steer = clamp(keySteer + this.pad.steer + t.steer, -1, 1);
     out.handbrake = false; // the handbrake is switched off for now
     // One gear change per tick, so quick presses go through one after the other.

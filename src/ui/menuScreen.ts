@@ -8,6 +8,7 @@ import { formatTime } from '../race/session.ts';
 import { TrackOrbit } from '../render/orbit.ts';
 import type { TrackGroup } from '../track/catalog.ts';
 import { buildTrack, type Track, type TrackDef } from '../track/track.ts';
+import { ControlsPanel } from './controlsPanel.ts';
 import { button, h, segmented, type Choice } from './dom.ts';
 
 /** A track the menu can pick. */
@@ -31,6 +32,7 @@ export class MenuScreen implements Screen {
   private readonly trackInfo: HTMLElement;
   private readonly trackBest: HTMLElement;
   private readonly soundBtn: HTMLButtonElement;
+  private readonly controls = new ControlsPanel();
   private readonly gfxBtn: HTMLButtonElement;
   private readonly unitsBtn: HTMLButtonElement;
   private abort: AbortController | null = null;
@@ -86,7 +88,14 @@ export class MenuScreen implements Screen {
             button(M.myTracks, () => this.game.go('library'), { icon: '☰', key: 'L' }),
           ),
         ),
-        h('div', { class: 'menu row settings' }, this.soundBtn, this.gfxBtn, this.unitsBtn),
+        h(
+          'div',
+          { class: 'menu row settings' },
+          this.soundBtn,
+          this.gfxBtn,
+          this.unitsBtn,
+          button(STR.controls.open, () => this.controls.open(this.game.ui), { icon: '⌨', class: 'small' }),
+        ),
         h('p', { class: 'menu-keys', text: M.keys }),
       ),
     );
@@ -149,6 +158,7 @@ export class MenuScreen implements Screen {
   }
 
   exit(): void {
+    this.controls.close();
     this.abort?.abort();
     this.abort = null;
     this.root.remove();

@@ -50,6 +50,7 @@ src/
               (procedural canvas textures), geom.ts (merge/tint helpers),
               racingLineOverlay.ts (the racing line assist)
   car/        physics.ts (fixed-step arcade physics), gearbox.ts (six gears),
+              bindings.ts (keyboard keys),
               contact.ts (car-to-car bumps), slipstream.ts (drafting), input.ts
               (keyboard, gamepad, touch),
               model.ts (low-poly car), camera.ts (chase + bonnet)
@@ -60,7 +61,7 @@ src/
               cars), bot.ts (test driver), medals.ts (medal times), assists.ts
               (braking and steering assists)
   ui/         dom helpers, menuScreen.ts (main menu), raceSetupScreen.ts (race
-              setup), assistsPanel.ts, gridOverlay.ts (grid after qualifying), editor overlay, HUD,
+              setup), assistsPanel.ts, controlsPanel.ts (key bindings), gridOverlay.ts (grid after qualifying), editor overlay, HUD,
               minimap, pause menu, touch controls,
               libraryScreen.ts (track library), shareDialog.ts, style.css
   audio/      audio.ts (synthesised engine, tyre squeal, grass rumble, beeps)
@@ -103,6 +104,8 @@ Physics runs at a fixed 120 Hz from an accumulator (`core/fixedStep.ts`), and re
 | Gear up / down (manual gears) | E / Q | RB / LB | ▲ ▼ buttons |
 | Camera (chase / bonnet) | C | Y | — |
 | Pause | Esc / P | Start | Ⅱ button |
+
+**Your own keys** (`car/bindings.ts`, `ui/controlsPanel.ts`). The keyboard keys above are the defaults. ⌨ Controls, in the main menu and the pause menu, changes them: every driving action (drive, brake, steer left and right, gear up and down, reset, camera, pause, sound) has two keys. Click one and press the new key; Esc cancels and Backspace clears it. A key already used by another action moves over, and the panel says from where. Reset to defaults puts them all back. Esc always pauses whatever you set, and Tab, Ctrl, Alt and the system keys can't be bound. Keys are physical keys (`KeyboardEvent.code`), shown as your keyboard layout prints them where the browser can say (Z for W on AZERTY). The race's controls hint, the pause menu and the assists panel all show your keys. The gamepad and touch controls don't change.
 
 **Gears** (`car/gearbox.ts`, tuning in `HANDLING.gearbox`). The car has six gears; the HUD shows the gear (R when reversing), AUTO or MAN, and a rev bar.
 - *Revs:* the engine pulls fully from half the revs to 90 % of the limit, less low down (except in 1st, where the clutch slips to get going), tailing off above 90 %, and not at all on the limiter. Changing up at 90 % lands in the full band of the next gear.
@@ -451,6 +454,7 @@ Tested against the real SDK in its `local` mode (localhost): the SDK's own log s
 - [x] Built-in tracks: 20 more of the game's own and 30 real circuits, kept apart from yours in the menu and library
 - [x] Track editor rework (starters, Surprise me, point controls, draft recovery, no ink budget), in the game's own look, with Fix it, a gold-lap preview car and confetti
 - [x] Six-speed gearbox (manual or automatic) and driving assists: racing line (braking / full), braking and steering assists, each a little slower than doing it yourself
+- [x] Rebindable keyboard controls (two keys per action)
 
 ## Validation for the track editor
 

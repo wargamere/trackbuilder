@@ -1,4 +1,5 @@
-import { STR } from '../config/strings.ts';
+import { keysText } from '../car/bindings.ts';
+import { STR, fmt } from '../config/strings.ts';
 import { settings, updateSettings, type Assists } from '../core/settings.ts';
 import { button, h, segmented, type Choice } from './dom.ts';
 
@@ -23,6 +24,7 @@ export class AssistsPanel {
   private readonly brake: Choice<boolean>;
   private readonly steer: Choice<boolean>;
   private readonly gears: Choice<Assists['gears']>;
+  private readonly gearsHint: HTMLElement;
   private onClose: () => void = () => {};
 
   constructor() {
@@ -56,10 +58,11 @@ export class AssistsPanel {
       ],
       (v) => set({ gears: v }),
     );
-    const field = (label: string, control: HTMLElement, hint: string) => {
+    const field = (label: string, control: HTMLElement, hint: string | HTMLElement) => {
       control.setAttribute('aria-label', label);
-      return h('div', { class: 'field' }, h('span', { class: 'label', text: label }), control, h('p', { class: 'setup-hint', text: hint }));
+      return h('div', { class: 'field' }, h('span', { class: 'label', text: label }), control, typeof hint === 'string' ? h('p', { class: 'setup-hint', text: hint }) : hint);
     };
+    this.gearsHint = h('p', { class: 'setup-hint' });
     const panel = h(
       'div',
       { class: 'panel assists-panel' },
@@ -68,7 +71,7 @@ export class AssistsPanel {
       field(A.line, this.line.el, A.lineHint),
       field(A.brake, this.brake.el, A.brakeHint),
       field(A.steer, this.steer.el, A.steerHint),
-      field(A.gears, this.gears.el, A.gearsHint),
+      field(A.gears, this.gears.el, this.gearsHint),
       h('div', { class: 'menu row' }, button(A.done, () => this.close(), { icon: '✓', class: 'primary', key: 'Esc' })),
     );
     panel.setAttribute('role', 'dialog');
@@ -105,5 +108,8 @@ export class AssistsPanel {
     this.brake.set(a.brake);
     this.steer.set(a.steer);
     this.gears.set(a.gears);
+    // The gear keys as you have them.
+    const keys = settings().keys;
+    this.gearsHint.textContent = fmt(STR.assists.gearsHint, { up: keysText(keys, 'gearUp') || '—', down: keysText(keys, 'gearDown') || '—' });
   }
 }

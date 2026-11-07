@@ -1,4 +1,6 @@
+import { keyLabel } from '../car/bindings.ts';
 import { STR } from '../config/strings.ts';
+import { settings } from '../core/settings.ts';
 import { button, h } from './dom.ts';
 
 export interface PauseActions {
@@ -9,6 +11,8 @@ export interface PauseActions {
   raceSettings(): void;
   /** Opens the driving assists (racing line, braking, steering, gears). */
   assists(): void;
+  /** Opens the keyboard controls. */
+  controls(): void;
   /** Qualifying: stop now and go to the grid. */
   skipQualifying(): void;
   mainMenu(): void;
@@ -24,6 +28,7 @@ export class PauseMenu {
   private readonly sound: HTMLButtonElement;
   private readonly restartBtn: HTMLButtonElement;
   private readonly skipBtn: HTMLButtonElement;
+  private readonly resetBtn: HTMLButtonElement;
 
   constructor(actions: PauseActions) {
     this.controls = h('p', { class: 'pause-controls' });
@@ -31,6 +36,7 @@ export class PauseMenu {
     this.restartBtn = button(STR.buttons.restart, actions.restart, { icon: '⟲' });
     this.skipBtn = button(STR.buttons.skipQualifying, actions.skipQualifying, { icon: '⏭' });
     this.skipBtn.hidden = true;
+    this.resetBtn = button(STR.buttons.resetCar, actions.resetCar, { icon: '↺', key: 'R' });
     this.root = h(
       'div',
       { class: 'screen overlay pause' },
@@ -42,7 +48,7 @@ export class PauseMenu {
           'div',
           { class: 'menu' },
           button(STR.buttons.resume, actions.resume, { icon: '▶', class: 'primary', key: 'Esc' }),
-          button(STR.buttons.resetCar, actions.resetCar, { icon: '↺', key: 'R' }),
+          this.resetBtn,
           this.restartBtn,
           this.skipBtn,
           button(STR.buttons.raceSettings, actions.raceSettings, { icon: '🏁' }),
@@ -50,6 +56,10 @@ export class PauseMenu {
             this.hide();
             actions.assists();
           }, { icon: '🛞' }),
+          button(STR.controls.open, () => {
+            this.hide();
+            actions.controls();
+          }, { icon: '⌨' }),
           button(STR.buttons.drawTrack, actions.drawTrack, { icon: '✎' }),
           button(STR.buttons.myTracks, actions.myTracks, { icon: '☰' }),
           button(STR.buttons.mainMenu, actions.mainMenu, { icon: '⌂' }),
@@ -76,6 +86,17 @@ export class PauseMenu {
 
   show(controlsText: string): void {
     this.controls.textContent = controlsText;
+    // The key hints on the buttons follow your key bindings.
+    const keys = settings().keys;
+    for (const [btn, code] of [
+      [this.resetBtn, keys.reset[0]],
+      [this.sound, keys.mute[0]],
+    ] as const) {
+      const kbd = btn.querySelector('kbd');
+      if (!kbd) continue;
+      kbd.textContent = code ? keyLabel(code) : '';
+      kbd.hidden = !code;
+    }
     this.root.hidden = false;
   }
 

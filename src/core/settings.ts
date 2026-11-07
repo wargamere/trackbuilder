@@ -1,3 +1,4 @@
+import { cleanBindings, DEFAULT_BINDINGS, type KeyBindings } from '../car/bindings.ts';
 import type { PaintId } from '../config/paint.ts';
 import type { RaceSetup } from './screen.ts';
 import { loadJSON, saveJSON } from '../platform/storage.ts';
@@ -41,6 +42,8 @@ export interface Settings {
   /** Editor sidebar section left open. */
   sidebarSection: number;
   assists: Assists;
+  /** Keyboard keys for driving (see car/bindings.ts). */
+  keys: KeyBindings;
   /** Race setup choices (laps come from each track). */
   raceSetup: Omit<RaceSetup, 'laps'>;
 }
@@ -63,6 +66,7 @@ const DEFAULTS: Settings = {
   editorCar: !(typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches),
   sidebarSection: 0,
   assists: DEFAULT_ASSISTS,
+  keys: DEFAULT_BINDINGS,
   raceSetup: { mode: 'race', ghost: true, opponents: 3, difficulty: 50, grid: 'pick', startSlot: 4 },
 };
 const KEY = 'settings';
@@ -72,7 +76,7 @@ let current: Settings | null = null;
 export function settings(): Settings {
   if (!current) {
     const saved = loadJSON<Partial<Settings>>(KEY, {});
-    current = { ...DEFAULTS, ...saved, assists: { ...DEFAULT_ASSISTS, ...saved.assists } };
+    current = { ...DEFAULTS, ...saved, assists: { ...DEFAULT_ASSISTS, ...saved.assists }, keys: cleanBindings(saved.keys) };
   }
   return current;
 }

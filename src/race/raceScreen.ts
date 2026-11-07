@@ -3,6 +3,7 @@ import { audio } from '../audio/audio.ts';
 import { CameraRig } from '../car/camera.ts';
 import { collideCars } from '../car/contact.ts';
 import { carriedTow, slipstream } from '../car/slipstream.ts';
+import { keyboardHint } from '../car/bindings.ts';
 import { InputManager, type InputAction } from '../car/input.ts';
 import { CarModel } from '../car/model.ts';
 import { currentPaintHex, recordFinishedRun } from '../car/paint.ts';
@@ -24,6 +25,7 @@ import { surfaceFor, terrainHeight } from '../track/surface.ts';
 import type { Track } from '../track/track.ts';
 import { RacingLineOverlay } from '../render/racingLineOverlay.ts';
 import { AssistsPanel } from '../ui/assistsPanel.ts';
+import { ControlsPanel } from '../ui/controlsPanel.ts';
 import { h } from '../ui/dom.ts';
 import { Hud } from '../ui/hud.ts';
 import { PauseMenu } from '../ui/pauseMenu.ts';
@@ -81,6 +83,7 @@ export class RaceScreen implements Screen {
   private readonly hud: Hud;
   private readonly pauseMenu: PauseMenu;
   private readonly assistsPanel = new AssistsPanel();
+  private readonly controlsPanel = new ControlsPanel();
   /** The racing line on the road (built for the track when first shown). */
   private lineOverlay: RacingLineOverlay | null = null;
   private readonly input = new InputManager();
@@ -150,6 +153,7 @@ export class RaceScreen implements Screen {
       restart: () => this.restart(),
       raceSettings: () => this.game.openSetup(),
       assists: () => this.assistsPanel.open(this.game.ui, () => this.pauseMenu.show(this.controlsText())),
+      controls: () => this.controlsPanel.open(this.game.ui, () => this.pauseMenu.show(this.controlsText())),
       skipQualifying: () => this.showGrid(),
       mainMenu: () => this.game.go('menu'),
       drawTrack: () => this.game.go('editor'),
@@ -235,6 +239,7 @@ export class RaceScreen implements Screen {
     this.touch.root.remove();
     this.hud.clearFlash();
     this.assistsPanel.close();
+    this.controlsPanel.close();
     if (this.lineOverlay) this.lineOverlay.mesh.visible = false;
     if (this.ghostModel) this.ghostModel.root.visible = false;
     this.ghostLabel.hidden = true;
@@ -429,7 +434,7 @@ export class RaceScreen implements Screen {
     if (d === 'touch') return STR.race.hintTouch + (manual ? STR.race.hintGearsTouch : '');
     const practice = this.game.mode === 'practice';
     if (d === 'gamepad') return STR.race.hintGamepad + (manual ? STR.race.hintGearsGamepad : '') + (practice ? STR.race.hintRestartGamepad : '');
-    return STR.race.hintKeyboard + (manual ? STR.race.hintGearsKeyboard : '') + (practice ? STR.race.hintRestartKeyboard : '');
+    return keyboardHint(settings().keys, { manual, practice });
   }
 
   private onAction(a: InputAction): void {
@@ -438,6 +443,7 @@ export class RaceScreen implements Screen {
       if (a === 'pause') this.assistsPanel.close();
       return;
     }
+    if (this.controlsPanel.isOpen) return; // it keeps the keys to itself
     if (this.stage === 'grid') {
       if (a === 'mute') this.toggleSound();
       return; // the grid overlay has its own buttons
