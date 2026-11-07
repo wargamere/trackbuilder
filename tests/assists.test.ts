@@ -4,7 +4,8 @@ import { GEAR_COUNT, pullAt, revsAt, stepGearbox, type GearboxMode, type GearSta
 import { InputManager } from '../src/car/input.ts';
 import { CarPhysics, CarState, type DriveInput } from '../src/car/physics.ts';
 import { HANDLING } from '../src/config/handling.ts';
-import { AI } from '../src/config/race.ts';
+import { AI, ASSISTS } from '../src/config/race.ts';
+import type { Assists } from '../src/core/settings.ts';
 import { DEFAULT_ASSISTS } from '../src/core/settings.ts';
 import { getSampleTrack } from '../src/editor/pipeline.ts';
 import { RacingLineOverlay } from '../src/render/racingLineOverlay.ts';
@@ -110,7 +111,7 @@ test('gear changes from the keyboard, gamepad or touch are made one per tick', (
   assert.equal(im.sample(out).shift, 0);
 });
 
-test('braking assist brakes when you are too fast for what is coming, and leaves you alone when you are not', () => {
+test('braking assist: a light touch when you come in too fast, a top-up when you brake, never lifting the throttle; nothing when you are slow', () => {
   const t = getSampleTrack(1);
   const d = assistDriver(t);
   const a = { ...DEFAULT_ASSISTS, brake: true };
@@ -125,25 +126,32 @@ test('braking assist brakes when you are too fast for what is coming, and leaves
     return applyAssists(t, car.state, { throttle: 1, brake: 0, steer: 0, handbrake: false }, a);
   };
   const fast = at(45);
-  assert.ok(fast.brake > 0.5 && fast.throttle < 0.5, `brake ${fast.brake.toFixed(2)}, throttle ${fast.throttle.toFixed(2)}`);
+  assert.ok(fast.brake > 0 && fast.brake <= ASSISTS.brakeTouch, `a touch: brake ${fast.brake.toFixed(2)}`);
+  assert.equal(fast.throttle, 1, 'your throttle stays yours');
+  // Braking a bit yourself: topped up, but by no more than brakeTopUp.
+  car.placeAt(i * t.center.spacing - 5, d.line.offset[i]);
+  const tg = t.center.tangents[car.state.trackIndex];
+  Object.assign(car.state, { vx: tg.x * 45, vz: tg.y * 45, speed: 45 });
+  const yours = applyAssists(t, car.state, { throttle: 0, brake: 0.2, steer: 0, handbrake: false }, a);
+  assert.ok(yours.brake > 0.2 && yours.brake <= 0.2 + ASSISTS.brakeTopUp + 1e-9, `topped up to ${yours.brake.toFixed(2)}`);
   const slow = at(10);
   assert.equal(slow.brake, 0);
   assert.equal(slow.throttle, 1);
 });
 
-test('steering assist steers while you don’t, and your own full steering always wins', () => {
+test('steering assist nudges you towards the line while you don’t steer, and your own full steering always wins', () => {
   const t = getSampleTrack(0);
   const car = new CarPhysics(t);
   car.placeAt(30, 3);
   Object.assign(car.state, { speed: 20 });
   const a = { ...DEFAULT_ASSISTS, steer: true };
   const hands = applyAssists(t, car.state, { throttle: 1, brake: 0, steer: 0, handbrake: false }, a);
-  assert.ok(Math.abs(hands.steer) > 0.01, 'it steers back to the line');
+  assert.ok(Math.abs(hands.steer) > 0.01 && Math.abs(hands.steer) <= ASSISTS.steerShare + 1e-9, `a nudge: ${hands.steer.toFixed(2)}`);
   const yours = applyAssists(t, car.state, { throttle: 1, brake: 0, steer: -1, handbrake: false }, a);
   assert.equal(yours.steer, -1);
 });
 
-test('fully assisted laps are a little slower than gold', () => {
+test('the assists’ racing line (its colours and the braking help) is a little short of gold pace', () => {
   for (let i = 0; i < 3; i++) {
     const t = getSampleTrack(i);
     const gold = new AuthorLap(t).finish()!;
@@ -181,4 +189,56 @@ test('the racing line goes red where you would have to brake at your speed, and 
   line.update(from, 8, 'brake');
   assert.equal(count('green'), 0, 'braking mode shows only where to lift or brake');
   line.dispose();
+});
+
+/** 60 s of `drive` with assists `a`: metres covered. */
+function distanceIn60s(t: Track, a: Assists, drive: (st: CarState) => DriveInput): number {
+  const car = new CarPhysics(t);
+  car.gearbox = 'auto';
+  let dist = 0;
+  for (let k = 0; k < HANDLING.tickRate * 60; k++) {
+    car.step(applyAssists(t, car.state, drive(car.state), a));
+    dist += Math.max(0, car.state.speed) / HANDLING.tickRate;
+  }
+  return dist;
+}
+
+test('the assists help, they don’t drive: hands off at full throttle the car doesn’t get round, but each assist gets a weak driver further', () => {
+  for (let i = 0; i < 3; i++) {
+    const t = getSampleTrack(i);
+    const d = assistDriver(t);
+    const all = { ...DEFAULT_ASSISTS, brake: true, steer: true };
+    // An AI laps in under 40 s, so 60 s is one and a half laps or more.
+    const handsOff = distanceIn60s(t, all, () => ({ throttle: 1, brake: 0, steer: 0, handbrake: false }));
+    assert.ok(handsOff < t.center.length, `${t.def.name}: hands off, ${handsOff.toFixed(0)} m in 60 s`);
+    // Someone who steers well but never brakes, and someone who brakes well but never steers.
+    const noBrakes = (st: CarState): DriveInput => ({ throttle: 1, brake: 0, steer: d.drive(st).steer, handbrake: false });
+    const noSteering = (st: CarState): DriveInput => ({ ...d.drive(st), steer: 0 });
+    const nb = [distanceIn60s(t, DEFAULT_ASSISTS, noBrakes), distanceIn60s(t, { ...DEFAULT_ASSISTS, brake: true }, noBrakes)];
+    const ns = [distanceIn60s(t, DEFAULT_ASSISTS, noSteering), distanceIn60s(t, { ...DEFAULT_ASSISTS, steer: true }, noSteering)];
+    assert.ok(nb[1] > nb[0], `${t.def.name}: braking assist ${nb[0].toFixed(0)} → ${nb[1].toFixed(0)} m`);
+    assert.ok(ns[1] > ns[0], `${t.def.name}: steering assist ${ns[0].toFixed(0)} → ${ns[1].toFixed(0)} m`);
+    assert.ok(ns[1] < t.center.length * 1.5, `${t.def.name}: steering assist alone doesn't do the steering`);
+  }
+});
+
+test('steering assist settles onto the line without swinging across it (hands off down the first straight)', () => {
+  const t = getSampleTrack(0);
+  const d = assistDriver(t);
+  const car = new CarPhysics(t);
+  car.gearbox = 'auto';
+  const a = { ...DEFAULT_ASSISTS, steer: true };
+  let dist = 0;
+  let worst = 0;
+  while (dist < 300) {
+    car.step(applyAssists(t, car.state, { throttle: 1, brake: 0, steer: 0, handbrake: false }, a));
+    dist += Math.max(0, car.state.speed) / HANDLING.tickRate;
+    assert.ok(!car.state.offTrack, `stays on the road (off at ${dist.toFixed(0)} m)`);
+    // Once settled, wherever the line runs straight down the road (where it sweeps across for a
+    // corner, the gentle assist lags behind on purpose: corners are yours).
+    const st = car.state;
+    const sweep = Math.abs(d.lateralAt(st.s + 5) - d.lateralAt(st.s - 5)) / 10;
+    if (dist > 60 && sweep < 0.01) worst = Math.max(worst, Math.abs(st.lateral - d.lateralAt(st.s)));
+  }
+  assert.ok(worst < 1, `within ${worst.toFixed(2)} m of the line once settled`);
 });

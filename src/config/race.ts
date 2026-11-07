@@ -28,15 +28,30 @@ export const RACE = {
 /** AI opponents (race mode only). */
 /**
  * Driving assists: braking, steering and the racing line's colours all follow
- * the racing line at this share of the tyres' grip and the brakes. That's a
- * little short of the gold medal pace (fully assisted laps come out about 1.5 %
- * slower than gold), so driving it yourself pays.
+ * the racing line at this share of the tyres' grip and the brakes, a little
+ * short of the gold medal pace (driven like that, a lap is about 1.5 % slower
+ * than gold). The braking and steering assists only help towards it (see
+ * below): they don't drive.
  */
 export const ASSISTS = {
   grip: 0.8,
   brake: 0.66,
   /** Below this speed (m/s) the braking and steering assists leave the car alone. */
   minSpeed: 3,
+  /**
+   * They help, they don't drive. Braking: never lifts your throttle; coming
+   * in too fast without braking it adds only this much brake (not enough to
+   * make the corner), and while you brake it tops you up by at most this
+   * much more. Steering: while you're not steering it makes the racing line's
+   * small corrections, but never steers more than this share of the lock
+   * (less the more you steer, none at full lock).
+   */
+  brakeTouch: 0.18,
+  brakeTopUp: 0.35,
+  steerShare: 0.2,
+  /** Steering assist's pull towards the line (steer per metre off it) and against heading away from it (steer per radian): gentle and well damped, so it settles onto the line instead of swinging across it. */
+  steerPerMetre: 0.05,
+  steerPerRadian: 1.6,
   /** The racing line: drawn this far ahead (m), this wide (m), this far above the road (m). */
   lineAhead: 170,
   lineWidth: 0.9,

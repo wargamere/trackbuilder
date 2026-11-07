@@ -116,9 +116,10 @@ Physics runs at a fixed 120 Hz from an accumulator (`core/fixedStep.ts`), and re
 
 **Assists** (`race/assists.ts`, the 🛞 Assists button in the race setup (A) and the pause menu; remembered between visits):
 - *Racing line* (Off / Braking / Full, `render/racingLineOverlay.ts`): the AI's racing line drawn on the road for the next 170 m, following its height and banking. Each point is coloured by what to do when you get there at the speed you're doing now: green (keep going), yellow (lift: within 8 % of the limit there) and red (brake: the corner's limit there, braking included, is below your speed). So the red starts exactly where you would have to start braking, and moves as you speed up or slow down. "Braking" draws only the yellow and red.
-- *Braking assist:* where the assist would brake, it brakes at least that hard and lifts off the throttle.
-- *Steering assist:* while you're not steering it steers along the racing line; the more you steer, the more it's yours, and full lock (any key press) is all yours.
-- *How fast:* the assists drive the line at 80 % of the tyres' grip and 66 % of the brakes, a little short of gold medal pace. With everything on, laps come out about 1.5 % slower than gold (up to 3 %): silver is easy, gold takes your own driving. A test checks fully assisted laps against gold.
+- *They help, they don't drive:* hold the throttle with your hands off and the car won't get round a lap, even with everything on (a test checks this on each sample track).
+- *Braking assist:* coming into a corner faster than the racing line allows, it touches the brakes (18 %) if you aren't braking, or tops your braking up by up to 35 % if you are. It never lifts your throttle. Not enough on its own: you still have to brake.
+- *Steering assist:* while you're not steering it eases you back towards the racing line, in proportion to how far off it you are and against heading away from it, so it settles onto the line instead of swinging across it. It never steers more than a fifth of the lock: it holds the line on straights and gentle bends, but a real corner needs you. The more you steer the less it does, and at full lock (any key press) it does nothing.
+- *The line's pace:* the racing line (its colours, and what the braking help aims for) is driven at 80 % of the tyres' grip and 66 % of the brakes, a little short of gold medal pace (about 1.5 % slower). Tests check that each assist gets a driver who never brakes, or never steers, further than without it, and that the steering assist alone can't do the steering.
 
 ### Track editor
 
@@ -453,7 +454,7 @@ Tested against the real SDK in its `local` mode (localhost): the SDK's own log s
 - [x] AI racing line and speed plan; box-shaped car contact; racing in traffic (lane planner, passing, letting quicker cars by) and slipstream
 - [x] Built-in tracks: 20 more of the game's own and 30 real circuits, kept apart from yours in the menu and library
 - [x] Track editor rework (starters, Surprise me, point controls, draft recovery, no ink budget), in the game's own look, with Fix it, a gold-lap preview car and confetti
-- [x] Six-speed gearbox (manual or automatic) and driving assists: racing line (braking / full), braking and steering assists, each a little slower than doing it yourself
+- [x] Six-speed gearbox (manual or automatic, the automatic a little slower) and driving assists: racing line (braking / full), and braking and steering assists that help a little without driving for you
 - [x] Rebindable keyboard controls (two keys per action)
 
 ## Validation for the track editor
