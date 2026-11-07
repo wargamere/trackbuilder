@@ -1,3 +1,4 @@
+import type { TimeOfDay } from '../config/track.ts';
 import type { RecordBook, RunResult } from '../race/records.ts';
 import type { View3D } from '../render/view3d.ts';
 import type { TrackLibrary } from '../track/library.ts';
@@ -9,6 +10,9 @@ export type ScreenId = 'menu' | 'setup' | 'race' | 'editor' | 'results' | 'libra
 
 /** How the race screen runs: free practice laps, or a timed race with a countdown and results. */
 export type DriveMode = 'practice' | 'race';
+
+/** The weather for a run: dry, or rain (less grip and weaker brakes, for everyone). */
+export type Weather = 'dry' | 'rain';
 
 /** What the race setup menu chooses for the next run. */
 export interface RaceSetup {
@@ -25,6 +29,11 @@ export interface RaceSetup {
   grid: 'qualifying' | 'random' | 'pick';
   /** Your grid slot when picking (1 = pole). */
   startSlot: number;
+  weather: Weather;
+  /** Time of day: the track's own, or day, sunset or night for this run. */
+  time: 'track' | TimeOfDay;
+  /** Tyres lose grip as they wear (stop in the pit box for new ones). */
+  tyreWear: boolean;
 }
 
 export interface Screen {

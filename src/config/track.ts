@@ -66,7 +66,7 @@ export type RoadWidth = number;
 export type KerbStyle = 'raised' | 'flat' | 'none';
 export type RunoffId = 'grass' | 'gravel' | 'tarmac';
 export type BarrierStyle = 'concrete' | 'tyres';
-export type TimeOfDay = 'day' | 'sunset';
+export type TimeOfDay = 'day' | 'sunset' | 'night';
 export type LapCount = 1 | 3 | 5;
 export type TreeDensity = 'normal' | 'sparse' | 'dense';
 export interface TrackOptions {
@@ -112,7 +112,7 @@ export const OPTION_CHOICES = {
   runoff: ['grass', 'gravel', 'tarmac'],
   barrier: ['concrete', 'tyres'],
   pits: [true, false],
-  time: ['day', 'sunset'],
+  time: ['day', 'sunset', 'night'],
   laps: [3, 1, 5],
   trees: ['normal', 'sparse', 'dense'],
 } as const;

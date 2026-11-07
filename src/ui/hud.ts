@@ -1,3 +1,4 @@
+import { CONDITIONS } from '../config/race.ts';
 import { STR, fmt } from '../config/strings.ts';
 import { settings } from '../core/settings.ts';
 import { MEDALS, type MedalTimes } from '../race/medals.ts';
@@ -17,7 +18,7 @@ export type FlashKind = 'info' | 'good' | 'bad' | 'big';
 /**
  * In-race HUD: "Draw your track", track info, pause button, lap timer with last
  * and best laps, countdown and messages in the centre, split deltas, speedometer
- * and a controls hint.
+ * (gear, revs and, with tyre wear, the tyres' grip) and a controls hint.
  */
 export class Hud {
   readonly root: HTMLElement;
@@ -46,6 +47,10 @@ export class Hud {
   private readonly revBar: HTMLElement;
   private lastGear = '';
   private lastRev = -1;
+  private readonly tyres: HTMLElement;
+  private readonly tyreFill: HTMLElement;
+  private readonly tyreValue: HTMLElement;
+  private lastTyres = '';
   private readonly raceBtn: HTMLButtonElement;
   private lastTime = '';
   private hintTimer = 0;
@@ -83,12 +88,17 @@ export class Hud {
     this.gearMode = h('span', { class: 'gear-mode', text: STR.race.gearAuto });
     this.revFill = h('div', { class: 'rev-fill' });
     this.revBar = h('div', { class: 'rev-bar' }, this.revFill);
+    this.tyreFill = h('div', { class: 'tyre-fill' });
+    this.tyreValue = h('span', { class: 'tyre-value' });
+    this.tyres = h('div', { class: 'hud-tyres', title: STR.race.tyresTitle }, h('span', { class: 'tyre-label', text: STR.race.tyres }), h('div', { class: 'tyre-bar' }, this.tyreFill), this.tyreValue);
+    this.tyres.hidden = true;
     const speed = h(
       'div',
       { class: 'hud-speed' },
       h('div', { class: 'hud-gear', title: STR.race.gearTitle }, this.gearValue, this.gearMode),
       h('div', { class: 'speed-main' }, this.speedValue, this.speedUnit),
       this.revBar,
+      this.tyres,
     );
     this.draft = h('div', { class: 'hud-draft', text: STR.race.slipstream });
     this.hint = h('div', { class: 'hud-hint' });
@@ -174,6 +184,27 @@ export class Hud {
     }
     this.revBar.classList.toggle('shift', manual && r >= shiftLight);
     this.revBar.classList.toggle('limit', manual && r >= 0.99);
+  }
+
+  /**
+   * Tyre wear: the grip left (a share of new tyres) as a bar that empties
+   * down to worn-out, and a percentage, yellow once they're worn and red when
+   * they're gone; or the pit stop counting down while the crew works.
+   * Null hides it (tyre wear off).
+   */
+  setTyres(grip: number | null, pitLeft = 0): void {
+    this.tyres.hidden = grip === null;
+    if (grip === null) return;
+    const C = CONDITIONS;
+    const fill = Math.max(0, Math.min(1, (grip - C.minGrip) / (1 - C.minGrip)));
+    const state = pitLeft > 0 ? 'pit' : grip < 0.8 ? 'gone' : grip < C.wornGrip ? 'worn' : 'ok';
+    const text = pitLeft > 0 ? fmt(STR.race.pitService, { s: pitLeft.toFixed(1) }) : `${Math.round(grip * 100)}%`;
+    const key = `${(pitLeft > 0 ? 1 - pitLeft / C.service : fill).toFixed(2)}|${state}|${text}`;
+    if (key === this.lastTyres) return;
+    this.lastTyres = key;
+    this.tyreFill.style.width = `${((pitLeft > 0 ? 1 - pitLeft / C.service : fill) * 100).toFixed(0)}%`;
+    this.tyres.dataset.state = state;
+    this.tyreValue.textContent = text;
   }
 
   /** Practice shows a "Start a race" button; a race doesn't. */

@@ -1,4 +1,5 @@
 import {
+  AdditiveBlending,
   BoxGeometry,
   CanvasTexture,
   CylinderGeometry,
@@ -9,9 +10,11 @@ import {
   Mesh,
   MeshBasicMaterial,
   MeshLambertMaterial,
+  Object3D,
   PlaneGeometry,
   Quaternion,
   Shape,
+  SpotLight,
   Vector3,
 } from 'three';
 import { HANDLING } from '../config/handling.ts';
@@ -74,13 +77,49 @@ function trimGeometry() {
   box(1.7, 0.18, 0.1, 0, 0.38, 2.1, 0x24262b); // front bumper
   box(1.8, 0.16, 0.1, 0, 0.36, -2.12, 0x24262b); // rear bumper
   for (const sx of [-1, 1]) {
-    box(0.38, 0.09, 0.06, sx * 0.6, 0.52, 2.08, 0xfff6d0); // headlight
-    box(0.42, 0.1, 0.06, sx * 0.6, 0.66, -2.11, 0xd8202a); // tail light
     box(0.06, 0.13, 2.6, sx * 0.94, 0.33, 0, 0x24262b); // side skirt
     box(0.06, 0.24, 0.12, sx * 0.6, 0.96, -1.85, 0x1b1b1b); // spoiler strut
   }
   box(1.8, 0.06, 0.38, 0, 1.1, -1.88, 0x1b1b1b); // spoiler wing
   return merge(parts);
+}
+
+/** Head and tail lights (their own unlit material, so they can shine at night). */
+function lampGeometry() {
+  const parts = [];
+  for (const sx of [-1, 1]) {
+    parts.push(tint(new BoxGeometry(0.38, 0.09, 0.06).translate(sx * 0.6, 0.52, 2.08), 0xfff6d0));
+    parts.push(tint(new BoxGeometry(0.42, 0.1, 0.06).translate(sx * 0.6, 0.66, -2.11), 0xd8202a));
+  }
+  return merge(parts);
+}
+
+/** Soft glows round the lamps at night: white ones facing forward, red ones facing back. */
+function glowGeometry() {
+  const parts = [];
+  for (const sx of [-1, 1]) {
+    parts.push(tint(new PlaneGeometry(1.1, 0.7).translate(sx * 0.6, 0.52, 2.13), 0xfff1c8));
+    parts.push(tint(new PlaneGeometry(1.0, 0.65).rotateY(Math.PI).translate(sx * 0.6, 0.66, -2.16), 0xff2a2a));
+  }
+  return merge(parts, true);
+}
+
+let glowTex: CanvasTexture | null = null;
+function glowTexture(): CanvasTexture {
+  if (glowTex) return glowTex;
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const ctx = c.getContext('2d');
+  if (ctx) {
+    const g = ctx.createRadialGradient(32, 32, 2, 32, 32, 32);
+    g.addColorStop(0, 'rgba(255,255,255,1)');
+    g.addColorStop(0.25, 'rgba(255,255,255,0.55)');
+    g.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, 64, 64);
+  }
+  glowTex = new CanvasTexture(c);
+  return glowTex;
 }
 
 function wheelGeometry() {
@@ -119,6 +158,10 @@ export class CarModel {
   readonly root = new Group();
   private readonly body = new Group();
   private readonly paint: MeshLambertMaterial;
+  private readonly lampMat: MeshBasicMaterial;
+  private readonly glow: Mesh;
+  /** The player's headlight beam (see addHeadlight()). */
+  private beam: SpotLight | null = null;
   private readonly wheels: InstancedMesh;
   private roll = 0;
   private pitch = 0;
@@ -136,7 +179,11 @@ export class CarModel {
     const see = ghost ? { transparent: true, opacity: ghostOpacity, depthWrite: false } : {};
     this.paint = new MeshLambertMaterial({ color: paint, flatShading: true, ...see });
     const trimMat = new MeshLambertMaterial({ vertexColors: true, flatShading: true, ...see });
-    this.body.add(new Mesh(paintGeometry(), this.paint), new Mesh(trimGeometry(), trimMat));
+    this.lampMat = new MeshBasicMaterial({ vertexColors: true, color: 0xd4d4d4, ...see });
+    this.glow = new Mesh(glowGeometry(), new MeshBasicMaterial({ map: glowTexture(), vertexColors: true, transparent: true, depthWrite: false, blending: AdditiveBlending }));
+    this.glow.visible = false;
+    this.glow.renderOrder = 3;
+    this.body.add(new Mesh(paintGeometry(), this.paint), new Mesh(trimGeometry(), trimMat), new Mesh(lampGeometry(), this.lampMat), this.glow);
     this.wheels = new InstancedMesh(wheelGeometry(), trimMat, 4);
     this.wheels.frustumCulled = false;
     if (!ghost) {
@@ -161,6 +208,26 @@ export class CarModel {
 
   setPaint(hex: number): void {
     this.paint.color.setHex(hex);
+  }
+
+  /** Lights on (night): the lamps shine and glow, and the headlight beam (if it has one, and `beam`) lights the road. */
+  setLights(on: boolean, beam = on): void {
+    this.lampMat.color.setHex(on ? 0xffffff : 0xd4d4d4);
+    this.glow.visible = on;
+    if (this.beam) this.beam.visible = on && beam;
+  }
+
+  /** Gives the car a real headlight beam (the player's car only: lights cost). */
+  addHeadlight(): void {
+    if (this.beam) return;
+    const beam = new SpotLight(0xfff2d8, 90, 130, 0.5, 0.6, 1.1);
+    beam.position.set(0, 1.1, 1.6);
+    const target = new Object3D();
+    target.position.set(0, 0, 28);
+    beam.target = target;
+    beam.visible = false;
+    this.body.add(beam, target);
+    this.beam = beam;
   }
 
   /** Places the model from an (interpolated) physics state. */

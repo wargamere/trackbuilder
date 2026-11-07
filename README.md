@@ -48,7 +48,8 @@ src/
               codes), library.ts (saved tracks)
   render/     view3d.ts (renderer, sky, ground, hills, lights), textures.ts
               (procedural canvas textures), geom.ts (merge/tint helpers),
-              racingLineOverlay.ts (the racing line assist)
+              racingLineOverlay.ts (the racing line assist), rain.ts (rain),
+              pitBoxMesh.ts (the pit box on the road)
   car/        physics.ts (fixed-step arcade physics), gearbox.ts (six gears),
               bindings.ts (keyboard keys),
               contact.ts (car-to-car bumps), slipstream.ts (drafting), input.ts
@@ -59,12 +60,13 @@ src/
               records.ts, resultsScreen.ts, ai.ts (AI opponents), racingLine.ts
               (line + speed plan), driver.ts (drives it), traffic.ts (racing other
               cars), bot.ts (test driver), medals.ts (medal times), assists.ts
-              (braking and steering assists)
+              (braking and steering assists), pitStop.ts (pit box and pit stops)
   ui/         dom helpers, menuScreen.ts (main menu), raceSetupScreen.ts (race
-              setup), assistsPanel.ts, controlsPanel.ts (key bindings), gridOverlay.ts (grid after qualifying), editor overlay, HUD,
+              setup), assistsPanel.ts, conditionsPanel.ts (rain, time of day,
+              tyre wear), controlsPanel.ts (key bindings), gridOverlay.ts (grid after qualifying), editor overlay, HUD,
               minimap, pause menu, touch controls,
               libraryScreen.ts (track library), shareDialog.ts, style.css
-  audio/      audio.ts (synthesised engine, tyre squeal, grass rumble, beeps)
+  audio/      audio.ts (synthesised engine, tyre squeal, grass rumble, rain, beeps)
   platform/   platform.ts (PLATFORM flag + CAPS), services.ts (what the game calls:
               loading/gameplay events, ads, user, device), crazygames.ts (SDK wrapper),
               storage.ts (key-value store), web.ts (share links, rotate prompt)
@@ -86,7 +88,7 @@ Everything static is merged or instanced, which comes to about 15 draw calls for
 
 **Pits.** A white pit building with up to ten team-coloured garages and a pit lane stands behind the barrier beside the start straight, on whichever side has room. It needs about 30 m of straight either side of the start line; otherwise the editor says so. The ground under it is levelled, trees keep clear, and the car can't drive through it.
 
-**Sunset** recolours the sky, fog and light and drops the sun low in the west.
+**Sunset** recolours the sky, fog and light and drops the sun low in the west. **Night** (a track option too, or chosen for a race) is a dark-blue sky with stars and a dim moon; the road, run-off and kerbs are floodlit (lit evenly, however dark the rest), the ground is darker, and the cars' head and tail lights glow. Your own car has a real headlight beam (with full graphics). Race conditions are below, under Races.
 
 **Scenery themes:** Meadow (pines and broadleaf trees), Desert (cacti and rocks) and Snow (snowy pines). Each recolours the sky, fog, light, hills and ground texture.
 
@@ -388,6 +390,19 @@ Your best lap is recorded tick by tick and replayed as a translucent ghost. The 
 
 A **minimap** in the top-right corner shows the track (bridges drawn on top), you, the ghost and the AI cars.
 
+### Conditions: rain, night, tyre wear and pit stops
+
+The race setup's **Conditions** row (🌦, key C) opens a panel with three switches. They apply to every car on the track, the AI cars too, and are remembered for the next race. Each one is on or off on its own.
+
+- **Weather: Dry / Rain.** In the rain the tyres have 80 % of their grip and the brakes 78 % of their bite (`CONDITIONS.rainGrip`, `rainBrake`). That's the most the car can corner and brake: it still answers the wheel as quickly as in the dry. The AI drives the same share of what grip there is, so its laps come out about 7–9 % slower (a test checks a few %, and that its lap stays clean). So do the racing line and the braking assist, which start braking earlier. Qualifying is in the rain too, but medal times are always the dry ones. It looks wet: a low grey sky, mist that hides the distance, a darker road and falling rain, a few thousand streaks that slant towards you at speed (`render/rain.ts`, one draw call). It sounds wet too: a hiss that grows with speed, and tyres that hardly squeal.
+- **Time of day: Track / Day / Sunset / Night.** "Track" keeps the track's own time of day. The others override it for this race only (the track itself doesn't change). The race setup's background shows the choice.
+- **Tyre wear & pit stops: Off / On.**
+  - *Wear* is counted in laps' worth: a lap at racing speed is one, and sliding wears them faster. Grip falls 2.5 % a lap for four laps, then 7 % a lap (they're worn out), to at least 72 % of new (`tyreGripAt()` in `car/physics.ts`). A lap on worn-out tyres is several seconds slower.
+  - *The HUD* shows TYRES with a bar and the grip left, turning yellow under 90 % ("Tyres worn: stop in the pit box for new ones") and red under 80 % ("Tyres worn out! Pit now").
+  - *The pit box* is a yellow PIT box painted at the edge of the start straight, in front of a garage when the track has pits, and always clear of the start line and the grid. Stop in it and the crew holds the car for 3 s while it fits new tyres ("New tyres: go!"). A stop costs about 6 s in all, braking in and getting going again. It's on the track itself, so the cars coming past go round you.
+  - *The AI* slows down as its tyres go off: wherever a bend (or braking for one) sets its speed, it goes slower by the square root of the grip left. It stays within the track limits even on worn-out tyres, and a test checks that. It stops for new tyres when they'd be worn past its own threshold before the box comes round again, unless there's less than a lap and a half left. The thresholds differ from car to car, so they don't all stop on the same lap, and some stop twice in a long race. It pulls over to the box from 180 m out, brakes to stop in it, and rejoins the line over 90 m.
+  - *Qualifying* is always on new tyres, without wear.
+
 ### Saving, sharing and sound
 
 - **Storage** (`platform/storage.ts`) is a small synchronous get/set store:
@@ -410,7 +425,7 @@ A **minimap** in the top-right corner shows the track (bridges drawn on top), yo
   - one AudioContext, created on the first tap/click/key and resumed on every later touchend/click while it is suspended (iOS);
   - engine: two oscillators and a filter, pitch through five gears;
   - tyre squeal: band-passed noise when sliding on tarmac;
-  - grass rumble, plus countdown and lap beeps;
+  - grass rumble, rain (band-passed noise, louder with speed), plus countdown, lap and pit beeps;
   - M toggles sound (also in the pause menu).
 - **Web build only:** on a phone held upright, a "turn your phone sideways" screen covers the game and pauses the race.
 
@@ -456,6 +471,7 @@ Tested against the real SDK in its `local` mode (localhost): the SDK's own log s
 - [x] Track editor rework (starters, Surprise me, point controls, draft recovery, no ink budget), in the game's own look, with Fix it, a gold-lap preview car and confetti
 - [x] Six-speed gearbox (manual or automatic, the automatic a little slower) and driving assists: racing line (braking / full), and braking and steering assists that help a little without driving for you
 - [x] Rebindable keyboard controls (two keys per action)
+- [x] Race conditions, each switchable: rain, time of day (track / day / sunset / night, with car lights), tyre wear with working pit stops for you and the AI
 
 ## Validation for the track editor
 

@@ -3,20 +3,25 @@ import { HANDLING } from '../config/handling.ts';
 import { ASSISTS } from '../config/race.ts';
 import type { Assists } from '../core/settings.ts';
 import type { Track } from '../track/track.ts';
+import { wetPace } from './ai.ts';
 import { RacingDriver } from './driver.ts';
 
 const drivers = new WeakMap<Track, RacingDriver>();
+const wetDrivers = new WeakMap<Track, RacingDriver>();
 
 /**
  * The racing line at the assists' pace (ASSISTS): what the braking and
  * steering assists drive to, and what colours the racing line. Built once per
- * track. No top speed of its own: only the corners slow it.
+ * track and weather (`wet`: the same share of the grip and brakes there are
+ * in the rain). No top speed of its own: only the corners slow it.
  */
-export function assistDriver(track: Track): RacingDriver {
-  let d = drivers.get(track);
+export function assistDriver(track: Track, wet = false): RacingDriver {
+  const map = wet ? wetDrivers : drivers;
+  let d = map.get(track);
   if (!d) {
-    d = new RacingDriver(track, { grip: ASSISTS.grip, brake: ASSISTS.brake, maxSpeed: HANDLING.maxSpeed * 1.3 });
-    drivers.set(track, d);
+    const pace = { grip: ASSISTS.grip, brake: ASSISTS.brake, maxSpeed: HANDLING.maxSpeed * 1.3 };
+    d = new RacingDriver(track, wet ? wetPace(pace) : pace);
+    map.set(track, d);
   }
   return d;
 }
@@ -37,9 +42,9 @@ const scratch: DriveInput = { throttle: 0, brake: 0, steer: 0, handbrake: false 
  * it does nothing.
  * Off below a walking pace, and when reversing.
  */
-export function applyAssists(track: Track, st: CarState, inp: DriveInput, a: Assists): DriveInput {
+export function applyAssists(track: Track, st: CarState, inp: DriveInput, a: Assists, wet = false): DriveInput {
   if ((!a.brake && !a.steer) || st.speed < ASSISTS.minSpeed) return inp;
-  const d = assistDriver(track);
+  const d = assistDriver(track, wet);
   const ai = d.drive(st, 0, scratch);
   if (a.brake && ai.brake > inp.brake) {
     const help = inp.brake > 0.05 ? inp.brake + ASSISTS.brakeTopUp : ASSISTS.brakeTouch;

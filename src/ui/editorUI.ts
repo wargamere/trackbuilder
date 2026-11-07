@@ -320,7 +320,7 @@ export class EditorUI {
       (v) => opt({ theme: v as TrackOptions['theme'] }),
     );
     const time = segmented<string>(
-      (['day', 'sunset'] as const).map((v) => [v, S.times[v]] as [string, string]),
+      (['day', 'sunset', 'night'] as const).map((v) => [v, S.times[v]] as [string, string]),
       (v) => opt({ time: v as TrackOptions['time'] }),
     );
     const trees = segmented<string>(

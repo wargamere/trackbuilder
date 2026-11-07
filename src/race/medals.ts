@@ -2,7 +2,7 @@ import { CarPhysics } from '../car/physics.ts';
 import { HANDLING } from '../config/handling.ts';
 import type { Track } from '../track/track.ts';
 import { AI } from '../config/race.ts';
-import { aiPace } from './ai.ts';
+import { aiPace, wetPace } from './ai.ts';
 import { RacingDriver } from './driver.ts';
 
 export type MedalId = 'gold' | 'silver' | 'bronze';
@@ -46,7 +46,8 @@ export function nextMedal(current: MedalId | null): MedalId | null {
  * Times an AI driver on a flying lap: it starts behind the line, drives one
  * lap to get up to speed and is timed over the second. Runs in slices so the
  * game can spread it over a few frames. Deterministic for a given track.
- * At the medal difficulty it sets the medal times; AI cars qualify with theirs.
+ * At the medal difficulty it sets the medal times (always in the dry); AI
+ * cars qualify with theirs, in the rain if it's raining.
  */
 export class AuthorLap {
   private readonly car: CarPhysics;
@@ -63,10 +64,12 @@ export class AuthorLap {
   readonly trace: number[] = [];
   private readonly record: boolean;
 
-  constructor(track: Track, difficulty: number = AI.medalDifficulty, record = false) {
+  constructor(track: Track, difficulty: number = AI.medalDifficulty, record = false, wet = false) {
     this.record = record;
-    this.driver = new RacingDriver(track, aiPace(difficulty, track));
+    const pace = aiPace(difficulty, track);
+    this.driver = new RacingDriver(track, wet ? wetPace(pace) : pace);
     this.car = new CarPhysics(track);
+    this.car.wet = wet;
     this.length = track.center.length;
     this.prevS = this.car.state.s;
     // A warm-up lap and a timed one at a crawl of 8 m/s is the most we'll wait.

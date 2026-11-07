@@ -1,4 +1,5 @@
 import { HANDLING } from '../config/handling.ts';
+import { CONDITIONS } from '../config/race.ts';
 import { clamp } from '../core/math.ts';
 import { locatorFor, type TrackLocator } from '../track/locator.ts';
 import { pitLayout } from '../track/pits.ts';
@@ -70,6 +71,17 @@ export class CarState {
     Object.assign(this, o);
     return this;
   }
+}
+
+/**
+ * Grip of tyres with `age` laps' worth of wear, as a share of new ones: a
+ * steady loss, then much faster once they're worn out (see CONDITIONS).
+ */
+export function tyreGripAt(age: number): number {
+  const C = CONDITIONS;
+  const a = Math.max(0, age);
+  const lost = a <= C.cliffLaps ? C.wearPerLap * a : C.wearPerLap * C.cliffLaps + C.cliffWear * (a - C.cliffLaps);
+  return Math.max(C.minGrip, 1 - lost);
 }
 
 /** Shortest signed difference between two angles. */
@@ -162,6 +174,12 @@ export class CarPhysics {
   draft = 0;
   /** Who changes gear (see gearbox.ts): AI cars and the medal bot shift perfectly; the player shifts by hand or with the automatic. */
   gearbox: GearboxMode = 'ideal';
+  /** A wet track: less grip and weaker brakes (CONDITIONS.rainGrip, rainBrake). */
+  wet = false;
+  /** Tyre wear on: the tyres lose grip as `tyreAge` grows (see tyreGripAt()). */
+  wear = false;
+  /** Laps' worth of wear on the tyres (a lap at racing speed is one; sliding counts extra). */
+  tyreAge = 0;
   private readonly track: Track;
   private readonly locator: TrackLocator;
   private readonly obstacles: ObstacleGrid;
@@ -193,6 +211,16 @@ export class CarPhysics {
     st.lateral = pos.lateral;
     this.updateGround();
     this.prev.copyFrom(st);
+  }
+
+  /** Grip of the tyres as they are now, as a share of new ones (1 with wear off). */
+  get tyreGrip(): number {
+    return this.wear ? tyreGripAt(this.tyreAge) : 1;
+  }
+
+  /** A fresh set of tyres (a pit stop, or a new run). */
+  newTyres(): void {
+    this.tyreAge = 0;
   }
 
   /** "R": back onto the road at the nearest point, facing the right way. */
@@ -231,7 +259,11 @@ export class CarPhysics {
     st.offTrack = pos.lateral - H.halfTrack > edgeL + grace || pos.lateral + H.halfTrack < edgeR - grace;
     /** Rough-ground amount (for sound and camera shake), 0 on tarmac. */
     const grass = (a.rough + b.rough) / 2;
-    const grip = (a.gripFactor + b.gripFactor) / 2;
+    // The rain and worn tyres take some of it away: how hard the car can corner (not how
+    // quickly it answers the wheel, which is the surface's).
+    const surfaceGrip = (a.gripFactor + b.gripFactor) / 2;
+    const grip = surfaceGrip * (this.wet ? CONDITIONS.rainGrip : 1) * this.tyreGrip;
+    const brakeDecel = H.brakeDecel * (this.wet ? CONDITIONS.rainBrake : 1);
     const speedF = (a.speedFactor + b.speedFactor) / 2;
     const accelF = (a.accelFactor + b.accelFactor) / 2;
     const surfDrag = (a.drag + b.drag) / 2;
@@ -256,10 +288,10 @@ export class CarPhysics {
     if (throttle > 0) {
       const fade = Math.max(0, 1 - vf / (H.maxSpeed * speedF * (1 + H.slipstreamTopSpeed * tow)));
       if (vf >= -0.5) drive += (H.engineAccel * accelF * pull + H.slipstreamPush * tow) * throttle * fade;
-      else resist += H.brakeDecel * throttle;
+      else resist += brakeDecel * throttle;
     }
     if (brake > 0) {
-      if (vf > 0.5) resist += H.brakeDecel * brake;
+      if (vf > 0.5) resist += brakeDecel * brake;
       else if (throttle === 0 && vf > -H.reverseMaxSpeed) drive -= H.reverseAccel * accelF * brake;
     }
     if (throttle === 0 && brake === 0) resist += H.engineBraking;
@@ -283,10 +315,10 @@ export class CarPhysics {
     if (inp.handbrake) yawTarget *= H.handbrakeYawBoost;
     const yawLimit = (latMax * H.yawOvershoot * (inp.handbrake ? 1.8 : 1)) / Math.max(Math.abs(vf), 2);
     yawTarget = clamp(yawTarget, -yawLimit, yawLimit);
-    st.yawRate += (yawTarget - st.yawRate) * (1 - Math.exp(-H.yawResponse * grip * dt));
+    st.yawRate += (yawTarget - st.yawRate) * (1 - Math.exp(-H.yawResponse * surfaceGrip * dt));
 
     // --- lateral grip: sideways sliding decays, but never faster than the tyres allow
-    const gripRate = (inp.handbrake ? H.handbrakeGripRate : H.gripRate) * grip;
+    const gripRate = (inp.handbrake ? H.handbrakeGripRate : H.gripRate) * surfaceGrip;
     const dvr = clamp(vr * (Math.exp(-gripRate * dt) - 1), -latMax * dt, latMax * dt);
     vr += dvr;
 
@@ -309,6 +341,11 @@ export class CarPhysics {
     st.longAccel = (vf - vf0) / dt;
     st.latAccel = vf * st.yawRate;
     st.spin = (st.spin + (vf / H.wheelRadius) * dt) % (Math.PI * 2);
+    // Tyre wear: a lap's worth per lap driven, faster while sliding.
+    if (this.wear) {
+      const C = CONDITIONS;
+      this.tyreAge += ((Math.abs(vf) * dt) / this.track.center.length) * (1 + C.slideWear * Math.max(0, st.slip - C.slideFrom));
+    }
   }
 
   /** Slope along the car's heading at its position (road grade on the road, terrain elsewhere). */

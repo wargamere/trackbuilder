@@ -14,6 +14,8 @@ import {
   MeshLambertMaterial,
   Object3D,
   PerspectiveCamera,
+  Points,
+  PointsMaterial,
   Uint32BufferAttribute,
   Scene,
   SphereGeometry,
@@ -30,7 +32,14 @@ import { buildScenery } from '../track/scenery.ts';
 import { surfaceFor, TERRAIN_RECT, type Terrain } from '../track/surface.ts';
 import type { Track } from '../track/track.ts';
 import { tint } from './geom.ts';
+import { RainEffect } from './rain.ts';
 import { makeAsphaltTexture, makeAtlasTexture, makeGroundTexture } from './textures.ts';
+
+/** What a run is driven in, when it isn't the track's own time of day in the dry. */
+export interface ViewConditions {
+  time: TimeOfDay;
+  rain: boolean;
+}
 
 const GROUND_SIZE = 2800;
 const HILL_RADIUS = 1250;
@@ -42,6 +51,9 @@ const GROUND_TILE = 7;
  * lights are built once and recoloured per theme; the track (road, decks,
  * kerbs, barriers, pillars, terrain and scenery) is rebuilt by setTrack().
  * Everything static is merged or instanced: about 15 draw calls in total.
+ * The time of day is the track's own unless setConditions() says otherwise
+ * (night, with stars and a floodlit road; rain, with a grey sky, close fog,
+ * a wet road and the rain itself).
  */
 export class View3D {
   readonly renderer: WebGLRenderer;
@@ -53,6 +65,13 @@ export class View3D {
   private readonly hemi: HemisphereLight;
   private readonly sun: DirectionalLight;
   private readonly fog: Fog;
+  private readonly stars: Points;
+  private readonly rain = new RainEffect();
+  private conditions: ViewConditions | null = null;
+  /** The time of day and weather shown now. */
+  private shownTime: TimeOfDay = 'day';
+  private shownRain = false;
+  private lastRender = 0;
   private readonly maxAniso: number;
   private readonly mats: {
     road: MeshLambertMaterial;
@@ -107,8 +126,29 @@ export class View3D {
     this.sky = this.buildSky();
     this.ground = this.buildOuterGround();
     this.hills = this.buildHills();
-    this.scene.add(this.sky, this.ground, this.hills);
-    this.applyTheme('meadow', 'day');
+    this.stars = this.buildStars();
+    this.scene.add(this.sky, this.ground, this.hills, this.stars, this.rain.mesh);
+    this.applyTheme('meadow', 'day', false);
+  }
+
+  /** A few hundred stars on the upper sky (shown on clear nights). */
+  private buildStars(): Points {
+    const pos: number[] = [];
+    let seed = 7;
+    const rnd = () => ((seed = (seed * 16807) % 2147483647) - 1) / 2147483646;
+    for (let i = 0; i < 520; i++) {
+      const a = rnd() * Math.PI * 2;
+      const y = 0.08 + 0.92 * Math.sqrt(rnd());
+      const r = Math.sqrt(1 - y * y);
+      pos.push(Math.cos(a) * r * 1900, y * 1900, Math.sin(a) * r * 1900);
+    }
+    const g = new BufferGeometry();
+    g.setAttribute('position', new Float32BufferAttribute(pos, 3));
+    const m = new Points(g, new PointsMaterial({ color: 0xdfe6ff, size: 1.7, sizeAttenuation: false, fog: false, transparent: true, opacity: 0.85, depthWrite: false }));
+    m.frustumCulled = false;
+    m.renderOrder = -1;
+    m.visible = false;
+    return m;
   }
 
   private buildSky(): Mesh {
@@ -196,48 +236,134 @@ export class View3D {
   setQuality(q: 'full' | 'fast'): void {
     this.quality = q;
     this.renderer.setPixelRatio(q === 'fast' ? 1 : Math.min(2, window.devicePixelRatio || 1));
-    this.fog.near = q === 'fast' ? 180 : 260;
-    this.fog.far = q === 'fast' ? 900 : 1500;
+    this.applyFog();
+    this.rain.configure(q, this.shownTime === 'night');
     this.camera.far = q === 'fast' ? 1100 : 2400;
     this.camera.updateProjectionMatrix();
     const size = this.renderer.getSize(new Vector2());
     this.renderer.setSize(size.x, size.y, false);
   }
 
-  /** Recolours sky, fog, light, hills and ground for a theme at a time of day. */
-  private applyTheme(id: ThemeId, time: TimeOfDay): void {
-    const key = `${id}/${time}`;
+  /** How far you can see: less at night, and much less in the rain. */
+  private applyFog(): void {
+    const fast = this.quality === 'fast';
+    let near = fast ? 180 : 260;
+    let far = fast ? 900 : 1500;
+    if (this.shownTime === 'night') {
+      near = 80;
+      far = fast ? 650 : 800;
+    }
+    if (this.shownRain) {
+      near = 20;
+      far = fast ? 330 : 400;
+    }
+    this.fog.near = near;
+    this.fog.far = far;
+  }
+
+  /**
+   * Conditions to show instead of the track's own (null: the track's own time
+   * of day, in the dry). The race and the race setup set them; they put the
+   * track's own back when they're done.
+   */
+  setConditions(c: ViewConditions | null): void {
+    this.conditions = c;
+    const t = this.currentTrack;
+    this.applyTheme(t?.options.theme ?? 'meadow', c?.time ?? t?.options.time ?? 'day', c?.rain ?? false);
+  }
+
+  /** It's night (cars need their lights). */
+  get night(): boolean {
+    return this.shownTime === 'night';
+  }
+
+  /** Recolours sky, fog, light, hills, ground and road for a theme at a time of day, dry or in the rain. */
+  private applyTheme(id: ThemeId, time: TimeOfDay, rain: boolean): void {
+    const key = `${id}/${time}/${rain}`;
     if (this.theme === key) return;
     this.theme = key;
+    this.shownTime = time;
+    this.shownRain = rain;
     const th: Theme = THEMES[id];
     const dusk = time === 'sunset';
+    const night = time === 'night';
     const mix = (a: number, b: number, t: number) => new Color(a).lerp(new Color(b), t);
-    const top = dusk ? mix(th.skyTop, 0x2a2c66, 0.75) : new Color(th.skyTop);
-    const hor = dusk ? mix(th.skyHorizon, 0xff9455, 0.8) : new Color(th.skyHorizon);
+    let top: Color;
+    let hor: Color;
+    let fog: Color;
+    let hemiSky: Color;
+    let hemiGround: Color;
+    let sun: Color;
+    let sunIntensity = th.sunIntensity;
+    let near: Color;
+    let far: Color;
+    if (night) {
+      // A clear dark-blue night: a dim moon high in the east, the track under floodlights.
+      top = mix(th.skyTop, 0x010208, 0.96);
+      hor = mix(th.skyHorizon, 0x0b1022, 0.94);
+      fog = hor.clone();
+      hemiSky = mix(th.hemiSky, 0x4a5a86, 0.82);
+      hemiGround = new Color(th.hemiGround).multiplyScalar(0.2);
+      sun = new Color(0xb4c2ee);
+      sunIntensity *= 0.3;
+      this.sun.position.set(0.55, 0.9, -0.4);
+      near = new Color(th.hills[0]).multiply(new Color(0x1e2438));
+      far = mix(th.hills[1], 0x1b2140, 0.86);
+    } else if (dusk) {
+      top = mix(th.skyTop, 0x2a2c66, 0.75);
+      hor = mix(th.skyHorizon, 0xff9455, 0.8);
+      fog = mix(th.skyHorizon, 0xe89a72, 0.7);
+      hemiSky = mix(th.hemiSky, 0xffb98c, 0.7);
+      hemiGround = new Color(th.hemiGround).multiplyScalar(0.55);
+      sun = mix(th.sun, 0xff9a50, 0.8);
+      sunIntensity *= 0.85;
+      // Low evening sun from the west.
+      this.sun.position.set(-1, 0.28, 0.35);
+      near = new Color(th.hills[0]).multiply(new Color(0x7a5a6a));
+      far = mix(th.hills[1], 0xc9837a, 0.6);
+    } else {
+      top = new Color(th.skyTop);
+      hor = new Color(th.skyHorizon);
+      fog = hor.clone();
+      hemiSky = new Color(th.hemiSky);
+      hemiGround = new Color(th.hemiGround);
+      sun = new Color(th.sun);
+      // High midday sun.
+      this.sun.position.set(-0.45, 1, 0.3);
+      near = new Color(th.hills[0]);
+      far = new Color(th.hills[1]);
+    }
+    if (rain) {
+      // Low grey cloud: a flat grey sky, the sun hidden, the distance lost in the murk.
+      const grey = new Color(night ? 0x161a24 : dusk ? 0x8a7f86 : 0xa3abb6);
+      top.lerp(grey, 0.8).multiplyScalar(night ? 1 : 0.88);
+      hor.lerp(grey, 0.8);
+      fog = hor.clone();
+      hemiSky.lerp(new Color(night ? 0x3c4458 : 0xc2c8d2), 0.6);
+      sunIntensity *= 0.3;
+      near.lerp(fog, 0.5);
+      far.lerp(fog, 0.7);
+    }
     this.scene.background = hor;
-    this.fog.color.copy(dusk ? mix(th.skyHorizon, 0xe89a72, 0.7) : hor);
-    this.hemi.color.copy(dusk ? mix(th.hemiSky, 0xffb98c, 0.7) : new Color(th.hemiSky));
-    this.hemi.groundColor.copy(dusk ? new Color(th.hemiGround).multiplyScalar(0.55) : new Color(th.hemiGround));
-    this.sun.color.copy(dusk ? mix(th.sun, 0xff9a50, 0.8) : new Color(th.sun));
-    this.sun.intensity = th.sunIntensity * (dusk ? 0.85 : 1);
-    // Low evening sun from the west, or high midday sun.
-    if (dusk) this.sun.position.set(-1, 0.28, 0.35);
-    else this.sun.position.set(-0.45, 1, 0.3);
+    this.fog.color.copy(fog);
+    this.hemi.color.copy(hemiSky);
+    this.hemi.groundColor.copy(hemiGround);
+    this.hemi.intensity = night ? 0.5 : 1.6;
+    this.sun.color.copy(sun);
+    this.sun.intensity = sunIntensity;
 
     const sg = this.sky.geometry;
     const sp = sg.getAttribute('position');
     const sc = sg.getAttribute('color');
     const c = new Color();
     for (let i = 0; i < sp.count; i++) {
-      c.copy(hor).lerp(top, Math.pow(Math.max(0, sp.getY(i) / 2000), dusk ? 0.45 : 0.6));
+      c.copy(hor).lerp(top, Math.pow(Math.max(0, sp.getY(i) / 2000), dusk ? 0.45 : night ? 0.5 : 0.6));
       sc.setXYZ(i, c.r, c.g, c.b);
     }
     sc.needsUpdate = true;
+    this.stars.visible = night && !rain;
 
     const hc = this.hills.geometry.getAttribute('color');
-    const shade = dusk ? 0x7a5a6a : 0xffffff;
-    const near = new Color(th.hills[0]).multiply(new Color(shade));
-    const far = dusk ? mix(th.hills[1], 0xc9837a, 0.6) : new Color(th.hills[1]);
     for (let i = 0; i < hc.count; i++) {
       const v = [near, far, near, near, far, far][i % 6];
       hc.setXYZ(i, v.r, v.g, v.b);
@@ -251,8 +377,25 @@ export class View3D {
       this.groundTextures.set(id, tex);
     }
     this.mats.ground.map = tex;
-    this.mats.ground.color.setRGB(...th.groundTint);
+    this.mats.ground.color.setRGB(...th.groundTint).multiplyScalar(night ? 0.6 : 1);
     this.mats.ground.needsUpdate = true;
+
+    // A wet road is darker; at night the floodlights light the track (its own texture, lit
+    // evenly however dark the sky).
+    const M = this.mats;
+    M.road.color.setHex(rain ? 0x7f858f : 0xffffff);
+    M.deck.color.setHex(rain ? 0x7f858f : 0xffffff);
+    M.runoffTarmac.color.setHex(rain ? 0x8e939c : 0xb9bec8);
+    for (const m of [M.road, M.deck, M.runoffTarmac, M.gravel]) {
+      m.emissiveMap = night ? m.map : null;
+      m.emissive.setHex(night ? (rain ? 0x202329 : 0x2a2d33) : 0x000000);
+      m.needsUpdate = true;
+    }
+    M.kerb.emissive.setHex(night ? 0x26262b : 0x000000);
+    M.wall.emissive.setHex(night ? 0x1a1b20 : 0x000000);
+    this.rain.show(rain);
+    this.rain.configure(this.quality, night);
+    this.applyFog();
   }
 
   /**
@@ -300,7 +443,8 @@ export class View3D {
     if (this.currentTrack === track) return;
     this.clearTrack();
     this.currentTrack = track;
-    this.applyTheme(track.options.theme, track.options.time);
+    const c = this.conditions;
+    this.applyTheme(track.options.theme, c?.time ?? track.options.time, c?.rain ?? false);
     const surf = surfaceFor(track);
     const group = new Group();
     group.name = 'track';
@@ -365,7 +509,12 @@ export class View3D {
   }
 
   render(): void {
+    const now = performance.now() / 1000;
+    const dt = this.lastRender ? Math.min(0.1, Math.max(0, now - this.lastRender)) : 1 / 60;
+    this.lastRender = now;
     this.sky.position.copy(this.camera.position);
+    this.stars.position.copy(this.camera.position);
+    this.rain.update(this.camera.position, dt);
     this.renderer.render(this.scene, this.camera);
   }
 
@@ -374,7 +523,7 @@ export class View3D {
    * the editor's 3D view; returns a function that puts it back.
    */
   hideExtras(): () => void {
-    const keep = new Set<unknown>([this.sky, this.ground, this.hills, this.hemi, this.sun, this.trackGroup]);
+    const keep = new Set<unknown>([this.sky, this.ground, this.hills, this.hemi, this.sun, this.stars, this.rain.mesh, this.trackGroup]);
     const hidden = this.scene.children.filter((o) => !keep.has(o) && o.visible);
     for (const o of hidden) o.visible = false;
     return () => {

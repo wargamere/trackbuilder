@@ -1,4 +1,4 @@
-import { type PerspectiveCamera, Vector3 } from 'three';
+import { type Mesh, type PerspectiveCamera, Vector3 } from 'three';
 import { audio } from '../audio/audio.ts';
 import { CameraRig } from '../car/camera.ts';
 import { collideCars } from '../car/contact.ts';
@@ -10,7 +10,7 @@ import { currentPaintHex, recordFinishedRun } from '../car/paint.ts';
 import { CarPhysics, CarState, lerpState, NO_INPUT, type DriveInput } from '../car/physics.ts';
 import { HANDLING } from '../config/handling.ts';
 import { AI_PAINTS, PAINTS } from '../config/paint.ts';
-import { AI, RACE, SLIPSTREAM } from '../config/race.ts';
+import { AI, CONDITIONS, RACE, SLIPSTREAM } from '../config/race.ts';
 import { STR, fmt } from '../config/strings.ts';
 import { FixedStep } from '../core/fixedStep.ts';
 import type { GameContext, Screen } from '../core/screen.ts';
@@ -23,8 +23,10 @@ import { groundPose, type GroundPose } from '../track/ground.ts';
 import { locatorFor } from '../track/locator.ts';
 import { surfaceFor, terrainHeight } from '../track/surface.ts';
 import type { Track } from '../track/track.ts';
+import { buildPitBoxMesh } from '../render/pitBoxMesh.ts';
 import { RacingLineOverlay } from '../render/racingLineOverlay.ts';
 import { AssistsPanel } from '../ui/assistsPanel.ts';
+import { timeFor } from '../ui/conditionsPanel.ts';
 import { ControlsPanel } from '../ui/controlsPanel.ts';
 import { h } from '../ui/dom.ts';
 import { Hud } from '../ui/hud.ts';
@@ -35,10 +37,13 @@ import { AiDriver, aiField, gridOrder, gridPlace, qualifyingOrder, YOU } from '.
 import { GhostRecorder, ghostPose, type GhostLap } from './ghost.ts';
 import { applyAssists, assistDriver } from './assists.ts';
 import { AuthorLap, medalTimes } from './medals.ts';
+import { PitCrew, pitBox } from './pitStop.ts';
 import { scoreFor, type RunResult } from './records.ts';
 import { formatDelta, formatTime, RaceSession, type Progress, type RaceEvent } from './session.ts';
 
 const BRAKE: DriveInput = { throttle: 0, brake: 1, steer: 0, handbrake: false };
+/** The pit crew holding the car still (the handbrake, as the brake would reverse it at a standstill). */
+const HOLD: DriveInput = { throttle: 0, brake: 0, steer: 0, handbrake: true };
 
 /** Two presses of R (or gamepad Back) this close together restart the lap in practice. */
 const DOUBLE_TAP = 0.5;
@@ -73,6 +78,10 @@ const hexColour = (hex: number) => `#${hex.toString(16).padStart(6, '0')}`;
  * laps, or a race of 1–10 laps against your ghost and up to eleven AI cars.
  * With a qualifying grid, the race starts with a qualifying session alone on
  * the track (the AI cars' laps are simulated meanwhile), then shows the grid.
+ * The setup's conditions apply to every car: rain (less grip and braking, a
+ * wet look and sound), the time of day (at night the cars' lights come on),
+ * and tyre wear, with the pit box painted on the start straight: stop in it
+ * for new tyres.
  * Physics, lap timing and ghost recording all run on the fixed 120 Hz tick;
  * rendering interpolates between the last two ticks, so everything is identical
  * at 60, 144 or 240 Hz.
@@ -136,6 +145,15 @@ export class RaceScreen implements Screen {
   private abort: AbortController | null = null;
   private fpsTime = 0;
   private fpsFrames = 0;
+  /** This run's conditions: rain, and tyre wear (with the player's pit crew and the box on the road). */
+  private wet = false;
+  private crew: PitCrew | null = null;
+  private pitMesh: Mesh | null = null;
+  private pitMeshTrack: Track | null = null;
+  /** Tyre warnings shown for this set: 1 = worn, 2 = worn out. */
+  private tyreWarned = 0;
+  /** The weather the racing line was built for. */
+  private lineWet = false;
 
   constructor(game: GameContext) {
     this.game = game;
@@ -175,6 +193,7 @@ export class RaceScreen implements Screen {
     void platform.username().then((name) => {
       if (name) this.ghostLabel.textContent = fmt(STR.race.ghostUser, { name });
     });
+    this.model?.addHeadlight();
     if (this.model && this.ghostModel) {
       this.ghostModel.root.visible = false;
       game.view3d?.scene.add(this.model.root, this.ghostModel.root);
@@ -241,10 +260,36 @@ export class RaceScreen implements Screen {
     this.assistsPanel.close();
     this.controlsPanel.close();
     if (this.lineOverlay) this.lineOverlay.mesh.visible = false;
+    if (this.pitMesh) this.pitMesh.visible = false;
     if (this.ghostModel) this.ghostModel.root.visible = false;
     this.ghostLabel.hidden = true;
     this.clearOpponents();
     audio.setEngine(false);
+    audio.setRain(false);
+    this.game.view3d?.setConditions(null);
+  }
+
+  /** The setup's weather and time of day on the view, the cars' lights and the sound; the pit box with tyre wear. */
+  private applyConditions(): void {
+    const setup = this.game.setup;
+    const t = this.game.track;
+    const v = this.game.view3d;
+    this.wet = setup.weather === 'rain';
+    audio.setRain(this.wet);
+    if (!v) return;
+    v.setConditions({ time: timeFor(setup, t.options.time), rain: this.wet });
+    // (A real light costs on slow GPUs: with fast graphics only the lamps glow.)
+    for (const m of [this.model, ...this.aiModels]) m?.setLights(v.night, settings().graphics === 'full');
+    if (setup.tyreWear && this.pitMeshTrack !== t) {
+      if (this.pitMesh) {
+        v.scene.remove(this.pitMesh);
+        this.pitMesh.geometry.dispose();
+      }
+      this.pitMesh = buildPitBoxMesh(t, pitBox(t));
+      this.pitMeshTrack = t;
+      v.scene.add(this.pitMesh);
+    }
+    if (this.pitMesh) this.pitMesh.visible = setup.tyreWear && this.pitMeshTrack === t;
   }
 
   resize(): void {
@@ -293,6 +338,17 @@ export class RaceScreen implements Screen {
     this.position = null;
     if (this.ghostModel) this.ghostModel.root.visible = false;
     audio.setEngine(true);
+    this.applyConditions();
+    this.tyreWarned = 0;
+  }
+
+  /** The player's car for a new run: the weather, and new tyres (worn as it goes with tyre wear on). */
+  private prepareCar(car: CarPhysics, wear: boolean): void {
+    car.wet = this.wet;
+    car.wear = wear;
+    car.newTyres();
+    this.crew = wear ? new PitCrew(this.game.track) : null;
+    this.crew?.reset(car.state);
   }
 
   /** The race (or practice) itself, from grid order `order` (car ids by slot; YOU is the player). */
@@ -318,6 +374,7 @@ export class RaceScreen implements Screen {
       car.placeAt(-8);
       this.playerStart = -8;
     }
+    this.prepareCar(car, setup.tyreWear);
     this.states = [car.state, ...this.opponents.map((o) => o.ai.car.state)];
     this.hud.setMode(setup.mode);
     this.pauseMenu.setMode(setup.mode);
@@ -341,8 +398,10 @@ export class RaceScreen implements Screen {
     this.session = new RaceSession(t.center.length, rec.best, AI.qualifyingLaps, t.center.width, 0);
     car.placeAt(-8);
     this.playerStart = -8;
+    // Qualifying is on new tyres (no wear), in the weather of the race.
+    this.prepareCar(car, false);
     this.states = [car.state];
-    this.qualSims = this.field(setup.opponents).map((f) => new AuthorLap(t, f.difficulty));
+    this.qualSims = this.field(setup.opponents).map((f) => new AuthorLap(t, f.difficulty, false, this.wet));
     this.hud.setMode('race');
     this.pauseMenu.setMode('qualifying');
     this.rig.snap(car.state);
@@ -400,7 +459,7 @@ export class RaceScreen implements Screen {
     const t = this.game.track;
     const field = this.field(order.length - 1);
     field.forEach((f, k) => {
-      const ai = new AiDriver(t, { ...f, laps: this.game.setup.laps, slot: order.indexOf(k) });
+      const ai = new AiDriver(t, { ...f, laps: this.game.setup.laps, slot: order.indexOf(k), wet: this.wet, tyreWear: this.game.setup.tyreWear });
       const model = this.aiModels[k];
       model.setPaint(f.paint);
       model.root.visible = true;
@@ -471,6 +530,7 @@ export class RaceScreen implements Screen {
   private resetCar(): void {
     if (!this.car || !this.session?.canDrive) return;
     this.car.resetToRoad();
+    this.crew?.reset(this.car.state); // (a stop under way is off)
     this.rig.snap(this.car.state);
   }
 
@@ -512,10 +572,13 @@ export class RaceScreen implements Screen {
     const assists = settings().assists;
     car.gearbox = assists.gears;
     let inp = session.phase === 'racing' ? this.input.sample(this.tickInput) : session.phase === 'finished' ? BRAKE : NO_INPUT;
-    if (session.phase === 'racing') inp = applyAssists(this.game.track, car.state, this.tickInput, assists);
+    if (session.phase === 'racing') inp = applyAssists(this.game.track, car.state, this.tickInput, assists, this.wet);
+    // In the pit box the crew holds the car while it works.
+    if (this.crew?.busy) inp = HOLD;
     const prev = this.progress();
     car.step(inp);
     this.hit = Math.max(this.hit, car.state.wallHit);
+    if (this.crew && session.phase === 'racing') this.pitTick(car);
     for (const o of this.opponents) {
       this.progress(o.ai.car, o.prev);
       o.ai.car.step(o.ai.drive(this.states, car.dt));
@@ -540,6 +603,29 @@ export class RaceScreen implements Screen {
     }
     if (session.lapStart !== null && session.phase === 'racing') {
       this.recorder.push(car.state.x, car.state.z, car.state.heading);
+    }
+  }
+
+  /** The player's pit stop (stopped in the box: new tyres), and warnings as the tyres wear. */
+  private pitTick(car: CarPhysics): void {
+    const ev = this.crew?.step(car, car.dt);
+    if (ev === 'start') {
+      this.hud.flash(STR.race.pitIn, 'info', CONDITIONS.service);
+      audio.beep(660, 0.12);
+    } else if (ev === 'done') {
+      this.tyreWarned = 0;
+      this.hud.flash(STR.race.pitDone, 'good', 1.4);
+      audio.beep(990, 0.12);
+      audio.beep(1320, 0.16, 0.22, 0.12);
+    }
+    const grip = car.tyreGrip;
+    if (grip < 0.8 && this.tyreWarned < 2) {
+      this.tyreWarned = 2;
+      this.hud.flash(STR.race.tyresGone, 'bad', 2.5);
+      audio.beep(300, 0.2);
+    } else if (grip < CONDITIONS.wornGrip && this.tyreWarned < 1) {
+      this.tyreWarned = 1;
+      this.hud.flash(STR.race.tyresWorn, 'info', 2.5);
     }
   }
 
@@ -719,12 +805,14 @@ export class RaceScreen implements Screen {
       if (this.lineOverlay) this.lineOverlay.mesh.visible = false;
       return;
     }
-    if (this.lineOverlay?.track !== t) {
+    // (In the rain the line brakes earlier: it's built for the weather.)
+    if (this.lineOverlay?.track !== t || this.lineWet !== this.wet) {
       if (this.lineOverlay) {
         v.scene.remove(this.lineOverlay.mesh);
         this.lineOverlay.dispose();
       }
-      this.lineOverlay = new RacingLineOverlay(t, assistDriver(t));
+      this.lineWet = this.wet;
+      this.lineOverlay = new RacingLineOverlay(t, assistDriver(t, this.wet));
       v.scene.add(this.lineOverlay.mesh);
     }
     this.lineOverlay.mesh.visible = true;
@@ -829,6 +917,7 @@ export class RaceScreen implements Screen {
     this.touch.setManualGears(assists.gears === 'manual');
     this.updateLine(assists.line);
     this.hud.setSlipstream(car.draft, SLIPSTREAM.show);
+    this.hud.setTyres(car.wear ? car.tyreGrip : null, this.crew?.service ?? 0);
     this.updateHud(alpha);
     this.hud.tick(dt);
 

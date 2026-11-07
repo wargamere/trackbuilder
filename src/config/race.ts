@@ -25,6 +25,53 @@ export const RACE = {
   resultsDelay: 1.6,
 } as const;
 
+/**
+ * Race conditions (chosen in the race setup): rain, tyre wear and pit stops.
+ * Each is on or off for the whole field.
+ */
+export const CONDITIONS = {
+  /** Rain: the share of the tyres' grip and of the brakes left on a wet track. */
+  rainGrip: 0.8,
+  rainBrake: 0.78,
+  /**
+   * Tyre wear, counted in laps' worth of wear: a lap at racing speed is one,
+   * sliding wears them faster (1 + slideWear per m/s of sideways slide over
+   * slideFrom). Grip falls by wearPerLap a lap, then, past cliffLaps, by
+   * cliffWear a lap (worn out), down to at most minGrip of new tyres.
+   */
+  wearPerLap: 0.025,
+  cliffLaps: 4,
+  cliffWear: 0.07,
+  minGrip: 0.72,
+  slideFrom: 1,
+  slideWear: 0.35,
+  /** Tyres are "worn" (the HUD says so and suggests a stop) below this grip. */
+  wornGrip: 0.9,
+  /** The pit box: this long (m) and wide (m), at the road's edge, this far (m) in from it. */
+  boxLength: 11,
+  boxWidth: 2.8,
+  boxInset: 0.35,
+  /** Stopped in it (slower than stopSpeed m/s), new tyres take this long (s). */
+  stopSpeed: 1.2,
+  service: 3,
+  /** With no pit building, the box is this far past the start line (m). */
+  boxDefaultS: 30,
+  /**
+   * AI cars stop for tyres before theirs are down to pitGrip (± pitSpread, so
+   * not all on the same lap), if there are at least pitMinLaps laps to go. They pull
+   * over to the box over pitApproach m and brake to stop in it at pitDecel
+   * m/s², then rejoin the line over pitExit m.
+   */
+  pitGrip: 0.86,
+  pitSpread: 0.05,
+  pitMinLaps: 1.5,
+  /** No stop if the tyres would still have this much grip at the finish: they'll see the race out. */
+  pitEndGrip: 0.78,
+  pitApproach: 180,
+  pitDecel: 7,
+  pitExit: 90,
+} as const;
+
 /** AI opponents (race mode only). */
 /**
  * Driving assists: braking, steering and the racing line's colours all follow

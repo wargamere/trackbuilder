@@ -252,6 +252,31 @@ export const STR = {
     summaryManual: 'manual gears',
   },
 
+  /** Race conditions, chosen in the race setup (race/pitStop.ts, config/race.ts CONDITIONS). */
+  conditions: {
+    title: 'Conditions',
+    open: 'Conditions',
+    intro: 'The same for everyone on the track, AI cars too.',
+    weather: 'Weather',
+    dry: 'Dry',
+    rain: 'Rain',
+    weatherHint: 'Rain: less grip and longer braking for every car. Brake earlier and go easy on the throttle out of corners.',
+    time: 'Time of day',
+    times: { track: 'Track', day: 'Day', sunset: 'Sunset', night: 'Night' },
+    timeHint: 'The track’s own is {time}. At night it’s floodlights and headlights.',
+    tyres: 'Tyre wear & pit stops',
+    tyresHint: 'Tyres lose grip lap by lap, then fall away after about {n} laps. Stop in the yellow pit box on the start straight for new ones ({s} s). The AI cars stop too.',
+    on: 'On',
+    off: 'Off',
+    done: 'Done',
+    /** One-line summary in the race setup: "Rain · night · tyre wear". */
+    summaryDry: 'Dry',
+    summaryRain: 'Rain',
+    summaryTimes: { day: 'day', sunset: 'sunset', night: 'night' },
+    summaryWear: 'tyre wear & pit stops',
+    summaryNoWear: 'no tyre wear',
+  },
+
   /** Keyboard controls (main menu and pause menu). */
   controls: {
     title: 'Controls',
@@ -346,7 +371,7 @@ export const STR = {
     noBarriers: 'no barriers',
     edgesHelp: 'Gravel traps slow you right down; tarmac run-off forgives mistakes. Bridges always get rails.',
     time: 'Time of day',
-    times: { day: 'Day', sunset: 'Sunset' },
+    times: { day: 'Day', sunset: 'Sunset', night: 'Night' },
     trees: 'Trees & scenery',
     treeLevels: { sparse: 'Few', normal: 'Normal', dense: 'Lots' },
     graphics: 'Graphics',
@@ -416,7 +441,7 @@ export const STR = {
     ],
     start: 'Start',
     back: 'Back',
-    keys: 'Enter start · Esc back · P practice · R race · A assists',
+    keys: 'Enter start · Esc back · P practice · R race · A assists · C conditions',
   },
 
   grid: {
@@ -499,6 +524,15 @@ export const STR = {
     finished: 'Finished!',
     ghostYou: 'Your best',
     ghostUser: '{name} · best',
+    /** Tyre wear and pit stops. */
+    tyres: 'TYRES',
+    tyresTitle: 'Tyre grip left',
+    tyresWorn: 'Tyres worn: stop in the pit box for new ones',
+    tyresGone: 'Tyres worn out! Pit now',
+    pitIn: 'Pit stop: new tyres…',
+    pitService: 'PIT STOP · {s}',
+    pitDone: 'New tyres: go!',
+    pitBox: 'PIT',
   },
 
   paint: {
@@ -553,8 +587,8 @@ export const STR = {
     you: 'You',
     estimated: 'still racing',
     gap: '+{t}',
-    /** 1st, 2nd, … (up to 8 cars). */
-    ordinals: ['1st', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th'],
+    /** 1st, 2nd, … (up to 12 cars). */
+    ordinals: ['1st', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th', '9th', '10th', '11th', '12th'],
   },
 
   library: {

@@ -24,8 +24,10 @@ export interface DriveOptions {
   keep?: Corridor | null;
   /** Fighting for a place: later on the brakes. */
   late?: boolean;
-  /** A path of its own across the road (m left of the centre, at s) instead of the lane: covering the inside of a bend. */
+  /** A path of its own across the road (m left of the centre, at s) instead of the lane: covering the inside of a bend, or the way into the pit box. */
   route?: ((s: number) => number) | null;
+  /** The tyres' grip as a share of new ones (worn tyres: slower through the bends). */
+  grip?: number;
 }
 
 /**
@@ -304,7 +306,7 @@ export class RacingDriver {
   drive(st: CarState, lane = 0, out?: DriveInput, opts: DriveOptions = {}): DriveInput {
     const H = HANDLING;
     const o = out ?? { throttle: 0, brake: 0, steer: 0, handbrake: false };
-    const { pace = 1, cap = Infinity, tow = 0, keep = null, late = false, route = null } = opts;
+    const { pace = 1, cap = Infinity, tow = 0, keep = null, late = false, route = null, grip = 1 } = opts;
     const v = Math.max(0, st.speed);
     const kept = keep;
     const base = route ? (x: number) => this.clampLat(x, route(x)) : (x: number) => this.lateralAt(x, lane);
@@ -358,8 +360,11 @@ export class RacingDriver {
       };
       limit = Math.min(limit, this.pathLimit(s0, blend, false, brake) * DRIVER.offLineSpeed);
     }
-    // In a tow it may go past its own top speed, as the tow lets the car (where the bends allow).
+    // Worn tyres: slower wherever a bend (or braking for one) sets the speed, by as much as the
+    // grip they've lost allows (the speed through a bend goes with its square root).
     const top = this.pace.maxSpeed;
+    if (grip < 1 && limit < top - 0.5) limit *= Math.sqrt(grip);
+    // In a tow it may go past its own top speed, as the tow lets the car (where the bends allow).
     if (tow > 0 && limit >= top - 0.5) limit = top * (1 + HANDLING.slipstreamTopSpeed * tow);
     const target = Math.min(cap, limit * pace);
     // The plan already assumes full throttle out of corners and firm braking into them,

@@ -6,6 +6,7 @@ import { settings, updateSettings } from '../core/settings.ts';
  *    car's revs (its real gearbox), and the filter opens with throttle,
  *  - tyre squeal: band-passed noise when the car slides on tarmac,
  *  - grass rumble: low-passed noise when wheels are on the grass,
+ *  - rain: a hiss of filtered noise, louder with speed (the spray),
  *  - short beeps for the countdown and laps, and a knock for barrier hits.
  *
  * There is exactly one AudioContext. It is created on the first user gesture,
@@ -45,6 +46,8 @@ export class AudioEngine {
   private filter: BiquadFilterNode | null = null;
   private squeal: Voice | null = null;
   private rumble: Voice | null = null;
+  private rainVoice: Voice | null = null;
+  private raining = false;
   private noise: AudioBuffer | null = null;
   /** The player's sound toggle (read from settings in installUnlock, after platform init). */
   private muted = false;
@@ -127,6 +130,8 @@ export class AudioEngine {
     noiseSource('bandpass', 1500, 7, this.squeal);
     this.rumble = new Voice(ctx, this.master);
     noiseSource('lowpass', 260, 0.8, this.rumble);
+    this.rainVoice = new Voice(ctx, this.master);
+    noiseSource('bandpass', 2600, 0.35, this.rainVoice);
   }
 
   private targetMaster(): number {
@@ -168,13 +173,18 @@ export class AudioEngine {
     return this.muted || this.platformMuted;
   }
 
-  /** Engine, squeal and rumble on (racing) or faded out (menus, pause). */
+  /** Engine, squeal, rumble and rain on (racing) or faded out (menus, pause). */
   setEngine(on: boolean): void {
     this.engineOn = on;
     if (!on && this.ctx) {
       const t = this.ctx.currentTime;
-      for (const v of [this.engineVoice, this.squeal, this.rumble]) v?.gain.gain.setTargetAtTime(0, t, 0.08);
+      for (const v of [this.engineVoice, this.squeal, this.rumble, this.rainVoice]) v?.gain.gain.setTargetAtTime(0, t, 0.08);
     }
+  }
+
+  /** It's raining (the rain is heard while racing; wet tyres hardly squeal). */
+  setRain(on: boolean): void {
+    this.raining = on;
   }
 
   /** Called every frame while racing. */
@@ -194,8 +204,9 @@ export class AudioEngine {
     this.engineVoice.gain.gain.setTargetAtTime(0.07 + 0.09 * load + 0.03 * frac, t, 0.05);
 
     const moving = Math.min(1, v / 8);
-    const squeal = Math.max(0, Math.min(1, (inp.slip - 2.2) / 4)) * (1 - inp.grass) * moving;
+    const squeal = Math.max(0, Math.min(1, (inp.slip - 2.2) / 4)) * (1 - inp.grass) * moving * (this.raining ? 0.35 : 1);
     this.squeal.gain.gain.setTargetAtTime(squeal * 0.13, t, 0.04);
+    this.rainVoice?.gain.gain.setTargetAtTime(this.raining ? 0.035 + 0.05 * Math.min(1, v / 40) : 0, t, 0.25);
     this.rumble.gain.gain.setTargetAtTime(inp.grass * Math.min(1, v / 10) * 0.22, t, 0.06);
   }
 

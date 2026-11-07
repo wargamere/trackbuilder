@@ -4,6 +4,7 @@ import type { DriveMode, GameContext, RaceSetup, Screen } from '../core/screen.t
 import { settings } from '../core/settings.ts';
 import { TrackOrbit } from '../render/orbit.ts';
 import { AssistsPanel, assistsSummary } from './assistsPanel.ts';
+import { ConditionsPanel, conditionsSummary, timeFor } from './conditionsPanel.ts';
 import { button, h, segmented, slider, type Choice, type Slider } from './dom.ts';
 
 type GridKind = RaceSetup['grid'];
@@ -13,8 +14,9 @@ type GridKind = RaceSetup['grid'];
  * track (main menu, editor, 3D view, My tracks, results, pause menu). Practice
  * or race, laps (1–10) and the ghost of your record; in a race, how many cars
  * (you and up to eleven AI cars), how fast the AI is, and how the grid is
- * decided: qualifying, a random draw, or the slot you pick. The track circles
- * slowly behind it.
+ * decided: qualifying, a random draw, or the slot you pick. Assists and the
+ * conditions (rain, time of day, tyre wear) each have a panel of their own.
+ * The track circles slowly behind it, in the conditions chosen.
  */
 export class RaceSetupScreen implements Screen {
   readonly layer = '3d';
@@ -41,6 +43,8 @@ export class RaceSetupScreen implements Screen {
   private readonly orbit = new TrackOrbit();
   private readonly assistsPanel = new AssistsPanel();
   private readonly assistsLine: HTMLElement;
+  private readonly conditionsPanel = new ConditionsPanel();
+  private readonly conditionsLine: HTMLElement;
   /** The choices being made (the game's setup only changes on Start). */
   private draft: RaceSetup;
   private abort: AbortController | null = null;
@@ -101,6 +105,14 @@ export class RaceSetupScreen implements Screen {
       this.assistsLine,
       button(STR.assists.open, () => this.assistsPanel.open(this.game.ui, () => this.renderHints()), { icon: '🛞', class: 'compact', key: 'A' }),
     );
+    this.conditionsLine = h('span', { class: 'assists-summary' });
+    const conditions = h(
+      'div',
+      { class: 'setup-assists setup-conditions' },
+      h('span', { class: 'label', text: STR.conditions.title }),
+      this.conditionsLine,
+      button(STR.conditions.open, () => this.openConditions(), { icon: '🌦', class: 'compact', key: 'C' }),
+    );
     this.raceOnly = [laps, cars];
     this.withAi = [diff, grid];
     this.panel = h(
@@ -115,6 +127,7 @@ export class RaceSetupScreen implements Screen {
         h('div', { class: 'setup-col race-col' }, cars, diff, grid, this.slotRow),
       ),
       assists,
+      conditions,
       h(
         'div',
         { class: 'menu row setup-buttons' },
@@ -143,11 +156,12 @@ export class RaceSetupScreen implements Screen {
       'keydown',
       (e) => {
         if (e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;
-        // The assists panel on top: Esc closes it, nothing else here.
-        if (this.assistsPanel.isOpen) {
+        // A panel on top: Esc closes it, nothing else here.
+        const panel = this.assistsPanel.isOpen ? this.assistsPanel : this.conditionsPanel.isOpen ? this.conditionsPanel : null;
+        if (panel) {
           if (e.code === 'Escape') {
             e.preventDefault();
-            this.assistsPanel.close();
+            panel.close();
           }
           return;
         }
@@ -158,6 +172,7 @@ export class RaceSetupScreen implements Screen {
           KeyP: () => this.set({ mode: 'practice' }),
           KeyR: () => this.set({ mode: 'race' }),
           KeyA: () => this.assistsPanel.open(this.game.ui, () => this.renderHints()),
+          KeyC: () => this.openConditions(),
         };
         const a = act[e.code];
         if (!a) return;
@@ -170,6 +185,8 @@ export class RaceSetupScreen implements Screen {
 
   exit(): void {
     this.assistsPanel.close();
+    this.conditionsPanel.close();
+    this.game.view3d?.setConditions(null);
     this.abort?.abort();
     this.abort = null;
     this.root.remove();
@@ -186,6 +203,15 @@ export class RaceSetupScreen implements Screen {
   frame(dt: number): void {
     const v = this.game.view3d;
     if (v) this.orbit.frame(v, dt);
+  }
+
+  private openConditions(): void {
+    this.conditionsPanel.open(this.game.ui, {
+      get: () => this.draft,
+      change: (patch) => this.set(patch),
+      trackTime: this.game.track.options.time,
+      onClose: () => this.renderHints(),
+    });
   }
 
   private start(): void {
@@ -240,6 +266,9 @@ export class RaceSetupScreen implements Screen {
     this.diffHint.textContent = hints[k];
     this.gridHint.textContent = fmt(S.gridHints[d.grid], { n: AI.qualifyingLaps });
     this.assistsLine.textContent = assistsSummary(settings().assists);
+    this.conditionsLine.textContent = conditionsSummary(d, this.game.track.options.time);
+    // The track behind shows the conditions chosen.
+    this.game.view3d?.setConditions({ time: timeFor(d, this.game.track.options.time), rain: d.weather === 'rain' });
     // The slot slider's labels depend on the number of cars.
     this.slotSlider.setRange(1, Math.max(2, d.opponents + 1));
     this.slotSlider.set(d.startSlot);

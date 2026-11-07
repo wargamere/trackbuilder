@@ -407,7 +407,7 @@ body {
 
 .hud.touch .hud-hint {
   bottom: auto;
-  top: 7rem;
+  top: 9.4rem;
   max-width: 55vw;
 }
 
@@ -2824,4 +2824,81 @@ html:not([data-screen="race"]) .rotate-prompt { display: none; }
     transition: none !important;
     animation: none !important;
   }
+}
+
+/* Tyre wear: grip left, under the rev bar (the pit stop counts down in it). It takes the box's
+   width rather than widening it. */
+.hud-tyres {
+  flex-basis: 100%;
+  contain: inline-size;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.3rem;
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+}
+
+.hud-tyres[hidden] {
+  display: none;
+}
+
+.tyre-label {
+  opacity: 0.7;
+}
+
+.tyre-bar {
+  flex: 1;
+  min-width: 1.5rem;
+  height: 0.32rem;
+  border-radius: 1rem;
+  background: rgba(255, 255, 255, 0.18);
+  overflow: hidden;
+}
+
+.tyre-fill {
+  height: 100%;
+  width: 100%;
+  border-radius: inherit;
+  background: #3fb36b;
+  transition: width 0.3s;
+}
+
+.tyre-value {
+  min-width: 2.6em;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.hud-tyres[data-state="worn"] .tyre-fill {
+  background: #f2b705;
+}
+
+.hud-tyres[data-state="worn"] .tyre-value {
+  color: #ffd75e;
+}
+
+.hud-tyres[data-state="gone"] .tyre-fill {
+  background: #e8453c;
+}
+
+.hud-tyres[data-state="gone"] .tyre-value {
+  color: #ff8a80;
+  animation: rev-limit 0.6s steps(2) infinite;
+}
+
+.hud-tyres[data-state="pit"] .tyre-fill {
+  background: #3aa0ff;
+  transition: none;
+}
+
+.hud-tyres[data-state="pit"] .tyre-value {
+  color: #9fd0ff;
+}
+
+/* Conditions panel: the time-of-day choices are four short words. */
+.conditions-panel .segmented .btn {
+  padding-left: 0.4rem;
+  padding-right: 0.4rem;
 }
