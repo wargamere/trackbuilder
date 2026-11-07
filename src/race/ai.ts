@@ -1,12 +1,14 @@
-import { CarPhysics, NO_INPUT, tyreGripAt, type CarState, type DriveInput } from '../car/physics.ts';
+import { CarPhysics, NO_INPUT, type CarState, type DriveInput } from '../car/physics.ts';
+import { standardGrip } from '../car/tyres.ts';
 import { HANDLING } from '../config/handling.ts';
-import { AI, CONDITIONS, TRAFFIC } from '../config/race.ts';
+import { AI, CONDITIONS, TRAFFIC, type Compound } from '../config/race.ts';
 import { clamp, wrap } from '../core/math.ts';
 import { edgeOffsets } from '../track/spline.ts';
 import type { Track } from '../track/track.ts';
 import { RacingDriver } from './driver.ts';
 import { along, PitCrew } from './pitStop.ts';
 import { planLapTime, racingLine, speedProfile, type Pace } from './racingLine.ts';
+import { pickCompound, preferredCompound, trackTyreLife } from './strategy.ts';
 import { RaceSession } from './session.ts';
 import { aiCars, TrafficPlanner } from './traffic.ts';
 
@@ -135,8 +137,9 @@ export function aiField(count: number, difficulty: number, paints: readonly numb
  * into a car alongside, keeps a safe gap behind a car it can't pass yet, and
  * puts itself back on the road if it gets stuck (once nobody is coming).
  * In the rain it drives the same share of the (lower) grip; with tyre wear it
- * slows as its tyres go off, and stops in the pit box for new ones once
- * they're worn (if there's enough of the race left to make it worth it).
+ * is quicker or slower with the kind of tyres it's on, slows as they wear,
+ * and stops in the pit box for new ones before they go off (unless they'll
+ * last to the finish), choosing the kind for what's left of the race.
  */
 export class AiDriver {
   readonly car: CarPhysics;
@@ -158,16 +161,19 @@ export class AiDriver {
   private stuck = 0;
   /** Seconds left taking it easy after a slide or a knock. */
   private recover = 0;
-  /** With tyre wear: its pit crew, where it is in a stop, and how worn its tyres get before it stops. */
+  /** With tyre wear: its pit crew, where it is in a stop, how close to their going off it stops (laps early; see CONDITIONS.pitEarly), the tyres it prefers and the ones it'll fit next. */
   readonly crew: PitCrew | null;
   private pit: 'none' | 'in' | 'stop' | 'out' = 'none';
-  private readonly pitGrip: number;
+  private readonly pitEarly: number;
+  private readonly preference: Compound;
+  private nextTyres: Compound = 'medium';
   /** How far before the box it set off for it (m), and how long it has been stopped short of it or beside it (s). */
   private pitFrom = 0;
   private pitWait = 0;
   private readonly length: number;
 
   constructor(track: Track, opts: { name: string; paint: number; difficulty: number; laps: number; slot: number; wet?: boolean; tyreWear?: boolean }) {
+    const wet = !!opts.wet;
     this.name = opts.name;
     this.paint = opts.paint;
     this.difficulty = opts.difficulty;
@@ -175,11 +181,17 @@ export class AiDriver {
     this.driver = new RacingDriver(track, opts.wet ? wetPace(pace) : pace);
     this.planner = new TrafficPlanner(this.driver, track, opts.difficulty);
     this.car = new CarPhysics(track);
-    this.car.wet = !!opts.wet;
+    this.car.wet = wet;
     this.car.wear = !!opts.tyreWear;
     this.length = track.center.length;
-    // Not everyone stops on the same lap.
-    this.pitGrip = CONDITIONS.pitGrip + CONDITIONS.pitSpread * ((opts.slot % 3) - 1);
+    // Not everyone stops on the same lap, or picks the same tyres for a stint.
+    this.pitEarly = CONDITIONS.pitEarly[opts.slot % CONDITIONS.pitEarly.length];
+    this.preference = preferredCompound(opts.slot);
+    if (opts.tyreWear) {
+      this.car.mediumLife = trackTyreLife(track);
+      // The quickest tyres that last the race, else its own choice.
+      this.car.newTyres(pickCompound(opts.laps, this.car.mediumLife, wet, this.preference));
+    }
     aiCars.set(this.car.state, opts.difficulty);
     const g = gridPlace(track, opts.slot);
     this.start = g.s;
@@ -217,10 +229,13 @@ export class AiDriver {
     const smooth = (u: number) => u * u * (3 - 2 * u);
     if (this.pit === 'none') {
       const s = this.session;
-      // In now if they'd be past it before the box comes round again.
-      if (finished || s.lapStart === null || tyreGripAt(this.car.tyreAge + 1) > this.pitGrip) return null;
+      // In now if they'd go off before the box comes round again (give or take its own margin)…
+      const car = this.car;
+      const life = car.tyreLife;
+      if (finished || s.lapStart === null || car.tyreAge + 1 + this.pitEarly <= life) return null;
+      // …unless the race is all but over, or they'll last to the finish.
       const left = (s.lapsToRun * L - s.raceDistance(st.s)) / L;
-      if (left < C.pitMinLaps || tyreGripAt(this.car.tyreAge + left) >= C.pitEndGrip) return null;
+      if (left < C.pitMinLaps || car.tyreAge + left <= life + C.pitEndSlack) return null;
       // Far enough ahead to brake for it gently, not so far it would pull over too soon.
       const v = Math.max(0, st.speed);
       const need = Math.max(C.pitApproach, (v * v) / (2 * C.pitDecel) + 40);
@@ -229,9 +244,10 @@ export class AiDriver {
       this.pit = 'in';
       this.pitFrom = d;
       this.pitWait = 0;
+      this.nextTyres = pickCompound(left, car.mediumLife, car.wet, this.preference);
     }
     if (this.pit === 'in' || this.pit === 'stop') {
-      const ev = crew.step(this.car, dt);
+      const ev = crew.step(this.car, dt, this.nextTyres);
       if (ev === 'start') this.pit = 'stop';
       else if (ev === 'done') this.pit = 'out';
     }
@@ -328,7 +344,7 @@ export class AiDriver {
       this.lane = st.lateral - this.driver.lateralAt(st.s);
       this.laneVel = 0;
     }
-    const inp = this.driver.drive(st, this.lane, this.inp, { pace, cap, tow: this.car.draft, keep, late: this.planner.fighting, route, grip: this.car.tyreGrip });
+    const inp = this.driver.drive(st, this.lane, this.inp, { pace, cap, tow: this.car.draft, keep, late: this.planner.fighting, route, grip: this.car.gripScale / standardGrip(this.car.wet) });
     // Sliding (knocked, or ran wide): easing off the throttle until it gathers itself. No braking,
     // which would only surprise the car behind. (Being off its path is already taken care of:
     // the speed then comes from the path it's really on.)

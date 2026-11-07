@@ -2844,8 +2844,102 @@ html:not([data-screen="race"]) .rotate-prompt { display: none; }
   display: none;
 }
 
-.tyre-label {
-  opacity: 0.7;
+/* A tyre's kind: its letter in a ring of its colour (soft red, medium yellow, hard white, wet blue). */
+.tyre-chip {
+  --tyre: #f2b705;
+  display: inline-grid;
+  place-items: center;
+  width: 1.35em;
+  height: 1.35em;
+  flex: none;
+  border: 0.2em solid var(--tyre);
+  border-radius: 50%;
+  background: #1b1d22;
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: 0;
+}
+
+.tyre-chip[data-compound="soft"] {
+  --tyre: #e8453c;
+}
+
+.tyre-chip[data-compound="hard"] {
+  --tyre: #f2f2f2;
+}
+
+.tyre-chip[data-compound="wet"] {
+  --tyre: #3a8dde;
+}
+
+/* The tyre choice in a pit stop, above the controls hint. */
+.tyre-picker {
+  position: absolute;
+  left: 50%;
+  bottom: 3.2rem;
+  transform: translateX(-50%);
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 0.4rem;
+  max-width: min(94vw, 46rem);
+  padding: 0.45rem 0.6rem;
+  border-radius: 0.8rem;
+  background: var(--panel-dark);
+  color: #fff;
+}
+
+.tyre-picker[hidden] {
+  display: none;
+}
+
+.tyre-picker-title {
+  width: 100%;
+  text-align: center;
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  opacity: 0.8;
+}
+
+.tyre-picker .btn.tyre-pick {
+  min-height: 2.2rem;
+  font-size: 0.85rem;
+}
+
+.tyre-picker .btn.tyre-pick.on {
+  outline: 3px solid var(--highlight);
+  outline-offset: 1px;
+}
+
+.hud.touch .tyre-picker {
+  bottom: auto;
+  top: 11.2rem;
+}
+
+/* Starting tyres: each kind's colour along the bottom of its button. */
+.conditions-panel .segmented .btn.tyre-choice {
+  box-shadow: inset 0 -0.25rem 0 #f2b705;
+}
+
+.conditions-panel .segmented .btn.tyre-choice[data-compound="soft"] {
+  box-shadow: inset 0 -0.25rem 0 #e8453c;
+}
+
+.conditions-panel .segmented .btn.tyre-choice[data-compound="hard"] {
+  box-shadow: inset 0 -0.25rem 0 #c9ccd3;
+}
+
+.conditions-panel .segmented .btn.tyre-choice[data-compound="wet"] {
+  box-shadow: inset 0 -0.25rem 0 #3a8dde;
+}
+
+.conditions-panel .field[hidden] {
+  display: none;
 }
 
 .tyre-bar {
@@ -2901,4 +2995,16 @@ html:not([data-screen="race"]) .rotate-prompt { display: none; }
 .conditions-panel .segmented .btn {
   padding-left: 0.4rem;
   padding-right: 0.4rem;
+}
+
+/* Results of a long race: the lap times scroll. */
+.stat.many-laps {
+  align-items: flex-start;
+}
+
+.stat.many-laps .stat-value {
+  max-height: 4.6em;
+  overflow-y: auto;
+  font-size: 0.85em;
+  line-height: 1.5;
 }

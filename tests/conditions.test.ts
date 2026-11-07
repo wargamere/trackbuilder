@@ -1,42 +1,77 @@
 import assert from 'node:assert/strict';
 import { after, test } from 'node:test';
 import { Window } from 'happy-dom';
-import { CarPhysics, tyreGripAt, type DriveInput } from '../src/car/physics.ts';
+import { CarPhysics, type DriveInput } from '../src/car/physics.ts';
+import { compoundBrake, compoundGrip, compoundLife, standardGrip, tyreCurve } from '../src/car/tyres.ts';
 import { HANDLING } from '../src/config/handling.ts';
-import { CONDITIONS } from '../src/config/race.ts';
-import { getSampleTrack } from '../src/editor/pipeline.ts';
+import { CONDITIONS, TYRES, type Compound } from '../src/config/race.ts';
+import { builtInTracks, getSampleTrack } from '../src/editor/pipeline.ts';
 import { AiDriver, aiPace } from '../src/race/ai.ts';
 import { RacingDriver } from '../src/race/driver.ts';
 import { AuthorLap } from '../src/race/medals.ts';
 import { inBox, PitCrew, pitBox } from '../src/race/pitStop.ts';
-import type { Progress, RaceEvent } from '../src/race/session.ts';
+import { pickCompound, trackTyreLife } from '../src/race/strategy.ts';
+import type { Progress } from '../src/race/session.ts';
 import { edgeOffsets } from '../src/track/spline.ts';
 import type { Track } from '../src/track/track.ts';
-import { conditionsSummary, timeFor } from '../src/ui/conditionsPanel.ts';
+import { conditionsSummary, timeFor, type Conditions } from '../src/ui/conditionsPanel.ts';
 
 const DT = 1 / HANDLING.tickRate;
 
-test('tyres lose grip steadily, then much faster once worn out, and never below the floor', () => {
-  const C = CONDITIONS;
-  assert.equal(tyreGripAt(0), 1);
-  const perLap = tyreGripAt(1) - tyreGripAt(2);
-  assert.ok(Math.abs(perLap - C.wearPerLap) < 1e-9);
-  const before = tyreGripAt(C.cliffLaps - 1) - tyreGripAt(C.cliffLaps);
-  const afterCliff = tyreGripAt(C.cliffLaps) - tyreGripAt(C.cliffLaps + 1);
-  assert.ok(afterCliff > before * 2, `past ${C.cliffLaps} laps they fall away (${before.toFixed(3)} → ${afterCliff.toFixed(3)} a lap)`);
-  assert.equal(tyreGripAt(50), C.minGrip);
-  // Off, they never wear.
+test('tyres fade steadily, then go off: heavily slower, never blown up', () => {
+  const T = TYRES;
+  assert.equal(tyreCurve(0), 1);
+  assert.ok(Math.abs(tyreCurve(1) - (1 - T.fadeLoss)) < 1e-9, 'a steady fade over their life');
+  assert.ok(tyreCurve(0.5) > tyreCurve(1) && tyreCurve(1) > tyreCurve(1 + T.cliff / 2));
+  assert.ok(Math.abs(tyreCurve(1 + T.cliff) - T.deadGrip) < 1e-9, 'then off the cliff');
+  assert.equal(tyreCurve(50), T.deadGrip, 'and no further');
+  // Off, they never wear, and every car is on a standard set.
   const car = new CarPhysics(getSampleTrack(0));
-  car.tyreAge = 6;
-  assert.equal(car.tyreGrip, 1, 'tyre wear off: as new');
+  car.tyreAge = 99;
+  assert.equal(car.gripScale, 1, 'tyre wear off: as new');
+  assert.equal(car.tyreLeft, 1);
+  car.wet = true;
+  assert.equal(car.gripScale, CONDITIONS.rainGrip);
+  assert.equal(car.brakeScale, CONDITIONS.rainBrake);
+  car.wet = false;
   car.wear = true;
-  assert.equal(car.tyreGrip, tyreGripAt(6));
+  car.mediumLife = 5;
+  car.newTyres('medium');
+  assert.equal(car.tyreLife, 5);
+  car.tyreAge = 2.5;
+  assert.equal(car.tyreLeft, 0.5);
+  car.tyreAge = 7;
+  assert.equal(car.tyreLeft, 0);
+  assert.equal(car.gripScale, T.deadGrip);
   car.newTyres();
-  assert.equal(car.tyreGrip, 1);
+  assert.equal(car.gripScale, 1);
+});
+
+test('the kinds of tyre: softs grip more and go off soonest, hards the other way, wets for the rain', () => {
+  const life = (c: Compound, wet = false) => compoundLife(c, wet, 5);
+  assert.ok(compoundGrip('soft', false) > compoundGrip('medium', false) && compoundGrip('medium', false) > compoundGrip('hard', false));
+  assert.ok(life('soft') < life('medium') && life('medium') < life('hard'));
+  assert.equal(compoundGrip('medium', true), CONDITIONS.rainGrip, 'mediums in the rain are the standard set');
+  for (const c of ['soft', 'medium', 'hard'] as const) {
+    assert.ok(compoundGrip('wet', true) > compoundGrip(c, true), `in the rain wets beat ${c}s`);
+    assert.ok(compoundGrip('wet', false) < compoundGrip(c, false), `in the dry ${c}s beat wets`);
+    assert.ok(compoundBrake('wet', true) > compoundBrake(c, true));
+  }
+  assert.ok(life('wet', false) < life('soft'), 'wets wear out fast in the dry');
+  assert.ok(life('wet', true) > life('medium', true), 'and last in the rain');
+});
+
+test('medium tyres last 4 to 6 laps, depending on how hard the track works them', () => {
+  const lives = new Map(builtInTracks().map((b) => [b.def.name, trackTyreLife(b.track())] as const));
+  for (const [name, life] of lives) assert.ok(life >= TYRES.lifeHard && life <= TYRES.lifeEasy, `${name}: ${life.toFixed(2)} laps`);
+  const at = (n: string) => lives.get(n) ?? NaN;
+  assert.ok(at('Monza') > 5.8, `Monza (fast, few bends) is easy on them: ${at('Monza').toFixed(2)}`);
+  assert.ok(at('Sakhir') > 4.2 && at('Sakhir') < 5, `Sakhir: ${at('Sakhir').toFixed(2)}`);
+  assert.ok(at('Shanghai') < 4.5, `Shanghai is hard on them: ${at('Shanghai').toFixed(2)}`);
 });
 
 /** Drives `driver` round `track` for one lap from a standing start: the car, the ticks it took and the ticks it spent past the track limits. */
-function oneLap(track: Track, driver: RacingDriver, setup: (car: CarPhysics) => void, opts: () => { grip?: number } = () => ({})): { car: CarPhysics; ticks: number; off: number } {
+function oneLap(track: Track, driver: RacingDriver, setup: (car: CarPhysics) => void, opts: (car: CarPhysics) => { grip?: number } = () => ({})): { car: CarPhysics; ticks: number; off: number } {
   const car = new CarPhysics(track);
   setup(car);
   const L = track.center.length;
@@ -44,7 +79,7 @@ function oneLap(track: Track, driver: RacingDriver, setup: (car: CarPhysics) => 
   let prev = car.state.s;
   let off = 0;
   for (let tick = 0; tick < 200 * HANDLING.tickRate; tick++) {
-    car.step(driver.drive(car.state, 0, undefined, opts()));
+    car.step(driver.drive(car.state, 0, undefined, opts(car)));
     if (car.state.offTrack) off++;
     let ds = car.state.s - prev;
     if (ds < -L / 2) ds += L;
@@ -101,23 +136,31 @@ test('in the rain the car brakes later and grips less: the same AI lap is a few 
   assert.ok(ratio > 1.12 && ratio < 1 / CONDITIONS.rainBrake + 0.05, `wet stopping distance ${ratio.toFixed(2)}×`);
 });
 
-test('on worn tyres the AI takes the bends slower and stays on the road, even flat out', () => {
+test('the AI on tyres that have gone off is heavily slower and stays on the road; on softs it is quicker', () => {
   for (let k = 0; k < 3; k++) {
     const t = getSampleTrack(k);
     const d = new RacingDriver(t, aiPace(1, t));
-    const fresh = oneLap(t, d, (c) => (c.wear = true));
-    const age = 7;
-    const worn = oneLap(
-      t,
-      d,
-      (c) => {
-        c.wear = true;
-        c.tyreAge = age;
-      },
-      () => ({ grip: tyreGripAt(age) }),
-    );
-    assert.ok(worn.ticks > fresh.ticks * 1.03, `${t.def.name}: worn tyres ${(worn.ticks / fresh.ticks).toFixed(3)}× the lap`);
-    assert.equal(worn.off, 0, `${t.def.name}: within the track limits all the way`);
+    const on = (c: Compound, age: number) =>
+      oneLap(
+        t,
+        d,
+        (car) => {
+          car.wear = true;
+          car.mediumLife = trackTyreLife(t);
+          car.newTyres(c);
+          car.tyreAge = age;
+        },
+        (car) => {
+          car.tyreAge = age; // (held: the whole lap on tyres this old)
+          return { grip: car.gripScale / standardGrip(false) };
+        },
+      );
+    const fresh = on('medium', 0);
+    const dead = on('medium', 99);
+    const soft = on('soft', 0);
+    assert.ok(dead.ticks > fresh.ticks * 1.1, `${t.def.name}: gone off, ${(dead.ticks / fresh.ticks).toFixed(3)}× the lap`);
+    assert.ok(soft.ticks < fresh.ticks, `${t.def.name}: softs ${(soft.ticks / fresh.ticks).toFixed(4)}× the lap`);
+    for (const [what, lap] of [['gone off', dead], ['softs', soft]] as const) assert.equal(lap.off, 0, `${t.def.name}: ${what}, within the track limits all the way`);
   }
 });
 
@@ -142,7 +185,7 @@ test('the pit box: at the road’s edge on the start straight, clear of the star
   }
 });
 
-test('a pit stop: stop in the box and the crew fits new tyres in the service time; driving through or starting in it does nothing', () => {
+test('a pit stop: stop in the box and the crew fits the tyres asked for in the service time; driving through or starting in it does nothing', () => {
   const t = getSampleTrack(0);
   const box = pitBox(t);
   const L = t.center.length;
@@ -174,10 +217,11 @@ test('a pit stop: stop in the box and the crew fits new tyres in the service tim
   assert.equal(crew.busy, true);
   let ticks = 0;
   let ev = null;
-  while ((ev = crew.step(car, DT)) === null && ticks < 10 * HANDLING.tickRate) ticks++;
+  while ((ev = crew.step(car, DT, 'soft')) === null && ticks < 10 * HANDLING.tickRate) ticks++;
   assert.equal(ev, 'done');
   assert.ok(Math.abs((ticks + 1) * DT - CONDITIONS.service) < 2 * DT, `service ${((ticks + 1) * DT).toFixed(2)} s`);
-  assert.equal(car.tyreGrip, 1, 'new tyres');
+  assert.equal(car.tyreLeft, 1, 'new tyres');
+  assert.equal(car.compound, 'soft', 'of the kind asked for');
   assert.equal(crew.stops, 1);
   // Still standing there: no second stop.
   for (let i = 0; i < HANDLING.tickRate; i++) assert.equal(crew.step(car, DT), null);
@@ -189,40 +233,51 @@ const progressOf = (car: CarPhysics, track: Track): Progress => {
   return { s: st.s, lateral: st.lateral, along: st.vx * tg.x + st.vz * tg.y, offTrack: st.offTrack };
 };
 
-/** An AI alone in a race of `laps` laps with tyre wear: its laps and stops. */
+/** An AI alone in a race of `laps` laps with tyre wear: the tyres it was on, and how long it drove on tyres that had gone off. */
 function soloRace(track: Track, laps: number, wet = false) {
-  const ai = new AiDriver(track, { name: 'a', paint: 0, difficulty: 0.75, laps, slot: 1, wet, tyreWear: true });
-  const events: RaceEvent[] = [];
-  const grips: number[] = [];
+  const ai = new AiDriver(track, { name: 'a', paint: 0, difficulty: 0.75, laps, slot: 0, wet, tyreWear: true });
+  const compounds: Compound[] = [ai.car.compound];
+  let late = 0;
+  let minLeft = 1;
+  const L = track.center.length;
   for (let tick = 0; tick < (laps * 80 + 30) * HANDLING.tickRate && ai.session.phase !== 'finished'; tick++) {
     const prev = progressOf(ai.car, track);
+    const before = ai.car.tyreAge;
     ai.car.step(ai.drive([ai.car.state], DT));
-    events.length = 0;
-    ai.session.step(prev, progressOf(ai.car, track), events);
-    for (const e of events) if (e.type === 'lap') grips.push(ai.car.tyreGrip);
+    if (ai.car.tyreAge < before) compounds.push(ai.car.compound);
+    else if (ai.car.tyreLeft <= 0 && ai.session.phase === 'racing') late += Math.abs(ai.car.state.speed) * DT;
+    minLeft = Math.min(minLeft, ai.car.tyreLeft);
+    ai.session.step(prev, progressOf(ai.car, track), []);
   }
-  return { ai, laps: [...ai.session.laps], grips };
+  return { ai, compounds, lateLaps: late / L, minLeft };
 }
 
-test('with tyre wear the AI stops for new tyres in a long race (and is quicker after it), but not in a short one', () => {
-  const t = getSampleTrack(0);
-  const long = soloRace(t, 7);
-  assert.equal(long.ai.session.phase, 'finished');
-  assert.equal(long.ai.crew?.stops, 1, `stops: ${long.ai.crew?.stops}`);
-  // The lap after the stop lap is quicker than the last lap before it.
-  const stopLap = long.grips.findIndex((g, i) => i > 0 && g > long.grips[i - 1]);
-  assert.ok(stopLap > 1, `a fresh set after lap ${stopLap + 1} (${long.grips.map((g) => g.toFixed(2)).join(' ')})`);
-  assert.ok(long.laps[stopLap + 1] < long.laps[stopLap - 1], `${long.laps.map((x) => x.toFixed(2)).join(' ')}`);
+test('AI strategy: the quickest tyres that last the race, else a stop before they go off, choosing for the laps left', () => {
+  // Mediums last 5 laps here: softs 3.25, hards 8.
+  assert.equal(pickCompound(3, 5, false, 'medium'), 'soft');
+  assert.equal(pickCompound(5, 5, false, 'soft'), 'medium');
+  assert.equal(pickCompound(8, 5, false, 'soft'), 'hard');
+  assert.equal(pickCompound(20, 5, false, 'soft'), 'soft', 'there will be stops anyway: its own choice');
+  assert.equal(pickCompound(20, 5, true, 'soft'), 'wet', 'wets in the rain');
+  // A short race on a track: no stop (the tyres they start on last it).
+  const t = getSampleTrack(2);
   const short = soloRace(t, 3);
   assert.equal(short.ai.session.phase, 'finished');
-  assert.equal(short.ai.crew?.stops, 0, 'tyres last a short race');
+  assert.equal(short.ai.crew?.stops, 0, 'tyres that last a short race');
+  assert.equal(short.compounds[0], 'soft', 'softs for 3 laps');
+  // A long one: a stop before they go off (never more than a moment past it), and new tyres for the rest.
+  const long = soloRace(t, 12);
+  assert.equal(long.ai.session.phase, 'finished');
+  assert.equal(long.ai.crew?.stops, 1, `stops: ${long.ai.crew?.stops} (${long.compounds.join(' ')})`);
+  assert.ok(long.minLeft > -1e-9 && long.lateLaps < 0.35, `ran ${long.lateLaps.toFixed(2)} laps on tyres that had gone off`);
+  assert.equal(long.compounds[long.compounds.length - 1], 'hard', `${long.compounds.join(' ')}: hards to the finish`);
 });
 
 test('race setup conditions: the summary line and the time of day (the track’s own unless chosen)', () => {
   assert.equal(timeFor({ time: 'track' }, 'sunset'), 'sunset');
   assert.equal(timeFor({ time: 'night' }, 'sunset'), 'night');
-  assert.equal(conditionsSummary({ weather: 'dry', time: 'track', tyreWear: false }, 'day'), 'Dry · day · no tyre wear');
-  assert.equal(conditionsSummary({ weather: 'rain', time: 'night', tyreWear: true }, 'day'), 'Rain · night · tyre wear & pit stops');
+  assert.equal(conditionsSummary({ weather: 'dry', time: 'track', tyreWear: false, tyres: 'soft' }, 'day'), 'Dry · day · no tyre wear');
+  assert.equal(conditionsSummary({ weather: 'rain', time: 'night', tyreWear: true, tyres: 'wet' }, 'day'), 'Rain · night · tyre wear, wet tyres');
 });
 
 test('the conditions panel: each choice changes the setup and shows on its buttons; Done closes it', async () => {
@@ -241,21 +296,33 @@ test('the conditions panel: each choice changes the setup and shows on its butto
   const { ConditionsPanel } = await import('../src/ui/conditionsPanel.ts');
   const host = win.document.createElement('div');
   win.document.body.append(host);
-  const draft = { weather: 'dry' as const, time: 'track' as const, tyreWear: false } as { weather: 'dry' | 'rain'; time: 'track' | 'day' | 'sunset' | 'night'; tyreWear: boolean };
+  const draft: Conditions = { weather: 'dry', time: 'track', tyreWear: false, tyres: 'soft' };
   let closed = false;
   const panel = new ConditionsPanel();
-  panel.open(host as unknown as HTMLElement, { get: () => draft, change: (p) => Object.assign(draft, p), trackTime: 'sunset', onClose: () => (closed = true) });
+  panel.open(host as unknown as HTMLElement, { get: () => draft, change: (p) => Object.assign(draft, p), trackTime: 'sunset', mediumLife: 5, onClose: () => (closed = true) });
+  const startField = () => [...host.querySelectorAll('.field')].find((e) => e.textContent?.includes('Starting tyres')) as unknown as HTMLElement;
   const btn = (field: string, label: string) => {
     const f = [...host.querySelectorAll('.field')].find((e) => e.textContent?.includes(field));
     return [...(f?.querySelectorAll('button') ?? [])].find((b) => b.textContent?.includes(label)) as unknown as HTMLButtonElement;
   };
   assert.match(host.textContent ?? '', /track’s own is sunset/);
+  assert.equal(startField().hidden, true, 'no tyre choice with tyre wear off');
   btn('Weather', 'Rain').click();
   btn('Time of day', 'Night').click();
   btn('Tyre wear', 'On').click();
-  assert.deepEqual(draft, { weather: 'rain', time: 'night', tyreWear: true });
-  assert.equal(btn('Weather', 'Rain').getAttribute('aria-pressed'), 'true');
-  assert.equal(btn('Weather', 'Dry').getAttribute('aria-pressed'), 'false');
+  assert.deepEqual(draft, { weather: 'rain', time: 'night', tyreWear: true, tyres: 'wet' }, 'rain puts wets on');
+  assert.equal(startField().hidden, false);
+  assert.match(startField().textContent ?? '', /\(rain\): Soft ≈ 3\.3 · Medium ≈ 5\.0 · Hard ≈ 8\.0 · Wet ≈ 6\.5/);
+  btn('Starting tyres', 'Hard').click();
+  assert.equal(draft.tyres, 'hard');
+  assert.equal(btn('Starting tyres', 'Hard').getAttribute('aria-pressed'), 'true');
+  btn('Weather', 'Dry').click();
+  assert.equal(draft.tyres, 'hard', 'slicks stay on in the dry');
+  btn('Weather', 'Rain').click();
+  btn('Weather', 'Dry').click();
+  assert.equal(draft.tyres, 'medium', 'wets come off in the dry');
+  assert.equal(btn('Weather', 'Dry').getAttribute('aria-pressed'), 'true');
+  assert.equal(btn('Weather', 'Rain').getAttribute('aria-pressed'), 'false');
   assert.equal(btn('Time of day', 'Night').getAttribute('aria-pressed'), 'true');
   const done = [...host.querySelectorAll('button')].find((b) => b.textContent?.includes('Done')) as unknown as HTMLButtonElement;
   done.click();

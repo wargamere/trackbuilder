@@ -30,23 +30,9 @@ export const RACE = {
  * Each is on or off for the whole field.
  */
 export const CONDITIONS = {
-  /** Rain: the share of the tyres' grip and of the brakes left on a wet track. */
+  /** Rain: the share of the tyres' grip and of the brakes left on a wet track (with tyre wear on, see TYRES.compounds). */
   rainGrip: 0.8,
   rainBrake: 0.78,
-  /**
-   * Tyre wear, counted in laps' worth of wear: a lap at racing speed is one,
-   * sliding wears them faster (1 + slideWear per m/s of sideways slide over
-   * slideFrom). Grip falls by wearPerLap a lap, then, past cliffLaps, by
-   * cliffWear a lap (worn out), down to at most minGrip of new tyres.
-   */
-  wearPerLap: 0.025,
-  cliffLaps: 4,
-  cliffWear: 0.07,
-  minGrip: 0.72,
-  slideFrom: 1,
-  slideWear: 0.35,
-  /** Tyres are "worn" (the HUD says so and suggests a stop) below this grip. */
-  wornGrip: 0.9,
   /** The pit box: this long (m) and wide (m), at the road's edge, this far (m) in from it. */
   boxLength: 11,
   boxWidth: 2.8,
@@ -57,19 +43,60 @@ export const CONDITIONS = {
   /** With no pit building, the box is this far past the start line (m). */
   boxDefaultS: 30,
   /**
-   * AI cars stop for tyres before theirs are down to pitGrip (± pitSpread, so
-   * not all on the same lap), if there are at least pitMinLaps laps to go. They pull
-   * over to the box over pitApproach m and brake to stop in it at pitDecel
-   * m/s², then rejoin the line over pitExit m.
+   * AI cars stop for tyres when theirs would go off before the box comes
+   * round again, give or take pitEarly laps (one each, by grid slot, so not
+   * all on the same lap). No stop with fewer than pitMinLaps laps to go, or
+   * when the tyres would last to the finish (going off at most pitEndSlack
+   * laps before it). They pull over to the box over pitApproach m and brake
+   * to stop in it at pitDecel m/s², then rejoin the line over pitExit m.
    */
-  pitGrip: 0.86,
-  pitSpread: 0.05,
-  pitMinLaps: 1.5,
-  /** No stop if the tyres would still have this much grip at the finish: they'll see the race out. */
-  pitEndGrip: 0.78,
+  pitEarly: [0.3, 0, -0.25],
+  pitMinLaps: 1,
+  pitEndSlack: 0.3,
   pitApproach: 180,
   pitDecel: 7,
   pitExit: 90,
+} as const;
+
+/** A kind of tyre (see TYRES.compounds). */
+export type Compound = 'soft' | 'medium' | 'hard' | 'wet';
+
+/**
+ * Tyres, with tyre wear on (`car/tyres.ts`). Wear is counted in laps driven
+ * (sliding counts extra: 1 + slideWear per m/s over slideFrom). Medium tyres
+ * last lifeEasy laps on the easiest tracks and lifeHard on the hardest, by
+ * how hard a lap works them (workEasy … workHard: the speed turned through
+ * in the bends plus the speed shed under braking, on the racing line; Monza
+ * is about 420, Sakhir 830, Shanghai 970). Until then they lose fadeLoss of
+ * their grip, steadily; then they go off, falling to deadGrip over `cliff`
+ * of their life (heavily slower, not blown up).
+ */
+export const TYRES = {
+  lifeEasy: 6,
+  lifeHard: 4,
+  workEasy: 450,
+  workHard: 950,
+  fadeLoss: 0.07,
+  cliff: 0.25,
+  deadGrip: 0.6,
+  slideFrom: 1,
+  slideWear: 0.35,
+  /** The HUD calls them worn past this share of their life. */
+  wornAt: 0.8,
+  /**
+   * Each kind: its grip (a share of the road's) in the dry and in the rain,
+   * its brakes in the rain, and its life (× the medium's) in the dry and in
+   * the rain. Softs are quicker and go off sooner, hards are slower and last;
+   * wets are the tyres for the rain, slow in the dry and wearing out fast there.
+   */
+  compounds: {
+    soft: { grip: 1.05, rainGrip: 0.84, rainBrake: 0.78, life: 0.65, rainLife: 0.65 },
+    medium: { grip: 1, rainGrip: 0.8, rainBrake: 0.78, life: 1, rainLife: 1 },
+    hard: { grip: 0.95, rainGrip: 0.76, rainBrake: 0.78, life: 1.6, rainLife: 1.6 },
+    wet: { grip: 0.86, rainGrip: 0.95, rainBrake: 0.9, life: 0.4, rainLife: 1.3 },
+  },
+  /** Quickest first (in the dry). */
+  order: ['soft', 'medium', 'hard', 'wet'],
 } as const;
 
 /** AI opponents (race mode only). */
@@ -218,6 +245,9 @@ export const DRIVER = {
   /** On a path of its own (covering the inside of a bend): this share of its grip in the bends, and of the speed that gives. */
   routeGrip: 0.98,
   routeSpeed: 1,
+  /** On tyres with less grip than this share of what it planned for (gone off), it takes this much more care per share below (they slide): 0.4 → 8 % slower at 0.6. */
+  lowGrip: 0.8,
+  lowGripCare: 0.4,
   /** Fighting for a place (see TRAFFIC.fightAhead): it brakes with this much more of the brakes (a share), up to this much. */
   lateBrake: 0.2,
   lateBrakeMax: 1,

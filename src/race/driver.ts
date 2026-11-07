@@ -26,7 +26,7 @@ export interface DriveOptions {
   late?: boolean;
   /** A path of its own across the road (m left of the centre, at s) instead of the lane: covering the inside of a bend, or the way into the pit box. */
   route?: ((s: number) => number) | null;
-  /** The tyres' grip as a share of new ones (worn tyres: slower through the bends). */
+  /** The tyres' grip as a share of what the plan was made for (worn tyres: slower through the bends; softer or rain tyres: quicker). */
   grip?: number;
 }
 
@@ -42,6 +42,8 @@ export class RacingDriver {
   readonly speed: Float32Array;
   /** The corner and braking limit at each sample: it drives flat out below this. */
   readonly limit: Float32Array;
+  /** The corner limit alone at each sample (lower `limit` means braking for the next bend). */
+  private readonly corner: Float32Array;
   readonly pace: Pace;
   private readonly track: Track;
 
@@ -64,6 +66,7 @@ export class RacingDriver {
     const plan = speedProfile(track, this.line, pace);
     this.speed = plan.speed;
     this.limit = plan.limit;
+    this.corner = plan.corner;
     this.lateBrake = Math.min(DRIVER.lateBrakeMax, pace.brake + DRIVER.lateBrake);
     this.lateLimit = speedProfile(track, this.line, { ...pace, brake: this.lateBrake }).limit;
     // A speed plan for each lane beside the line too: its own bends (the line shifted
@@ -104,6 +107,7 @@ export class RacingDriver {
         }
       }
     };
+    const corner = Float32Array.from(sm);
     const late = Float32Array.from(sm);
     brakeBack(late, this.lateBrake);
     brakeBack(sm);
@@ -120,7 +124,7 @@ export class RacingDriver {
       }
     }
     brakeBack(sp);
-    return { limit: sm, speed: sp, late };
+    return { limit: sm, speed: sp, late, corner };
   }
 
   /** Corner and braking limit at `s` on the lane `lane` metres beside the line (between the planned lanes, in between); `late`: braking late. */
@@ -360,10 +364,13 @@ export class RacingDriver {
       };
       limit = Math.min(limit, this.pathLimit(s0, blend, false, brake) * DRIVER.offLineSpeed);
     }
-    // Worn tyres: slower wherever a bend (or braking for one) sets the speed, by as much as the
-    // grip they've lost allows (the speed through a bend goes with its square root).
+    // Less grip than planned (worn tyres): slower wherever a bend, or braking for one, sets the
+    // speed, by as much as the grip allows (the speed through a bend goes with its square root).
+    // More (softer tyres, or rain tyres in the rain): quicker through the bends themselves, but
+    // not into them, as the brakes are no better.
     const top = this.pace.maxSpeed;
-    if (grip < 1 && limit < top - 0.5) limit *= Math.sqrt(grip);
+    if (grip < 1 && limit < top - 0.5) limit *= Math.sqrt(grip) * (1 - DRIVER.lowGripCare * Math.max(0, DRIVER.lowGrip - grip));
+    else if (grip > 1 && limit < top - 0.5 && this.at(this.limit, sp) >= this.at(this.corner, sp) - 0.3) limit = Math.min(top, limit * Math.sqrt(grip));
     // In a tow it may go past its own top speed, as the tow lets the car (where the bends allow).
     if (tow > 0 && limit >= top - 0.5) limit = top * (1 + HANDLING.slipstreamTopSpeed * tow);
     const target = Math.min(cap, limit * pace);

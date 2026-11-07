@@ -10,7 +10,8 @@ import { currentPaintHex, recordFinishedRun } from '../car/paint.ts';
 import { CarPhysics, CarState, lerpState, NO_INPUT, type DriveInput } from '../car/physics.ts';
 import { HANDLING } from '../config/handling.ts';
 import { AI_PAINTS, PAINTS } from '../config/paint.ts';
-import { AI, CONDITIONS, RACE, SLIPSTREAM } from '../config/race.ts';
+import { AI, CONDITIONS, RACE, SLIPSTREAM, TYRES, type Compound } from '../config/race.ts';
+import { compoundLife } from '../car/tyres.ts';
 import { STR, fmt } from '../config/strings.ts';
 import { FixedStep } from '../core/fixedStep.ts';
 import type { GameContext, Screen } from '../core/screen.ts';
@@ -38,6 +39,7 @@ import { GhostRecorder, ghostPose, type GhostLap } from './ghost.ts';
 import { applyAssists, assistDriver } from './assists.ts';
 import { AuthorLap, medalTimes } from './medals.ts';
 import { PitCrew, pitBox } from './pitStop.ts';
+import { trackTyreLife } from './strategy.ts';
 import { scoreFor, type RunResult } from './records.ts';
 import { formatDelta, formatTime, RaceSession, type Progress, type RaceEvent } from './session.ts';
 
@@ -150,8 +152,10 @@ export class RaceScreen implements Screen {
   private crew: PitCrew | null = null;
   private pitMesh: Mesh | null = null;
   private pitMeshTrack: Track | null = null;
-  /** Tyre warnings shown for this set: 1 = worn, 2 = worn out. */
+  /** Tyre warnings shown for this set: 1 = going off soon, 2 = gone off. */
   private tyreWarned = 0;
+  /** The tyres to fit at the pit stop under way (picked with 1–4 or a tap). */
+  private nextTyres: Compound = 'medium';
   /** The weather the racing line was built for. */
   private lineWet = false;
 
@@ -241,6 +245,16 @@ export class RaceScreen implements Screen {
     document.addEventListener('visibilitychange', () => document.hidden && this.setPaused(true), {
       signal: this.abort.signal,
     });
+    // In a pit stop, 1–4 pick the tyres.
+    window.addEventListener(
+      'keydown',
+      (e) => {
+        const n = /^(?:Digit|Numpad)([1-4])$/.exec(e.code);
+        if (!n || !this.crew?.busy || this.paused || e.repeat) return;
+        this.pickTyres(TYRES.order[Number(n[1]) - 1]);
+      },
+      { signal: this.abort.signal },
+    );
     this.startRun();
     this.hud.showHint(this.controlsText());
   }
@@ -346,9 +360,18 @@ export class RaceScreen implements Screen {
   private prepareCar(car: CarPhysics, wear: boolean): void {
     car.wet = this.wet;
     car.wear = wear;
-    car.newTyres();
+    car.mediumLife = trackTyreLife(this.game.track);
+    car.newTyres(wear ? this.game.setup.tyres : 'medium');
     this.crew = wear ? new PitCrew(this.game.track) : null;
     this.crew?.reset(car.state);
+    this.hud.showTyrePicker(null);
+  }
+
+  /** In a pit stop: the tyres to fit (the picker shows it). */
+  private pickTyres(c: Compound): void {
+    if (!this.crew?.busy) return;
+    this.nextTyres = c;
+    this.hud.setTyrePick(c);
   }
 
   /** The race (or practice) itself, from grid order `order` (car ids by slot; YOU is the player). */
@@ -531,6 +554,7 @@ export class RaceScreen implements Screen {
     if (!this.car || !this.session?.canDrive) return;
     this.car.resetToRoad();
     this.crew?.reset(this.car.state); // (a stop under way is off)
+    this.hud.showTyrePicker(null);
     this.rig.snap(this.car.state);
   }
 
@@ -608,22 +632,30 @@ export class RaceScreen implements Screen {
 
   /** The player's pit stop (stopped in the box: new tyres), and warnings as the tyres wear. */
   private pitTick(car: CarPhysics): void {
-    const ev = this.crew?.step(car, car.dt);
+    const ev = this.crew?.step(car, car.dt, this.nextTyres);
     if (ev === 'start') {
+      // The same kind again unless you pick another (1–4, or a tap) while the crew works.
+      this.nextTyres = car.compound;
+      this.hud.showTyrePicker({
+        choices: TYRES.order.map((c) => ({ compound: c, laps: compoundLife(c, car.wet, car.mediumLife) })),
+        selected: this.nextTyres,
+        pick: (c) => this.pickTyres(c),
+      });
       this.hud.flash(STR.race.pitIn, 'info', CONDITIONS.service);
       audio.beep(660, 0.12);
     } else if (ev === 'done') {
       this.tyreWarned = 0;
-      this.hud.flash(STR.race.pitDone, 'good', 1.4);
+      this.hud.showTyrePicker(null);
+      this.hud.flash(fmt(STR.race.pitDone, { tyres: STR.tyres.names[car.compound] }), 'good', 1.4);
       audio.beep(990, 0.12);
       audio.beep(1320, 0.16, 0.22, 0.12);
     }
-    const grip = car.tyreGrip;
-    if (grip < 0.8 && this.tyreWarned < 2) {
+    const left = car.tyreLeft;
+    if (left <= 0 && this.tyreWarned < 2) {
       this.tyreWarned = 2;
       this.hud.flash(STR.race.tyresGone, 'bad', 2.5);
       audio.beep(300, 0.2);
-    } else if (grip < CONDITIONS.wornGrip && this.tyreWarned < 1) {
+    } else if (left < 1 - TYRES.wornAt && this.tyreWarned < 1) {
       this.tyreWarned = 1;
       this.hud.flash(STR.race.tyresWorn, 'info', 2.5);
     }
@@ -917,7 +949,7 @@ export class RaceScreen implements Screen {
     this.touch.setManualGears(assists.gears === 'manual');
     this.updateLine(assists.line);
     this.hud.setSlipstream(car.draft, SLIPSTREAM.show);
-    this.hud.setTyres(car.wear ? car.tyreGrip : null, this.crew?.service ?? 0);
+    this.hud.setTyres(car.wear ? car.compound : null, car.tyreLeft, this.crew?.service ?? 0);
     this.updateHud(alpha);
     this.hud.tick(dt);
 

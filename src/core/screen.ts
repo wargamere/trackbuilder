@@ -1,3 +1,4 @@
+import type { Compound } from '../config/race.ts';
 import type { TimeOfDay } from '../config/track.ts';
 import type { RecordBook, RunResult } from '../race/records.ts';
 import type { View3D } from '../render/view3d.ts';
@@ -17,7 +18,7 @@ export type Weather = 'dry' | 'rain';
 /** What the race setup menu chooses for the next run. */
 export interface RaceSetup {
   mode: DriveMode;
-  /** Laps in a race, 1–10 (practice laps never end). */
+  /** Laps in a race, 1–50 (practice laps never end). */
   laps: number;
   /** Show your best lap on the track as a see-through ghost car. */
   ghost: boolean;
@@ -34,6 +35,8 @@ export interface RaceSetup {
   time: 'track' | TimeOfDay;
   /** Tyres lose grip as they wear (stop in the pit box for new ones). */
   tyreWear: boolean;
+  /** The tyres you start on (with tyre wear on). */
+  tyres: Compound;
 }
 
 export interface Screen {

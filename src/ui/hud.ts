@@ -1,4 +1,4 @@
-import { CONDITIONS } from '../config/race.ts';
+import { CONDITIONS, TYRES, type Compound } from '../config/race.ts';
 import { STR, fmt } from '../config/strings.ts';
 import { settings } from '../core/settings.ts';
 import { MEDALS, type MedalTimes } from '../race/medals.ts';
@@ -48,7 +48,10 @@ export class Hud {
   private lastGear = '';
   private lastRev = -1;
   private readonly tyres: HTMLElement;
+  private readonly tyreChip: HTMLElement;
   private readonly tyreFill: HTMLElement;
+  private readonly picker: HTMLElement;
+  private readonly pickerButtons = new Map<Compound, HTMLButtonElement>();
   private readonly tyreValue: HTMLElement;
   private lastTyres = '';
   private readonly raceBtn: HTMLButtonElement;
@@ -88,10 +91,15 @@ export class Hud {
     this.gearMode = h('span', { class: 'gear-mode', text: STR.race.gearAuto });
     this.revFill = h('div', { class: 'rev-fill' });
     this.revBar = h('div', { class: 'rev-bar' }, this.revFill);
+    this.tyreChip = h('span', { class: 'tyre-chip' });
     this.tyreFill = h('div', { class: 'tyre-fill' });
     this.tyreValue = h('span', { class: 'tyre-value' });
-    this.tyres = h('div', { class: 'hud-tyres', title: STR.race.tyresTitle }, h('span', { class: 'tyre-label', text: STR.race.tyres }), h('div', { class: 'tyre-bar' }, this.tyreFill), this.tyreValue);
+    this.tyres = h('div', { class: 'hud-tyres', title: STR.race.tyresTitle }, this.tyreChip, h('div', { class: 'tyre-bar' }, this.tyreFill), this.tyreValue);
     this.tyres.hidden = true;
+    this.picker = h('div', { class: 'tyre-picker' });
+    this.picker.setAttribute('role', 'group');
+    this.picker.setAttribute('aria-label', STR.race.pitPick);
+    this.picker.hidden = true;
     const speed = h(
       'div',
       { class: 'hud-speed' },
@@ -103,7 +111,7 @@ export class Hud {
     this.draft = h('div', { class: 'hud-draft', text: STR.race.slipstream });
     this.hint = h('div', { class: 'hud-hint' });
     this.debug = h('div', { class: 'hud-debug' });
-    this.root = h('div', { class: 'screen hud' }, top, timer, this.minimap.root, this.center, speed, this.draft, this.hint, this.debug);
+    this.root = h('div', { class: 'screen hud' }, top, timer, this.minimap.root, this.center, speed, this.draft, this.picker, this.hint, this.debug);
   }
 
   /** Medal targets under the timer; the ones your best lap has won are lit. */
@@ -187,24 +195,55 @@ export class Hud {
   }
 
   /**
-   * Tyre wear: the grip left (a share of new tyres) as a bar that empties
-   * down to worn-out, and a percentage, yellow once they're worn and red when
-   * they're gone; or the pit stop counting down while the crew works.
-   * Null hides it (tyre wear off).
+   * Tyre wear: the kind of tyres on (S / M / H / W, in their colour) and how
+   * much of their life is left, as a bar and a percentage: yellow when
+   * they'll go off soon, red once they have; or the pit stop counting down
+   * while the crew works. Null hides it (tyre wear off).
    */
-  setTyres(grip: number | null, pitLeft = 0): void {
-    this.tyres.hidden = grip === null;
-    if (grip === null) return;
-    const C = CONDITIONS;
-    const fill = Math.max(0, Math.min(1, (grip - C.minGrip) / (1 - C.minGrip)));
-    const state = pitLeft > 0 ? 'pit' : grip < 0.8 ? 'gone' : grip < C.wornGrip ? 'worn' : 'ok';
-    const text = pitLeft > 0 ? fmt(STR.race.pitService, { s: pitLeft.toFixed(1) }) : `${Math.round(grip * 100)}%`;
-    const key = `${(pitLeft > 0 ? 1 - pitLeft / C.service : fill).toFixed(2)}|${state}|${text}`;
+  setTyres(compound: Compound | null, left = 1, pitLeft = 0): void {
+    this.tyres.hidden = compound === null;
+    if (compound === null) return;
+    const state = pitLeft > 0 ? 'pit' : left <= 0 ? 'gone' : left < 1 - TYRES.wornAt ? 'worn' : 'ok';
+    const fill = pitLeft > 0 ? 1 - pitLeft / CONDITIONS.service : Math.max(0, Math.min(1, left));
+    const text = pitLeft > 0 ? fmt(STR.race.pitService, { s: pitLeft.toFixed(1) }) : `${Math.round(fill * 100)}%`;
+    const key = `${compound}|${fill.toFixed(2)}|${state}|${text}`;
     if (key === this.lastTyres) return;
     this.lastTyres = key;
-    this.tyreFill.style.width = `${((pitLeft > 0 ? 1 - pitLeft / C.service : fill) * 100).toFixed(0)}%`;
+    this.tyreChip.textContent = STR.tyres.letters[compound];
+    this.tyreChip.dataset.compound = compound;
+    this.tyreChip.title = STR.tyres.names[compound];
+    this.tyreFill.style.width = `${(fill * 100).toFixed(0)}%`;
     this.tyres.dataset.state = state;
     this.tyreValue.textContent = text;
+  }
+
+  /**
+   * The tyre choice in a pit stop: each kind (key 1–4) with how long it lasts
+   * here; `pick` gets a tap. Null hides it.
+   */
+  showTyrePicker(opts: { choices: { compound: Compound; laps: number }[]; selected: Compound; pick: (c: Compound) => void } | null): void {
+    this.picker.hidden = !opts;
+    if (!opts) return;
+    this.pickerButtons.clear();
+    const buttons = opts.choices.map(({ compound, laps }, i) => {
+      const label = fmt(STR.conditions.lifeLaps, { name: STR.tyres.names[compound], n: laps.toFixed(1) });
+      const b = button(label, () => opts.pick(compound), { class: 'compact tyre-pick', key: String(i + 1) });
+      const chip = h('span', { class: 'tyre-chip', text: STR.tyres.letters[compound] });
+      chip.dataset.compound = compound;
+      b.prepend(chip);
+      this.pickerButtons.set(compound, b);
+      return b;
+    });
+    this.picker.replaceChildren(h('span', { class: 'tyre-picker-title', text: STR.race.pitPick }), ...buttons);
+    this.setTyrePick(opts.selected);
+  }
+
+  /** Marks the tyres chosen in the pit stop. */
+  setTyrePick(c: Compound): void {
+    for (const [k, b] of this.pickerButtons) {
+      b.classList.toggle('on', k === c);
+      b.setAttribute('aria-pressed', String(k === c));
+    }
   }
 
   /** Practice shows a "Start a race" button; a race doesn't. */

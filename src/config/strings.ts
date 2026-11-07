@@ -265,7 +265,14 @@ export const STR = {
     times: { track: 'Track', day: 'Day', sunset: 'Sunset', night: 'Night' },
     timeHint: 'The track’s own is {time}. At night it’s floodlights and headlights.',
     tyres: 'Tyre wear & pit stops',
-    tyresHint: 'Tyres lose grip lap by lap, then fall away after about {n} laps. Stop in the yellow pit box on the start straight for new ones ({s} s). The AI cars stop too.',
+    tyresHint: 'Tyres fade lap by lap, then go off and you’re much slower. Stop in the yellow pit box on the start straight for a new set ({s} s): press 1–4 or tap to choose which. The AI cars stop too.',
+    startTyres: 'Starting tyres',
+    /** "On this track (dry): soft ≈ 3 laps · medium ≈ 4.7 · hard ≈ 7.5 · wet ≈ 1.9". */
+    lifeLine: 'How long they last here ({weather}): {list} laps',
+    lifeDry: 'dry',
+    lifeRain: 'rain',
+    lifeItem: '{name} ≈ {n}',
+    lifeLaps: '{name} ≈ {n} laps',
     on: 'On',
     off: 'Off',
     done: 'Done',
@@ -274,7 +281,21 @@ export const STR = {
     summaryRain: 'Rain',
     summaryTimes: { day: 'day', sunset: 'sunset', night: 'night' },
     summaryWear: 'tyre wear & pit stops',
+    summaryWearOn: 'tyre wear, {tyres} tyres',
     summaryNoWear: 'no tyre wear',
+  },
+
+  /** Kinds of tyre (config/race.ts TYRES). */
+  tyres: {
+    names: { soft: 'Soft', medium: 'Medium', hard: 'Hard', wet: 'Wet' },
+    lower: { soft: 'soft', medium: 'medium', hard: 'hard', wet: 'wet' },
+    letters: { soft: 'S', medium: 'M', hard: 'H', wet: 'W' },
+    hints: {
+      soft: 'Quickest, but goes off soonest.',
+      medium: 'In between.',
+      hard: 'Slowest, but lasts longest.',
+      wet: 'For the rain: much more grip in the wet. Slow in the dry, and soon worn out there.',
+    },
   },
 
   /** Keyboard controls (main menu and pause menu). */
@@ -525,13 +546,13 @@ export const STR = {
     ghostYou: 'Your best',
     ghostUser: '{name} · best',
     /** Tyre wear and pit stops. */
-    tyres: 'TYRES',
-    tyresTitle: 'Tyre grip left',
-    tyresWorn: 'Tyres worn: stop in the pit box for new ones',
-    tyresGone: 'Tyres worn out! Pit now',
-    pitIn: 'Pit stop: new tyres…',
-    pitService: 'PIT STOP · {s}',
-    pitDone: 'New tyres: go!',
+    tyresTitle: 'Your tyres and how much of their life is left',
+    tyresWorn: 'Tyres going off soon: pit in the next lap or two',
+    tyresGone: 'Tyres have gone off! Pit now',
+    pitIn: 'Pit stop: choose your tyres (1–4)',
+    pitService: 'PIT · {s}',
+    pitDone: '{tyres} tyres on: go!',
+    pitPick: 'New tyres',
     pitBox: 'PIT',
   },
 

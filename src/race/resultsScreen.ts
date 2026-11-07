@@ -101,7 +101,7 @@ export class ResultsScreen implements Screen {
           row(STR.results.total, formatTime(r.total)),
           row(STR.results.bestLap, r.bestLap === null ? STR.results.noCleanLap : formatTime(r.bestLap), r.newRecord ? STR.results.newRecord : undefined),
           r.newRecord || r.recordLap === null ? null : row(STR.results.record, formatTime(r.recordLap)),
-          row(STR.results.laps, r.laps.map((t, i) => (r.lapValid[i] === false ? `${formatTime(t)} ✗` : formatTime(t))).join('  ·  ')),
+          this.lapsRow(row(STR.results.laps, r.laps.map((t, i) => (r.lapValid[i] === false ? `${formatTime(t)} ✗` : formatTime(t))).join('  ·  ')), r.laps.length),
           r.lapValid.some((v) => !v) ? h('p', { class: 'score-hint warn', text: STR.results.cutNote }) : null,
           row(
             STR.results.avgSpeed,
@@ -165,6 +165,12 @@ export class ResultsScreen implements Screen {
   }
 
   /** Your place and the finishing order, in a race against AI cars. */
+  /** A long race's lap times scroll in a box of their own (up to 50 laps). */
+  private lapsRow(el: HTMLElement, laps: number): HTMLElement {
+    if (laps > 10) el.classList.add('many-laps');
+    return el;
+  }
+
   private standingsBlock(r: RunResult): HTMLElement | null {
     if (!r.standings || r.position === null) return null;
     const n = r.standings.length;

@@ -1,5 +1,5 @@
 import { HANDLING } from '../config/handling.ts';
-import { CONDITIONS } from '../config/race.ts';
+import { CONDITIONS, TYRES, type Compound } from '../config/race.ts';
 import { clamp } from '../core/math.ts';
 import { locatorFor, type TrackLocator } from '../track/locator.ts';
 import { pitLayout } from '../track/pits.ts';
@@ -7,6 +7,7 @@ import { placeTrees } from '../track/placement.ts';
 import { leftOf, sampleAt } from '../track/spline.ts';
 import { groundPose } from '../track/ground.ts';
 import { enginePull, stepGearbox, type GearboxMode } from './gearbox.ts';
+import { compoundBrake, compoundGrip, compoundLife, standardGrip, tyreCurve } from './tyres.ts';
 import { surfaceFor, terrainHeight, type TrackSurface } from '../track/surface.ts';
 import type { Track } from '../track/track.ts';
 
@@ -71,17 +72,6 @@ export class CarState {
     Object.assign(this, o);
     return this;
   }
-}
-
-/**
- * Grip of tyres with `age` laps' worth of wear, as a share of new ones: a
- * steady loss, then much faster once they're worn out (see CONDITIONS).
- */
-export function tyreGripAt(age: number): number {
-  const C = CONDITIONS;
-  const a = Math.max(0, age);
-  const lost = a <= C.cliffLaps ? C.wearPerLap * a : C.wearPerLap * C.cliffLaps + C.cliffWear * (a - C.cliffLaps);
-  return Math.max(C.minGrip, 1 - lost);
 }
 
 /** Shortest signed difference between two angles. */
@@ -174,11 +164,15 @@ export class CarPhysics {
   draft = 0;
   /** Who changes gear (see gearbox.ts): AI cars and the medal bot shift perfectly; the player shifts by hand or with the automatic. */
   gearbox: GearboxMode = 'ideal';
-  /** A wet track: less grip and weaker brakes (CONDITIONS.rainGrip, rainBrake). */
+  /** A wet track: less grip and weaker brakes (CONDITIONS.rainGrip, rainBrake; with tyre wear, the tyres' own). */
   wet = false;
-  /** Tyre wear on: the tyres lose grip as `tyreAge` grows (see tyreGripAt()). */
+  /** Tyre wear on: the tyres fade as they wear and go off at the end of their life (car/tyres.ts). */
   wear = false;
-  /** Laps' worth of wear on the tyres (a lap at racing speed is one; sliding counts extra). */
+  /** The kind of tyres on (with tyre wear on; with it off every car is on a standard medium set). */
+  compound: Compound = 'medium';
+  /** Laps medium tyres last on this track (see trackTyreLife()); the race sets it. */
+  mediumLife = 5;
+  /** Laps driven on these tyres (sliding counts extra). */
   tyreAge = 0;
   private readonly track: Track;
   private readonly locator: TrackLocator;
@@ -213,13 +207,31 @@ export class CarPhysics {
     this.prev.copyFrom(st);
   }
 
-  /** Grip of the tyres as they are now, as a share of new ones (1 with wear off). */
-  get tyreGrip(): number {
-    return this.wear ? tyreGripAt(this.tyreAge) : 1;
+  /** Laps these tyres last before they go off. */
+  get tyreLife(): number {
+    return compoundLife(this.compound, this.wet, this.mediumLife);
   }
 
-  /** A fresh set of tyres (a pit stop, or a new run). */
-  newTyres(): void {
+  /** Share of their life the tyres have left: 1 new, 0 once they've gone off (1 with wear off). */
+  get tyreLeft(): number {
+    return this.wear ? Math.max(0, 1 - this.tyreAge / this.tyreLife) : 1;
+  }
+
+  /** The tyres' grip now, as a share of the road's: their kind, the weather and their wear. */
+  get gripScale(): number {
+    if (!this.wear) return standardGrip(this.wet);
+    return compoundGrip(this.compound, this.wet) * tyreCurve(this.tyreAge / this.tyreLife);
+  }
+
+  /** Share of the brakes' bite the tyres give (less in the rain). */
+  get brakeScale(): number {
+    if (!this.wet) return 1;
+    return this.wear ? compoundBrake(this.compound, true) : CONDITIONS.rainBrake;
+  }
+
+  /** A fresh set of tyres (a pit stop, or a new run), of `compound` (the same kind by default). */
+  newTyres(compound: Compound = this.compound): void {
+    this.compound = compound;
     this.tyreAge = 0;
   }
 
@@ -262,8 +274,8 @@ export class CarPhysics {
     // The rain and worn tyres take some of it away: how hard the car can corner (not how
     // quickly it answers the wheel, which is the surface's).
     const surfaceGrip = (a.gripFactor + b.gripFactor) / 2;
-    const grip = surfaceGrip * (this.wet ? CONDITIONS.rainGrip : 1) * this.tyreGrip;
-    const brakeDecel = H.brakeDecel * (this.wet ? CONDITIONS.rainBrake : 1);
+    const grip = surfaceGrip * this.gripScale;
+    const brakeDecel = H.brakeDecel * this.brakeScale;
     const speedF = (a.speedFactor + b.speedFactor) / 2;
     const accelF = (a.accelFactor + b.accelFactor) / 2;
     const surfDrag = (a.drag + b.drag) / 2;
@@ -341,10 +353,10 @@ export class CarPhysics {
     st.longAccel = (vf - vf0) / dt;
     st.latAccel = vf * st.yawRate;
     st.spin = (st.spin + (vf / H.wheelRadius) * dt) % (Math.PI * 2);
-    // Tyre wear: a lap's worth per lap driven, faster while sliding.
+    // Tyre wear: a lap per lap driven, faster while sliding.
     if (this.wear) {
-      const C = CONDITIONS;
-      this.tyreAge += ((Math.abs(vf) * dt) / this.track.center.length) * (1 + C.slideWear * Math.max(0, st.slip - C.slideFrom));
+      const T = TYRES;
+      this.tyreAge += ((Math.abs(vf) * dt) / this.track.center.length) * (1 + T.slideWear * Math.max(0, st.slip - T.slideFrom));
     }
   }
 

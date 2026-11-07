@@ -229,6 +229,8 @@ export interface SpeedPlan {
   speed: Float32Array;
   /** Just the corner and braking limits (no "can it get up to that speed" pass): drive flat out below it. */
   limit: Float32Array;
+  /** Just the corner limits (where `limit` is lower, the car is braking for the next one). */
+  corner: Float32Array;
 }
 
 /**
@@ -256,6 +258,7 @@ export function speedProfile(track: Track, line: RacingLine, pace: Pace): SpeedP
       }
     }
   };
+  const corner = Float32Array.from(v);
   const limit = Float32Array.from(v);
   brakeBack(limit);
   for (let round = 0; round < 2; round++) {
@@ -268,7 +271,7 @@ export function speedProfile(track: Track, line: RacingLine, pace: Pace): SpeedP
     }
   }
   brakeBack(v);
-  return { speed: v, limit };
+  return { speed: v, limit, corner };
 }
 
 /** Seconds to drive the line once at the speeds of `plan`. */

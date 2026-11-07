@@ -67,7 +67,7 @@ const DEFAULTS: Settings = {
   sidebarSection: 0,
   assists: DEFAULT_ASSISTS,
   keys: DEFAULT_BINDINGS,
-  raceSetup: { mode: 'race', ghost: true, opponents: 3, difficulty: 50, grid: 'pick', startSlot: 4, weather: 'dry', time: 'track', tyreWear: false },
+  raceSetup: { mode: 'race', ghost: true, opponents: 3, difficulty: 50, grid: 'pick', startSlot: 4, weather: 'dry', time: 'track', tyreWear: false, tyres: 'medium' },
 };
 const KEY = 'settings';
 

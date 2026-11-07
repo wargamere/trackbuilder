@@ -51,6 +51,7 @@ src/
               racingLineOverlay.ts (the racing line assist), rain.ts (rain),
               pitBoxMesh.ts (the pit box on the road)
   car/        physics.ts (fixed-step arcade physics), gearbox.ts (six gears),
+              tyres.ts (kinds of tyre, wear curve),
               bindings.ts (keyboard keys),
               contact.ts (car-to-car bumps), slipstream.ts (drafting), input.ts
               (keyboard, gamepad, touch),
@@ -60,7 +61,8 @@ src/
               records.ts, resultsScreen.ts, ai.ts (AI opponents), racingLine.ts
               (line + speed plan), driver.ts (drives it), traffic.ts (racing other
               cars), bot.ts (test driver), medals.ts (medal times), assists.ts
-              (braking and steering assists), pitStop.ts (pit box and pit stops)
+              (braking and steering assists), pitStop.ts (pit box and pit stops),
+              strategy.ts (tyre life per track, AI tyre choices)
   ui/         dom helpers, menuScreen.ts (main menu), raceSetupScreen.ts (race
               setup), assistsPanel.ts, conditionsPanel.ts (rain, time of day,
               tyre wear), controlsPanel.ts (key bindings), gridOverlay.ts (grid after qualifying), editor overlay, HUD,
@@ -229,7 +231,7 @@ Both are plain data written by `node scripts/buildTracks.ts <path to a checkout 
 
 **Race setup** (`ui/raceSetupScreen.ts`) opens wherever you choose to race a track: the main menu, the editor's Race it (Enter), the 3D view, My tracks, the results screen's Race settings (S), the pause menu, and practice's "Start a race". Back (Esc) returns to where you came from (to the editor with your edit kept). It sets:
 - **Mode:** Practice or Race (P / R).
-- **Laps:** 1–10 (race only). Each track starts at its own "Laps per race" from the editor.
+- **Laps:** 1–50 (race only). Each track starts at its own "Laps per race" from the editor. In a long race the results screen's lap times scroll.
 - **Ghost car (your record):** on or off.
 - **Cars:** 1–12, counting you (1 = just you, a time trial; 12 = you and eleven AI cars). Race only.
 - **AI difficulty:** 1–100 % (with AI cars).
@@ -382,7 +384,7 @@ Lap times against AI cars count for bests, the ghost, medals and the score as us
 
 **Track limits.** Kerbs count as track; the grass, gravel or tarmac beyond them doesn't. If the whole car goes past the edge (both wheel tracks, with 25 cm of grace) for more than 0.12 s, the lap you're on is invalid. "Track limits!" flashes, and the timer turns red and struck through until the next lap. An invalid lap still counts towards a race's distance, but never for the best lap, the ghost, medals or the score. The results screen marks those laps ✗. A run with no clean lap scores nothing. Practice uses the same rule.
 
-3-2-1-GO, then the setup's number of laps (1–10). The timer starts when you cross the line. Ten checkpoints sit around the lap, to be passed in order, driving along the track (anywhere up to 25 m beyond the road's edge counts). A jump of more than 3 m along the track in one physics tick (cutting across the grass to another stretch, or a reset) never passes a checkpoint. A lap that misses one still counts towards the race (and towards finishing), but like a track-limits lap its time doesn't: it's marked invalid, and can't be a best, a ghost or a medal. Lap times are interpolated within the 120 Hz tick. Each checkpoint shows a split against your best lap, and driving backwards shows "Wrong way!".
+3-2-1-GO, then the setup's number of laps (1–50). The timer starts when you cross the line. Ten checkpoints sit around the lap, to be passed in order, driving along the track (anywhere up to 25 m beyond the road's edge counts). A jump of more than 3 m along the track in one physics tick (cutting across the grass to another stretch, or a reset) never passes a checkpoint. A lap that misses one still counts towards the race (and towards finishing), but like a track-limits lap its time doesn't: it's marked invalid, and can't be a best, a ghost or a medal. Lap times are interpolated within the 120 Hz tick. Each checkpoint shows a split against your best lap, and driving backwards shows "Wrong way!".
 
 Your best lap is recorded tick by tick and replayed as a translucent ghost. The results screen shows the total time, each lap, the best lap and a score: average speed on your best clean lap × 10. Old multiplier-based high scores reset; lap times and ghosts are preserved.
 
@@ -396,11 +398,23 @@ The race setup's **Conditions** row (🌦, key C) opens a panel with three switc
 
 - **Weather: Dry / Rain.** In the rain the tyres have 80 % of their grip and the brakes 78 % of their bite (`CONDITIONS.rainGrip`, `rainBrake`). That's the most the car can corner and brake: it still answers the wheel as quickly as in the dry. The AI drives the same share of what grip there is, so its laps come out about 7–9 % slower (a test checks a few %, and that its lap stays clean). So do the racing line and the braking assist, which start braking earlier. Qualifying is in the rain too, but medal times are always the dry ones. It looks wet: a low grey sky, mist that hides the distance, a darker road and falling rain, a few thousand streaks that slant towards you at speed (`render/rain.ts`, one draw call). It sounds wet too: a hiss that grows with speed, and tyres that hardly squeal.
 - **Time of day: Track / Day / Sunset / Night.** "Track" keeps the track's own time of day. The others override it for this race only (the track itself doesn't change). The race setup's background shows the choice.
-- **Tyre wear & pit stops: Off / On.**
-  - *Wear* is counted in laps' worth: a lap at racing speed is one, and sliding wears them faster. Grip falls 2.5 % a lap for four laps, then 7 % a lap (they're worn out), to at least 72 % of new (`tyreGripAt()` in `car/physics.ts`). A lap on worn-out tyres is several seconds slower.
-  - *The HUD* shows TYRES with a bar and the grip left, turning yellow under 90 % ("Tyres worn: stop in the pit box for new ones") and red under 80 % ("Tyres worn out! Pit now").
-  - *The pit box* is a yellow PIT box painted at the edge of the start straight, in front of a garage when the track has pits, and always clear of the start line and the grid. Stop in it and the crew holds the car for 3 s while it fits new tyres ("New tyres: go!"). A stop costs about 6 s in all, braking in and getting going again. It's on the track itself, so the cars coming past go round you.
-  - *The AI* slows down as its tyres go off: wherever a bend (or braking for one) sets its speed, it goes slower by the square root of the grip left. It stays within the track limits even on worn-out tyres, and a test checks that. It stops for new tyres when they'd be worn past its own threshold before the box comes round again, unless there's less than a lap and a half left. The thresholds differ from car to car, so they don't all stop on the same lap, and some stop twice in a long race. It pulls over to the box from 180 m out, brakes to stop in it, and rejoins the line over 90 m.
+- **Tyre wear & pit stops: Off / On**, with the **starting tyres** (shown when tyre wear is on).
+  - *Kinds of tyre* (`TYRES.compounds` in `config/race.ts`, `car/tyres.ts`):
+
+    | | Grip (dry) | Grip (rain) | Lasts (× medium) |
+    |---|---|---|---|
+    | **Soft** (S, red) | 105 % | 84 % | 0.65 |
+    | **Medium** (M, yellow) | 100 % | 80 % | 1 |
+    | **Hard** (H, white) | 95 % | 76 % | 1.6 |
+    | **Wet** (W, blue) | 86 % | 95 %, and better brakes | 0.4 in the dry, 1.3 in the rain |
+
+    Switching the weather to rain puts wets on, and back to dry puts mediums on.
+  - *How long they last depends on the track* (`race/strategy.ts`). Mediums last 6 laps on the easiest track and 4 on the hardest, by how hard a lap works the tyres. That's the speed turned through in the bends plus the speed shed under braking, on the racing line flat out. Monza gets 6 laps, Sakhir (Bahrain) about 4.7, Shanghai 4.3. The Conditions panel shows each kind's life on the track you're racing.
+  - *Wear* is counted in laps driven; sliding counts extra. Over their life the tyres fade by 7 %. Then they go off: over the next quarter of their life their grip falls to 60 %, and stays there. A lap on tyres that have gone off is 12–21 % slower: heavily slower, not blown up.
+  - *The HUD* shows the kind (S / M / H / W in its colour) with a bar and the share of their life left. It turns yellow in the last 20 % ("Tyres going off soon: pit in the next lap or two") and red once they've gone off ("Tyres have gone off! Pit now").
+  - *The pit box* is a yellow PIT box painted at the edge of the start straight, in front of a garage when the track has pits, and always clear of the start line and the grid. Stop in it and the crew holds the car for 3 s while it fits a new set. While it works, choose the kind with 1–4 or a tap; each button shows how many laps that kind lasts here. If you don't choose, you get the same kind again. A stop costs about 6 s in all, braking in and getting going again. The box is on the track itself, so the cars coming past go round you.
+  - *The AI* is quicker on softer tyres and in wets in the rain: through the bends, not into them, as the brakes are no better. As its tyres fade it slows wherever a bend, or braking for one, sets its speed, by the square root of the grip left. On tyres that have gone off it takes extra care, as they slide. It stays within the track limits even then (a test checks that).
+  - *AI strategy:* it starts on the quickest kind that lasts the race. If none does, it starts on its own choice (medium, hard or soft by grid slot, so the field is mixed). In the rain it's wets. It stops when its tyres would go off before the box comes round again, give or take a bit per car, so they don't all stop on the same lap. It doesn't stop with less than a lap to go, or when its tyres will last to the finish. At a stop it picks the same way for the laps left. It pulls over to the box from 180 m out, brakes to stop in it, and rejoins the line over 90 m.
   - *Qualifying* is always on new tyres, without wear.
 
 ### Saving, sharing and sound
@@ -472,6 +486,7 @@ Tested against the real SDK in its `local` mode (localhost): the SDK's own log s
 - [x] Six-speed gearbox (manual or automatic, the automatic a little slower) and driving assists: racing line (braking / full), and braking and steering assists that help a little without driving for you
 - [x] Rebindable keyboard controls (two keys per action)
 - [x] Race conditions, each switchable: rain, time of day (track / day / sunset / night, with car lights), tyre wear with working pit stops for you and the AI
+- [x] Kinds of tyre (soft / medium / hard / wet) with a life that depends on the track (4–6 laps for mediums) and a heavy drop-off once they go; choose them at the start and at each stop; races up to 50 laps
 
 ## Validation for the track editor
 

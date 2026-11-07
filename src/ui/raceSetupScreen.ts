@@ -4,6 +4,7 @@ import type { DriveMode, GameContext, RaceSetup, Screen } from '../core/screen.t
 import { settings } from '../core/settings.ts';
 import { TrackOrbit } from '../render/orbit.ts';
 import { AssistsPanel, assistsSummary } from './assistsPanel.ts';
+import { trackTyreLife } from '../race/strategy.ts';
 import { ConditionsPanel, conditionsSummary, timeFor } from './conditionsPanel.ts';
 import { button, h, segmented, slider, type Choice, type Slider } from './dom.ts';
 
@@ -12,7 +13,7 @@ type GridKind = RaceSetup['grid'];
 /**
  * SETUP state: the race setup menu, opened wherever you choose to race a
  * track (main menu, editor, 3D view, My tracks, results, pause menu). Practice
- * or race, laps (1–10) and the ghost of your record; in a race, how many cars
+ * or race, laps (1–50) and the ghost of your record; in a race, how many cars
  * (you and up to eleven AI cars), how fast the AI is, and how the grid is
  * decided: qualifying, a random draw, or the slot you pick. Assists and the
  * conditions (rain, time of day, tyre wear) each have a panel of their own.
@@ -65,7 +66,7 @@ export class RaceSetupScreen implements Screen {
       (m) => this.set({ mode: m }),
     );
     this.modeHint = h('p', { class: 'setup-hint' });
-    this.lapsSlider = slider(1, 10, 1, (n) => this.set({ laps: n }, false), () => {}, (n) => (n === 1 ? S.lapValue : fmt(S.lapsValue, { n })));
+    this.lapsSlider = slider(1, 50, 1, (n) => this.set({ laps: n }, false), () => {}, (n) => (n === 1 ? S.lapValue : fmt(S.lapsValue, { n })));
     this.ghostChoice = segmented<boolean>(
       [
         [true, S.on],
@@ -210,6 +211,7 @@ export class RaceSetupScreen implements Screen {
       get: () => this.draft,
       change: (patch) => this.set(patch),
       trackTime: this.game.track.options.time,
+      mediumLife: trackTyreLife(this.game.track),
       onClose: () => this.renderHints(),
     });
   }
