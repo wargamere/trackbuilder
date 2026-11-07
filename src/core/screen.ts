@@ -1,0 +1,78 @@
+import type { RecordBook, RunResult } from '../race/records.ts';
+import type { View3D } from '../render/view3d.ts';
+import type { TrackLibrary } from '../track/library.ts';
+import type { Track } from '../track/track.ts';
+import type { Surface2D } from './surface2d.ts';
+
+/** States of the main state machine (see main.ts). */
+export type ScreenId = 'menu' | 'setup' | 'race' | 'editor' | 'results' | 'library' | 'preview';
+
+/** How the race screen runs: free practice laps, or a timed race with a countdown and results. */
+export type DriveMode = 'practice' | 'race';
+
+/** What the race setup menu chooses for the next run. */
+export interface RaceSetup {
+  mode: DriveMode;
+  /** Laps in a race, 1–10 (practice laps never end). */
+  laps: number;
+  /** Show your best lap on the track as a see-through ghost car. */
+  ghost: boolean;
+  /** AI cars in a race, 0–11 (never in practice). */
+  opponents: number;
+  /** How fast the AI cars are, 1–100 (%). */
+  difficulty: number;
+  /** How the grid is decided: a qualifying session, a random draw, or the slot you pick. */
+  grid: 'qualifying' | 'random' | 'pick';
+  /** Your grid slot when picking (1 = pole). */
+  startSlot: number;
+}
+
+export interface Screen {
+  /** Which canvas the screen draws on; main.ts shows that one and hides the other. */
+  readonly layer: '2d' | '3d';
+  enter(): void;
+  exit(): void;
+  /** Called once per animation frame while the screen is active. */
+  frame(dt: number, time: number): void;
+  resize(): void;
+}
+
+/** What screens can see and do. Implemented by main.ts. */
+export interface GameContext {
+  /** The track that is (or will be) raced. */
+  readonly track: Track;
+  setTrack(track: Track): void;
+  readonly surface: Surface2D;
+  /** The 3D view, or null if WebGL is unavailable. */
+  readonly view3d: View3D | null;
+  /** Overlay element that screens put their DOM UI into. */
+  readonly ui: HTMLElement;
+  go(id: ScreenId): void;
+  /** Drives the current track in practice or race mode (restarting the run if already driving). */
+  drive(mode: DriveMode): void;
+  /** Drives the current track with the setup, changed by `patch` (restarting the run if already driving). */
+  start(patch?: Partial<RaceSetup>): void;
+  /**
+   * Opens the race setup menu for the current track. Back returns to the
+   * screen it was opened from, or calls `back`; `mode` preselects a mode.
+   */
+  openSetup(opts?: { back?: () => void; mode?: DriveMode }): void;
+  /** Leaves the setup menu the way it was opened. */
+  closeSetup(): void;
+  /** The settings for the run being driven (or the next one). */
+  readonly setup: Readonly<RaceSetup>;
+  /** The mode the race screen runs in. */
+  readonly mode: DriveMode;
+  /** Personal bests and ghosts per track. */
+  readonly records: RecordBook;
+  /** Saved tracks ("My tracks"). */
+  readonly library: TrackLibrary;
+  /** The run the results screen shows. */
+  lastResult: RunResult | null;
+  /** True while something outside the game needs it paused (portrait prompt, video ads). */
+  interrupted: boolean;
+  /** Re-applies the selected paint to the car. */
+  refreshPaint(): void;
+  /** What the 3D preview shows (set by the editor), and how to race it from there. */
+  preview: { track: Track; race(): void; back(): void } | null;
+}

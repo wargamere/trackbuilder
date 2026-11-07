@@ -1,0 +1,355 @@
+import { BufferGeometry, Color, Float32BufferAttribute, Uint32BufferAttribute, Vector3 } from 'three';
+import { THEMES } from '../config/themes.ts';
+import { TRACK } from '../config/track.ts';
+import { wrap } from '../core/math.ts';
+import { QuadBuilder } from '../render/geom.ts';
+import { kerbAt, kerbLayout } from './kerbs.ts';
+import { pitLayout } from './pits.ts';
+import { edgeOffsets, leftOf, sampleAt, surfaceY, type Centerline } from './spline.ts';
+import { terrainHeight, type TrackSurface } from './surface.ts';
+import type { Track } from './track.ts';
+
+/** Height of the road surface above the ground it sits on. */
+export const ROAD_Y = 0.02;
+
+export { edgeOffsets } from './spline.ts';
+
+/**
+ * Extrudes the road ribbon along the closed centre line, following its height
+ * and banking. Track coordinates (x east, y south) map to world (x, z). U runs
+ * across the road (0 = left edge), V along it; the loop gets one duplicated row
+ * so V can end on a whole number of tiles without a seam.
+ *
+ * Returns two geometries sharing the vertices: the road on the ground, and the
+ * raised decks (bridges), which are drawn separately so they cover a road
+ * passing underneath.
+ */
+export function buildRoadGeometry(c: Centerline, surf: TrackSurface): { ground: BufferGeometry; deck: BufferGeometry | null } {
+  const n = c.points.length;
+  const tiles = Math.max(1, Math.round(c.length / c.width));
+  const rows = n + 1;
+  const pos = new Float32Array(rows * 2 * 3);
+  const uv = new Float32Array(rows * 2 * 2);
+  const { left, right } = edgeOffsets(c);
+  for (let r = 0; r < rows; r++) {
+    const i = r % n;
+    const p = c.points[i];
+    const l = leftOf(c.tangents[i]);
+    const v = (r / n) * tiles;
+    const yl = surfaceY(c, i, left[i]) + ROAD_Y;
+    const yr = surfaceY(c, i, -right[i]) + ROAD_Y;
+    pos.set([p.x + l.x * left[i], yl, p.y + l.y * left[i], p.x - l.x * right[i], yr, p.y - l.y * right[i]], r * 6);
+    uv.set([0, v, 1, v], r * 4);
+  }
+  const groundIdx: number[] = [];
+  const deckIdx: number[] = [];
+  for (let r = 0; r < n; r++) {
+    const a = r * 2; // left, this row
+    const b = a + 1; // right, this row
+    const c2 = a + 2; // left, next row
+    const d = a + 3; // right, next row
+    (surf.deck[r] || surf.deck[(r + 1) % n] ? deckIdx : groundIdx).push(a, b, c2, b, d, c2);
+  }
+  const position = new Float32BufferAttribute(pos, 3);
+  const uvAttr = new Float32BufferAttribute(uv, 2);
+  const make = (idx: number[]) => {
+    const g = new BufferGeometry();
+    g.setAttribute('position', position);
+    g.setAttribute('uv', uvAttr);
+    g.setIndex(new Uint32BufferAttribute(Uint32Array.from(idx), 1));
+    g.computeVertexNormals();
+    g.computeBoundingSphere();
+    return g;
+  };
+  return { ground: make(groundIdx), deck: deckIdx.length ? make(deckIdx) : null };
+}
+
+const KERB_RED = 0xd8342c;
+const KERB_WHITE = 0xf4f4f0;
+/** Centre-line samples per kerb stripe (~2.5 m). */
+const STRIPE = 1;
+
+/**
+ * Red/white kerbs along the outside of every corner and on the inside around
+ * the apex (see kerbLayout), sitting on the (possibly banked, raised) road:
+ * road edge -> crown -> outer edge. Raised kerbs have a crown; flat ones are
+ * just painted on.
+ */
+export function buildKerbGeometry(track: Track): BufferGeometry | null {
+  if (track.options.kerbs === 'none') return null;
+  const c = track.center;
+  const n = c.points.length;
+  const layout = kerbLayout(track);
+  const q = new QuadBuilder();
+  const crown = track.options.kerbs === 'raised' ? 0.11 : ROAD_Y + 0.015;
+  // Lift above the road surface of the profile's three edges (inner, crown, outer).
+  const lifts = [ROAD_Y + 0.01, crown, 0.025];
+  const at = (i: number, side: 1 | -1, k: number): Vector3 | null => {
+    const e = kerbAt(layout, i, side);
+    if (!e) return null;
+    const off = k === 0 ? e[0] : k === 1 ? e[0] + (e[1] - e[0]) * 0.5 : e[1];
+    const p = c.points[i];
+    const l = leftOf(c.tangents[i]);
+    return new Vector3(p.x + l.x * off * side, surfaceY(c, i, off * side) + lifts[k], p.y + l.y * off * side);
+  };
+  for (const run of layout.runs) {
+    for (let j = 0; j < run.count; j++) {
+      const i0 = wrap(run.from + j, n);
+      const i1 = wrap(run.from + j + 1, n);
+      const hex = Math.floor(j / STRIPE) % 2 === 0 ? KERB_RED : KERB_WHITE;
+      for (let k = 0; k < 2; k++) {
+        const a = at(i0, run.side, k);
+        const b = at(i1, run.side, k);
+        const cc = at(i1, run.side, k + 1);
+        const d = at(i0, run.side, k + 1);
+        if (a && b && cc && d) q.quad(a, b, cc, d, hex);
+      }
+    }
+  }
+  return q.empty ? null : q.build();
+}
+
+/** Flat-coloured quads of any orientation (rendered double-sided). */
+class Panels {
+  private pos: number[] = [];
+  private col: number[] = [];
+  private readonly c = new Color();
+  quad(a: number[], b: number[], cc: number[], d: number[], hex: number): void {
+    this.c.setHex(hex);
+    for (const v of [a, b, cc, a, cc, d]) {
+      this.pos.push(v[0], v[1], v[2]);
+      this.col.push(this.c.r, this.c.g, this.c.b);
+    }
+  }
+  get empty(): boolean {
+    return this.pos.length === 0;
+  }
+  build(): BufferGeometry {
+    const g = new BufferGeometry();
+    g.setAttribute('position', new Float32BufferAttribute(this.pos, 3));
+    g.setAttribute('color', new Float32BufferAttribute(this.col, 3));
+    g.computeVertexNormals();
+    return g;
+  }
+}
+
+const CONCRETE = 0xc9ccd2;
+const CONCRETE_DARK = 0x9ea2aa;
+const WALL_RED = 0xd8342c;
+const WALL_WHITE = 0xf2f2ee;
+/** How far the earth skirt under the road's outer edge reaches down (m). */
+export const SKIRT_DEPTH = 2.6;
+const TYRE = 0x2a2c31;
+const TYRE_DARK = 0x1d1f23;
+const TYRE_BAND = [0xd8342c, 0xf2f2ee, 0x2f6fd8, 0xf2f2ee] as const;
+
+/**
+ * Barriers along the road edges (where the surface data says so) and the sides
+ * of raised decks, as one vertex-coloured mesh. Concrete barrier tops alternate
+ * red and white every ~10 m so speed reads well; tyre walls are stacks of dark
+ * tyres with a coloured band on top. Bridge rails are always concrete.
+ */
+export function buildWallGeometry(track: Track, surf: TrackSurface): BufferGeometry | null {
+  const c = track.center;
+  const n = c.points.length;
+  const p = new Panels();
+  const off = c.wallOffset;
+  const tyres = track.options.barrier === 'tyres';
+  const thick = 0.45;
+  const hgt = TRACK.wallHeight;
+  const band = Math.max(1, Math.round(10 / c.spacing));
+  const at = (i: number, lateral: number, lift: number) => {
+    const q = c.points[i];
+    const l = leftOf(c.tangents[i]);
+    return [q.x + l.x * lateral, surfaceY(c, i, lateral) + lift, q.y + l.y * lateral];
+  };
+  for (const side of [1, -1] as const) {
+    const flags = side === 1 ? surf.wallL : surf.wallR;
+    for (let i = 0; i < n; i++) {
+      const j = (i + 1) % n;
+      if (!flags[i] || !flags[j]) continue;
+      const inner = off * side;
+      const outer = (off + thick) * side;
+      const tyre = tyres && !surf.deck[i];
+      const top = tyre ? TYRE_BAND[Math.floor(i / band) % TYRE_BAND.length] : Math.floor(i / band) % 2 === 0 ? WALL_RED : WALL_WHITE;
+      const face = tyre ? (i % 2 ? TYRE : TYRE_DARK) : CONCRETE;
+      // Faces reach below the surface so banked or uneven ground never shows a gap.
+      p.quad(at(i, inner, -1.2), at(j, inner, -1.2), at(j, inner, hgt), at(i, inner, hgt), face);
+      p.quad(at(i, outer, -1.2), at(j, outer, -1.2), at(j, outer, hgt), at(i, outer, hgt), tyre ? TYRE_DARK : CONCRETE_DARK);
+      p.quad(at(i, inner, hgt), at(j, inner, hgt), at(j, outer, hgt), at(i, outer, hgt), top);
+    }
+    // Close the ends where a barrier stops (gaps at crossings, the inside of hairpins).
+    for (let i = 0; i < n; i++) {
+      const prev = flags[(i - 1 + n) % n];
+      const next = flags[(i + 1) % n];
+      if (!flags[i] || (prev && next)) continue;
+      if (!prev && !next) continue; // a lone sample draws no barrier at all
+      const inner = off * side;
+      const outer = (off + thick) * side;
+      p.quad(at(i, inner, -1.2), at(i, outer, -1.2), at(i, outer, hgt), at(i, inner, hgt), tyres && !surf.deck[i] ? TYRE_DARK : CONCRETE_DARK);
+    }
+  }
+  // A short earth skirt down from the outer edge of the road surface (kerb or
+  // run-off included), so where the ground falls away there is never a gap under it.
+  const { left, right } = edgeOffsets(c);
+  const kerbs = kerbLayout(track);
+  // The skirt takes the colour of the ground, so where it shows it looks like the bank of earth.
+  const skirt = new Color(THEMES[track.options.theme].ground.base).multiplyScalar(0.72).getHex();
+  const outerEdge = (i: number, side: 1 | -1) => {
+    const e = side === 1 ? left[i] : right[i];
+    if (track.options.runoff !== 'grass') {
+      const k = Math.abs(c.curvature[i]);
+      const inside = (c.curvature[i] > 0 && side === -1) || (c.curvature[i] < 0 && side === 1);
+      return inside ? Math.max(e, Math.min(c.wallOffset + 0.4, 0.9 / Math.max(1e-6, k))) : c.wallOffset + 0.4;
+    }
+    return kerbAt(kerbs, i, side)?.[1] ?? e;
+  };
+  for (const side of [1, -1] as const) {
+    for (let i = 0; i < n; i++) {
+      const j = (i + 1) % n;
+      if (surf.deck[i] || surf.deck[j]) continue;
+      const ei = outerEdge(i, side) * side;
+      const ej = outerEdge(j, side) * side;
+      p.quad(at(i, ei, ROAD_Y), at(j, ej, ROAD_Y), at(j, ej, -SKIRT_DEPTH), at(i, ei, -SKIRT_DEPTH), skirt);
+    }
+  }
+
+  // Decks: a concrete shoulder from the road edge to the rails, the slab's edge and its underside.
+  const hw = c.width / 2;
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n;
+    if (!surf.deck[i] || !surf.deck[j]) continue;
+    for (const side of [1, -1]) {
+      p.quad(at(i, (hw - 0.2) * side, ROAD_Y * 0.5), at(j, (hw - 0.2) * side, ROAD_Y * 0.5), at(j, off * side, ROAD_Y * 0.5), at(i, off * side, ROAD_Y * 0.5), CONCRETE);
+      const e = (off + thick) * side;
+      p.quad(at(i, e, 0), at(j, e, 0), at(j, e, -1.1), at(i, e, -1.1), CONCRETE_DARK);
+    }
+    // Underside of the slab.
+    p.quad(at(i, off + thick, -1.1), at(j, off + thick, -1.1), at(j, -(off + thick), -1.1), at(i, -(off + thick), -1.1), CONCRETE_DARK);
+  }
+  return p.empty ? null : p.build();
+}
+
+/**
+ * Gravel or tarmac run-off beside the road, out to the barrier line (nothing
+ * for grass: that's the ground itself). Drawn like the road, after the ground
+ * and without writing depth. Skipped on bridge decks, which have their own
+ * concrete shoulders. UVs are in world metres / 4.
+ */
+export function buildRunoffGeometry(track: Track, surf: TrackSurface): BufferGeometry | null {
+  if (track.options.runoff === 'grass') return null;
+  const c = track.center;
+  const n = c.points.length;
+  const { left, right } = edgeOffsets(c);
+  const outerMax = c.wallOffset + 0.4;
+  const pos: number[] = [];
+  const uv: number[] = [];
+  const idx: number[] = [];
+  for (const side of [1, -1]) {
+    const base = pos.length / 3;
+    for (let r = 0; r <= n; r++) {
+      const i = r % n;
+      const p = c.points[i];
+      const l = leftOf(c.tangents[i]);
+      // On the inside of a tight corner the strip stops short of the corner's centre.
+      const k = c.curvature[i];
+      const insideHere = (k > 0 && side === -1) || (k < 0 && side === 1);
+      const inner = (side === 1 ? left[i] : right[i]) - 0.1;
+      const outer = insideHere ? Math.max(inner, Math.min(outerMax, 0.9 / Math.max(1e-6, Math.abs(k)))) : outerMax;
+      for (const lat of [inner, outer]) {
+        const x = p.x + l.x * lat * side;
+        const z = p.y + l.y * lat * side;
+        pos.push(x, surfaceY(c, i, lat * side) + ROAD_Y * 0.4, z);
+        uv.push(x / 4, z / 4);
+      }
+    }
+    for (let r = 0; r < n; r++) {
+      if (surf.deck[r] || surf.deck[(r + 1) % n]) continue;
+      const a = base + r * 2;
+      // Winding so the face points up on either side.
+      if (side === 1) idx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3);
+      else idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2);
+    }
+  }
+  if (!idx.length) return null;
+  const g = new BufferGeometry();
+  g.setAttribute('position', new Float32BufferAttribute(pos, 3));
+  g.setAttribute('uv', new Float32BufferAttribute(uv, 2));
+  g.setIndex(new Uint32BufferAttribute(Uint32Array.from(idx), 1));
+  g.computeVertexNormals();
+  return g;
+}
+
+const PIT_LANE = 0x4b505a;
+const PIT_LINE = 0xf2f2ee;
+const PIT_WALL = 0xe9ebef;
+const PIT_BACK = 0xb9bec7;
+const PIT_ROOF = 0xf6f6f4;
+const PIT_DOOR = 0x22262e;
+/** Team colours above the garage doors. */
+const TEAMS = [0xd8342c, 0x2f6fd8, 0xf2b705, 0x2fa35a, 0xf07a1a, 0x8a4fd8, 0x18a9b8, 0xe0e0e0, 0xd84f9a, 0x3b3f47] as const;
+
+/**
+ * The pit building beside the start straight: a pit lane, then a long white
+ * building whose front is a row of garages with team-coloured signs, under a
+ * roof that overhangs the lane a little. One vertex-coloured mesh.
+ */
+export function buildPitGeometry(track: Track, surf: TrackSurface): BufferGeometry | null {
+  const pits = pitLayout(track);
+  if (!pits) return null;
+  const c = track.center;
+  const p = new Panels();
+  const side = pits.side;
+  const H = 6.2;
+  /** A point at track position s, `lat` metres out on the pit side, `y` above the pad. */
+  const at = (s: number, lat: number, y: number): number[] => {
+    const { p: q, t } = sampleAt(c, s);
+    const l = leftOf(t);
+    const x = q.x + l.x * lat * side;
+    const z = q.y + l.y * lat * side;
+    return [x, terrainHeight(surf.terrain, x, z) + y, z];
+  };
+  // Pit lane and its white edge lines.
+  const [l0, l1] = pits.lane;
+  const [b0, b1] = pits.building;
+  const step = 2.5;
+  for (let s = pits.from - 8; s < pits.to + 8; s += step) {
+    const e = s + step;
+    p.quad(at(s, l0, 0.06), at(e, l0, 0.06), at(e, l1 + 0.5, 0.06), at(s, l1 + 0.5, 0.06), PIT_LANE);
+    p.quad(at(s, l0 + 0.4, 0.08), at(e, l0 + 0.4, 0.08), at(e, l0 + 0.7, 0.08), at(s, l0 + 0.7, 0.08), PIT_LINE);
+  }
+  // The building: front with garages, back, roof and end walls.
+  const doorW = 4.4;
+  for (let k = 0; k < pits.doors.length; k++) {
+    const m = pits.doors[k];
+    const g0 = m - 3;
+    const g1 = m + 3;
+    const d0 = m - doorW / 2;
+    const d1 = m + doorW / 2;
+    // Pillars either side of the door and the wall above it.
+    p.quad(at(g0, b0, -0.6), at(d0, b0, -0.6), at(d0, b0, H), at(g0, b0, H), PIT_WALL);
+    p.quad(at(d1, b0, -0.6), at(g1, b0, -0.6), at(g1, b0, H), at(d1, b0, H), PIT_WALL);
+    p.quad(at(d0, b0, 3.6), at(d1, b0, 3.6), at(d1, b0, 4.6), at(d0, b0, 4.6), TEAMS[k % TEAMS.length]);
+    p.quad(at(d0, b0, 4.6), at(d1, b0, 4.6), at(d1, b0, H), at(d0, b0, H), PIT_WALL);
+    // The open garage: a dark recess.
+    p.quad(at(d0, b0 + 0.6, -0.6), at(d1, b0 + 0.6, -0.6), at(d1, b0 + 0.6, 3.6), at(d0, b0 + 0.6, 3.6), PIT_DOOR);
+    p.quad(at(d0, b0, 3.6), at(d1, b0, 3.6), at(d1, b0 + 0.6, 3.6), at(d0, b0 + 0.6, 3.6), PIT_BACK);
+    for (const d of [d0, d1]) p.quad(at(d, b0, -0.6), at(d, b0 + 0.6, -0.6), at(d, b0 + 0.6, 3.6), at(d, b0, 3.6), PIT_BACK);
+  }
+  const s0 = pits.from;
+  const s1 = pits.to;
+  for (let s = s0; s < s1 - 0.01; s += step) {
+    const e = Math.min(s1, s + step);
+    // Back wall and roof (overhanging the lane by 2 m).
+    p.quad(at(s, b1, -0.6), at(e, b1, -0.6), at(e, b1, H), at(s, b1, H), PIT_BACK);
+    p.quad(at(s, b0 - 2, H), at(e, b0 - 2, H), at(e, b1, H), at(s, b1, H), PIT_ROOF);
+    p.quad(at(s, b0 - 2, H - 0.35), at(e, b0 - 2, H - 0.35), at(e, b0 - 2, H), at(s, b0 - 2, H), PIT_BACK);
+  }
+  // Front beyond the first and last garage, and the end walls.
+  const g0 = pits.doors[0] - 3;
+  const g1 = pits.doors[pits.doors.length - 1] + 3;
+  p.quad(at(s0, b0, -0.6), at(g0, b0, -0.6), at(g0, b0, H), at(s0, b0, H), PIT_WALL);
+  p.quad(at(g1, b0, -0.6), at(s1, b0, -0.6), at(s1, b0, H), at(g1, b0, H), PIT_WALL);
+  for (const s of [s0, s1]) p.quad(at(s, b0, -0.6), at(s, b1, -0.6), at(s, b1, H), at(s, b0, H), PIT_BACK);
+  return p.build();
+}
