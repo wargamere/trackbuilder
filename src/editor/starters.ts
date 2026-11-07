@@ -1,3 +1,4 @@
+import { STR, fmt } from '../config/strings.ts';
 import { DEFAULT_OPTIONS, type TrackOptions } from '../config/track.ts';
 import type { Dot } from '../core/math.ts';
 import { rng } from '../core/random.ts';
@@ -8,12 +9,11 @@ import { getSampleTrack } from './pipeline.ts';
 import { reverseDots } from './smoothing.ts';
 
 export type StarterId = 'oval' | 'club' | 'flow' | 'technical';
-export const STARTERS: { id: StarterId; name: string; hint: string }[] = [
-  { id: 'oval', name: 'Easy oval', hint: 'Wide turns. Find your flow.' },
-  { id: 'club', name: 'Club circuit', hint: 'Your first proper raceway.' },
-  { id: 'flow', name: 'Flow state', hint: 'Sweeping bends and hills.' },
-  { id: 'technical', name: 'Corner club', hint: 'A little more to master.' },
-];
+export const STARTERS: { id: StarterId; name: string; hint: string }[] = (['oval', 'club', 'flow', 'technical'] as const).map((id) => ({
+  id,
+  name: STR.studio.starters[id][0],
+  hint: STR.studio.starters[id][1],
+}));
 
 /** Editable copies: never mutate a built-in or inherit its record identity. */
 export function starterTrack(id: StarterId): TrackDef {
@@ -40,5 +40,5 @@ export function surpriseTrack(seed: number): TrackDef {
   const mirror = random() > 0.5 ? -1 : 1;
   let control = def.control.map((p) => ({ ...p, x: p.x * mirror }));
   if (random() > 0.5) control = reverseDots(control);
-  return { ...def, id: 'editing', builtIn: false, name: `${def.name} Remix`, control, options: { ...DEFAULT_OPTIONS, ...def.options } };
+  return { ...def, id: 'editing', builtIn: false, name: fmt(STR.studio.remix, { name: def.name }), control, options: { ...DEFAULT_OPTIONS, ...def.options } };
 }

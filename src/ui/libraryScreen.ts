@@ -1,61 +1,20 @@
 import { STR, fmt } from '../config/strings.ts';
 import type { GameContext, Screen } from '../core/screen.ts';
 import { builtInTrack, builtInTracks, trackFromCode } from '../editor/pipeline.ts';
-import { drawPaper, fitView, PAPER } from '../editor/render2d.ts';
+import { drawPaper, fitView } from '../editor/render2d.ts';
 import { medalFor, medalTimes } from '../race/medals.ts';
 import { formatTime } from '../race/session.ts';
-import { sampleClosedCatmullRom } from '../track/spline.ts';
 import type { TrackGroup } from '../track/catalog.ts';
 import { WORLD_TRACKS_LICENCE } from '../track/data/notices.ts';
 import { buildTrack, type TrackDef } from '../track/track.ts';
 import { button, h, segmented } from './dom.ts';
 import { ShareDialog } from './shareDialog.ts';
+import { drawThumbnail } from './thumbnail.ts';
 
 /** Length per track id (building a track for its stats isn't free). */
 const statsCache = new Map<string, { len: number }>();
 
 /** Draws a track's outline into a small canvas, fitted with a margin. */
-function drawThumbnail(canvas: HTMLCanvasElement, dots: TrackDef['control']): void {
-  const dpr = Math.min(2, window.devicePixelRatio || 1);
-  const w = 160;
-  const hgt = 90;
-  canvas.width = w * dpr;
-  canvas.height = hgt * dpr;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return;
-  ctx.scale(dpr, dpr);
-  ctx.fillStyle = '#e8efd9';
-  ctx.fillRect(0, 0, w, hgt);
-  const pts = sampleClosedCatmullRom(dots, 4);
-  let minX = Infinity;
-  let minY = Infinity;
-  let maxX = -Infinity;
-  let maxY = -Infinity;
-  for (const p of pts) {
-    minX = Math.min(minX, p.x);
-    maxX = Math.max(maxX, p.x);
-    minY = Math.min(minY, p.y);
-    maxY = Math.max(maxY, p.y);
-  }
-  const s = Math.min((w - 16) / Math.max(1, maxX - minX), (hgt - 16) / Math.max(1, maxY - minY));
-  const ox = w / 2 - ((minX + maxX) / 2) * s;
-  const oy = hgt / 2 - ((minY + maxY) / 2) * s;
-  ctx.lineJoin = 'round';
-  ctx.beginPath();
-  pts.forEach((p, i) => (i ? ctx.lineTo(ox + p.x * s, oy + p.y * s) : ctx.moveTo(ox + p.x * s, oy + p.y * s)));
-  ctx.closePath();
-  ctx.strokeStyle = '#ffffff';
-  ctx.lineWidth = Math.max(3.5, 14 * s);
-  ctx.stroke();
-  ctx.strokeStyle = PAPER.asphalt;
-  ctx.lineWidth = Math.max(2.5, 12 * s);
-  ctx.stroke();
-  const st = dots[0];
-  ctx.fillStyle = PAPER.close;
-  ctx.beginPath();
-  ctx.arc(ox + st.x * s, oy + st.y * s, 3.5, 0, Math.PI * 2);
-  ctx.fill();
-}
 
 /**
  * LIBRARY state: three lists in tabs (your saved tracks, the game's own, and

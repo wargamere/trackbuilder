@@ -2,14 +2,15 @@ import { STR, fmt } from '../config/strings.ts';
 import { TRACK, type SmoothingLevel, type TrackOptions } from '../config/track.ts';
 import type { Settings } from '../core/settings.ts';
 import { STARTERS, starterTrack, type StarterId } from '../editor/starters.ts';
-import { sampleClosedCatmullRom } from '../track/spline.ts';
 import type { TrackStats } from '../track/stats.ts';
 import { button, h, segmented, slider, type Choice, type Slider } from './dom.ts';
+import { drawThumbnail } from './thumbnail.ts';
+import { formatTime } from '../race/session.ts';
 
 export type MessageKind = 'info' | 'ok' | 'error' | 'warn';
 export type EditorMode = 'draw' | 'dots' | 'height';
 export type Terrain = 'flat' | 'rolling' | 'hilly';
-export type DisplaySettings = Pick<Settings, 'graphics' | 'units' | 'minimap' | 'cornerLabels'>;
+export type DisplaySettings = Pick<Settings, 'graphics' | 'units' | 'minimap' | 'cornerLabels' | 'editorCar'>;
 
 export interface EditorActions {
   back(): void;
@@ -18,6 +19,8 @@ export interface EditorActions {
   restoreDraft(): void;
   closeLoop(): void;
   locateIssue(): void;
+  /** Mends a track that isn't valid. */
+  fixIt(): void;
   soften(): void;
   selectPoint(direction: number): void;
   nudgePoint(dx: number, dy: number, dh?: number): void;
@@ -77,6 +80,10 @@ export interface EditorViewState {
   selected: number;
   selectedHeight: number;
   hasProblem: boolean;
+  /** There's a problem "Fix it" could try to mend. */
+  canFix: boolean;
+  /** The gold-medal lap of the track as it is (s), once worked out. */
+  lap: number | null;
   hasDraft: boolean;
   draftSaved: boolean;
   canUndo: boolean;
@@ -131,7 +138,7 @@ export class EditorUI {
   private readonly sidebar: HTMLElement;
   private readonly top: HTMLElement;
   private readonly statsBar: HTMLElement;
-  private readonly statCells: Record<'length' | 'corners' | 'straight' | 'gradient' | 'elevation' | 'radius', HTMLElement>;
+  private readonly statCells: Record<'length' | 'corners' | 'lap' | 'straight' | 'gradient' | 'elevation' | 'radius', HTMLElement>;
   private readonly toolMode: Choice<EditorMode | 'pan'>;
   private readonly welcome: HTMLElement;
   private welcomeDismissed = false;
@@ -140,6 +147,7 @@ export class EditorUI {
   private readonly restoreBtn: HTMLButtonElement;
   private readonly closeBtn: HTMLButtonElement;
   private readonly locateBtn: HTMLButtonElement;
+  private readonly fixBtn: HTMLButtonElement;
   private readonly draftStatus: HTMLElement;
   private readonly pointLabel: HTMLElement;
   private readonly pointControls: HTMLElement;
@@ -182,6 +190,7 @@ export class EditorUI {
     units: Choice<string>;
     minimap: HTMLInputElement;
     cornerLabels: HTMLInputElement;
+    car: HTMLInputElement;
   };
   private cornerKey = '';
   private cornerActions: EditorActions | null = null;
@@ -200,12 +209,13 @@ export class EditorUI {
     this.undoBtn = button('', actions.undo, { icon: '↶', class: 'tool', title: `${STR.buttons.undo} (Z)` });
     this.redoBtn = button('', actions.redo, { icon: '↷', class: 'tool', title: `${STR.buttons.redo} (Y)` });
     this.toolMode = segmented<EditorMode | 'pan'>([
-      ['draw', STR.editor.modeDraw, '✎'], ['dots', STR.editor.modeDots, '◇'], ['height', STR.editor.modeHeight, '△'], ['pan', 'Pan', '✥'],
+      ['draw', STR.editor.modeDraw, '✎'], ['dots', STR.editor.modeDots, '◇'], ['height', STR.editor.modeHeight, '△'], ['pan', T.pan, '✥'],
     ], (mode) => mode === 'pan' ? actions.pan() : actions.setMode(mode));
     this.toolMode.el.setAttribute('aria-label', T.tools);
     this.toolMode.el.classList.add('studio-modes');
     this.closeBtn = button(T.closeLoop, actions.closeLoop, { icon: '↻', class: 'compact' });
     this.locateBtn = button(T.locate, actions.locateIssue, { icon: '⌖', class: 'compact' });
+    this.fixBtn = button(T.fixIt, actions.fixIt, { icon: '🔧', class: 'compact fix', title: T.fixHint });
     this.previewBtn = button(S.preview, actions.preview, { icon: '◈', class: 'compact' });
     this.toolHint = h('span', { class: 'studio-tool-hint' });
     const tools = h('div', { class: 'tools' }, this.undoBtn, this.redoBtn);
@@ -213,7 +223,7 @@ export class EditorUI {
       button(T.blank, actions.clear, { icon: '+', class: 'compact studio-blank' }), this.previewBtn,
       button(T.guide, () => this.help.showModal(), { icon: '?', class: 'compact studio-guide' }));
     this.top = h('div', { class: 'bar top' }, toolbar,
-      h('div', { class: 'studio-status' }, this.message, this.closeBtn, this.locateBtn), this.toolHint);
+      h('div', { class: 'studio-status' }, this.message, this.closeBtn, this.fixBtn, this.locateBtn), this.toolHint);
 
     // ------------------------------------------------------------- sidebar
     this.name = h('input', { class: 'text-input' });
@@ -327,6 +337,7 @@ export class EditorUI {
     );
     const minimap = checkbox(S.minimap, (on) => actions.setDisplay({ minimap: on }));
     const cornerLabels = checkbox(S.cornerLabels, (on) => actions.setDisplay({ cornerLabels: on }));
+    const car = checkbox(T.carToggle, (on) => actions.setDisplay({ editorCar: on }));
     this.ctl = {
       smoothing,
       snap: snap.input,
@@ -349,6 +360,7 @@ export class EditorUI {
       units,
       minimap: minimap.input,
       cornerLabels: cornerLabels.input,
+      car: car.input,
     };
 
     this.pointLabel = h('p', { class: 'studio-point-label', text: T.pointNone });
@@ -372,17 +384,18 @@ export class EditorUI {
         [
           h('div', { class: 'studio-section-intro' },
             h('span', { class: 'label', text: T.starterLabel }),
-            h('p', { class: 'help', text: 'A starting point, never a finished idea.' })),
+            h('p', { class: 'help', text: T.starterHelp })),
           this.starterCards(actions, false),
-          button(T.surprise, actions.surprise, { icon: '⤨', class: 'studio-surprise', title: T.surpriseHint }),
-          button(T.blank, actions.clear, { icon: '+', class: 'compact', title: T.blank }),
+          h('div', { class: 'row wrap' },
+            button(T.surprise, actions.surprise, { icon: '🎲', class: 'studio-surprise', title: T.surpriseHint }),
+            button(T.blank, actions.clear, { icon: '+', class: 'studio-new', title: T.blank })),
           heightTools,
           field(STR.editor.optSmoothing, smoothing.el),
           snap.el,
           soft.el,
           h('details', { class: 'studio-details' }, h('summary', { text: STR.editor.optSamples }), samples),
           pointInspector,
-          h('details', { class: 'studio-details' }, h('summary', { text: 'More editing tips' }), h('p', { class: 'help', text: STR.editor.optHelp })),
+          h('details', { class: 'studio-details' }, h('summary', { text: T.moreTips }), h('p', { class: 'help', text: STR.editor.optHelp })),
         ],
       ],
       [
@@ -428,7 +441,7 @@ export class EditorUI {
       ],
       [S.sections.edges, [field(S.kerbs, kerbs.el), field(S.runoff, runoff.el), field(S.barrier, barrier.el), h('p', { class: 'help', text: S.edgesHelp })]],
       [S.sections.world, [field(STR.editor.optTheme, theme.el), field(S.time, time.el), field(S.trees, trees.el)]],
-      [S.sections.display, [field(S.graphics, graphics.el), h('p', { class: 'help', text: S.graphicsHelp }), field(S.units, units.el), minimap.el, cornerLabels.el]],
+      [S.sections.display, [field(S.graphics, graphics.el), h('p', { class: 'help', text: S.graphicsHelp }), field(S.units, units.el), minimap.el, cornerLabels.el, car.el]],
     ];
     const list = h('div', { class: 'sections' });
     bodies.forEach(([title, content], i) => {
@@ -455,7 +468,7 @@ export class EditorUI {
 
     this.raceBtn = button(STR.buttons.raceIt, actions.race, { key: k.race, icon: '▶', class: 'primary race' });
     this.saveBtn = button(S.save, actions.save, { icon: '⬇', class: 'compact save', title: S.save });
-    this.practiceBtn = button('Test drive', actions.practice, { icon: '⟳', class: 'compact', title: `Test drive: ${STR.menu.practiceHint}` });
+    this.practiceBtn = button(T.testDrive, actions.practice, { icon: '⟳', class: 'compact', title: fmt(T.testDriveTitle, { hint: STR.menu.practiceHint }) });
     this.restoreBtn = button(T.restore, actions.restoreDraft, { icon: '↺', class: 'compact studio-restore' });
     this.draftStatus = h('span', { class: 'studio-draft', title: T.draftHint });
     this.shareBtn = button(STR.buttons.share, actions.share, { icon: '⧉', class: 'compact' });
@@ -477,7 +490,7 @@ export class EditorUI {
       'div',
       { class: 'side-head' },
       button('', actions.back, { icon: '✕', class: 'tool', title: `${STR.buttons.back} (${k.back})` }),
-      h('span', { class: 'side-title', text: T.title }),
+      h('span', { class: 'side-title', text: S.title }),
     );
     this.sidebar = h('aside', { class: 'sidebar' }, head, h('div', { class: 'side-name' }, h('label', { class: 'label', text: STR.editor.optName }), this.name), list, foot);
 
@@ -489,12 +502,13 @@ export class EditorUI {
     const cells = {
       length: cell(S.stats.length),
       corners: cell(S.stats.corners),
+      lap: cell(T.lapLabel),
       straight: cell(S.stats.straight),
       gradient: cell(S.stats.gradient),
       elevation: cell(S.stats.elevation),
       radius: cell(S.stats.radius),
     };
-    this.statCells = { length: cells.length.v, corners: cells.corners.v, straight: cells.straight.v, gradient: cells.gradient.v, elevation: cells.elevation.v, radius: cells.radius.v };
+    this.statCells = { length: cells.length.v, corners: cells.corners.v, lap: cells.lap.v, straight: cells.straight.v, gradient: cells.gradient.v, elevation: cells.elevation.v, radius: cells.radius.v };
     this.statsBar = h('div', { class: 'stats-bar' }, ...Object.values(cells).map((c) => c.el));
     this.zoomBox = h(
       'div',
@@ -507,9 +521,9 @@ export class EditorUI {
       h('span', { class: 'studio-eyebrow', text: T.eyebrow }), h('h1', { text: T.intro }),
       h('p', { text: T.description }), this.starterCards(actions, true),
       h('div', { class: 'row' }, button(T.start, () => { this.welcomeDismissed = true; actions.setMode('draw'); }, { icon: '✎', class: 'primary' }),
-        button(T.surprise, actions.surprise, { icon: '⤨' })));
+        button(T.surprise, actions.surprise, { icon: '🎲' })));
     this.help = h('dialog', { class: 'studio-help' },
-      h('div', { class: 'studio-help-head' }, h('h2', { text: T.guide }), button('Close guide', () => this.help.close(), { icon: '×' })),
+      h('div', { class: 'studio-help-head' }, h('h2', { text: T.guide }), button(T.closeGuide, () => this.help.close(), { icon: '✕', class: 'compact' })),
       ...T.guideCards.map(([title, text]) => h('section', {}, h('h3', { text: title }), h('p', { text }))),
       h('p', { class: 'help', text: T.navigationHelp }));
     this.help.setAttribute('aria-label', T.guide);
@@ -527,14 +541,10 @@ export class EditorUI {
   private starterCards(actions: EditorActions, large: boolean): HTMLElement {
     const cards = STARTERS.map((starter) => {
       const b = button('', () => actions.starter(starter.id), { class: 'studio-template', title: `${starter.name}: ${starter.hint}` });
-      const points = sampleClosedCatmullRom(starterTrack(starter.id).control);
-      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-      svg.setAttribute('viewBox', '-330 -190 660 380');
-      svg.setAttribute('aria-hidden', 'true');
-      const path = document.createElementNS(svg.namespaceURI, 'path');
-      path.setAttribute('d', points.map((p, i) => `${i ? 'L' : 'M'}${p.x},${p.y}`).join(' ') + 'Z');
-      svg.append(path);
-      b.append(svg, h('span', { class: 'studio-template-name', text: starter.name }));
+      const thumb = h('canvas', { class: 'thumb' });
+      thumb.setAttribute('aria-hidden', 'true');
+      drawThumbnail(thumb, starterTrack(starter.id).control);
+      b.append(thumb, h('span', { class: 'studio-template-name', text: starter.name }));
       if (large) b.append(h('span', { class: 'studio-template-hint', text: starter.hint }));
       return b;
     });
@@ -560,7 +570,9 @@ export class EditorUI {
     // On narrow screens the sidebar opens over the map, so only the rail counts.
     const rail = parseFloat(getComputedStyle(this.root).getPropertyValue('--rail')) || 54;
     const left = this.docked ? this.sidebar.offsetWidth : rail;
-    return { top: this.top.offsetHeight, bottom: this.statsBar.offsetHeight + 6, left };
+    // The stats strip sits a few pixels up from the bottom; leave a gap above it too.
+    const below = parseFloat(getComputedStyle(this.statsBar).bottom) || 0;
+    return { top: this.top.offsetHeight, bottom: this.statsBar.offsetHeight + below + 4, left };
   }
 
   /** Keeps the zoom buttons in the free area on the right. */
@@ -569,11 +581,6 @@ export class EditorUI {
     this.zoomBox.style.top = `${top}px`;
     this.root.style.setProperty('--studio-bottom', `${bottom}px`);
     this.zoomBox.style.bottom = `${bottom}px`;
-  }
-
-  /** Moves the stats strip up when the height profile takes the bottom of the screen. */
-  placeStats(bottom: number): void {
-    this.statsBar.style.bottom = `${bottom}px`;
   }
 
   /** True while the sidebar is open over the map (narrow screens). */
@@ -645,11 +652,13 @@ export class EditorUI {
     this.welcome.hidden = !s.empty || s.drawing || this.welcomeDismissed;
     this.root.classList.toggle('is-drawing', s.drawing);
     this.toolMode.set(s.panActive ? 'pan' : s.mode);
-    this.toolHint.textContent = s.panActive ? 'Drag the map to look around. Choose another tool to keep building.' : s.mode === 'draw' ? T.drawHint : s.mode === 'dots' ? T.reshapeHint : T.heightHint;
+    this.toolHint.textContent = s.panActive ? T.panHint : s.mode === 'draw' ? T.drawHint : s.mode === 'dots' ? T.reshapeHint : T.heightHint;
+    this.root.classList.toggle('is-empty', s.empty);
     this.closeBtn.hidden = s.closed || s.pointCount < 3;
     this.locateBtn.hidden = !s.hasProblem;
+    this.fixBtn.hidden = !s.canFix;
     this.restoreBtn.hidden = !s.hasDraft;
-    this.draftStatus.textContent = s.draftSaved ? `✓ ${T.draftSaved}` : 'Make something worth a lap.';
+    this.draftStatus.textContent = s.draftSaved ? `✓ ${T.draftSaved}` : T.draftIdle;
     this.previewBtn.disabled = !s.canRace;
     this.shareBtn.disabled = !s.canRace;
     this.pointLabel.textContent = s.selected >= 0 ? fmt(T.pointValue, { i: s.selected + 1, n: s.pointCount, h: s.selectedHeight.toFixed(1) }) : T.pointNone;
@@ -686,6 +695,7 @@ export class EditorUI {
     c.units.set(s.display.units);
     c.minimap.checked = s.display.minimap;
     c.cornerLabels.checked = s.display.cornerLabels;
+    c.car.checked = s.display.editorCar;
     if (document.activeElement !== this.name) this.name.value = s.name;
 
     // Section summaries, as in "1.36 km · 12 m wide · terrain flat".
@@ -715,7 +725,7 @@ export class EditorUI {
         ...(s.corners.length && a
           ? s.corners.map((_, i) => {
               const sl = slider(0, 30, 1, (v) => a.cornerBank(i, v), a.commitLive, (v) => `${Math.round(v)}°`);
-              const input = sl.el.querySelector('input')!; input.tabIndex = 0; input.setAttribute('aria-label', `Corner ${i + 1} bank angle`);
+              const input = sl.el.querySelector('input')!; input.tabIndex = 0; input.setAttribute('aria-label', fmt(STR.studio.cornerBank, { n: i + 1 }));
               const auto = h('button', { class: 'corner-auto', 'data-auto': String(i), text: S.auto, title: S.autoTitle });
               const label = h('span', { class: 'corner-text' });
               this.cornerRows.push({ slider: sl, auto, label });
@@ -749,5 +759,6 @@ export class EditorUI {
     set(v.gradient, st ? `${st.maxGradient.toFixed(1)}%` : '—');
     set(v.elevation, st ? `${st.elevation.toFixed(1)} m` : '—');
     set(v.radius, st && Number.isFinite(st.tightestRadius) ? `${Math.round(st.tightestRadius)} m` : '—');
+    set(v.lap, s.lap !== null ? formatTime(s.lap) : '—');
   }
 }

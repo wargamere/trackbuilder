@@ -2,7 +2,7 @@
 
 Draw a racetrack, freehand or dot by dot, then race it in 3D against your own ghost. Built for CrazyGames (HTML5), and also playable as a standalone web build.
 
-**Build for the fun of it.** Circuit Studio has no ink budget or length-based multiplier. Start freehand, place points, pick one of four visual starter layouts, or remix a surprise circuit. Track geometry still needs to be drivable; the editor explains problems and can zoom straight to them.
+**Build for the fun of it.** The track editor has no ink budget or length-based multiplier. Start freehand, place points, pick one of four visual starter layouts, or remix a surprise circuit. Track geometry still needs to be drivable: the editor explains problems, zooms straight to them, and can fix them for you. Once you stop editing, a little car drives the track's gold-medal lap on the map.
 
 ## Commands
 
@@ -35,7 +35,9 @@ src/
               pipeline.ts (stroke -> track), render2d.ts, viewport.ts (zoom/pan),
               pen.ts (lazy pen), splice.ts (redraw a section), heights.ts
               (soft editing, hills), profile.ts (height profile graph),
-              transform.ts (resize / rotate / mirror), preview.ts (3D view)
+              transform.ts (resize / rotate / mirror), preview.ts (3D view),
+              starters.ts, draft.ts, repair.ts ("Fix it"), previewCar.ts
+              (the gold-lap car on the map)
   track/      spline.ts (centripetal Catmull-Rom -> evenly spaced centre line),
               corners.ts, track.ts (TrackDef/Track), samples.ts,
               catalog.ts + data/ (the built-in tracks: generated and real circuits),
@@ -103,10 +105,12 @@ Physics runs at a fixed 120 Hz from an accumulator (`core/fixedStep.ts`), and re
 A track is a closed loop of **dots** with a smooth spline through them (`TrackDef.control`), plus its options, and that is the only thing stored.
 
 **Layout.**
-- **Sidebar:** seven named sections with icons and summaries. Docked at 900 px and wider; an expandable icon rail on smaller screens. Save, Share, Test drive and Race are grouped at the bottom.
-- **Top bar:** visible Freehand / Reshape / Elevation / Pan tools, undo/redo, a fresh page, 3D view and a Quick guide. A status line explains the next step; Close loop and Show me appear when useful.
-- **Stats strip** along the bottom: length, corners, longest straight, max gradient, elevation change and tightest radius.
-- **On the map:** numbered corners with their bank angle, the pit building, and the run-off colour.
+- **Look:** the same as the rest of the game: cream panels, blue ink, bold outlined buttons, yellow for the main action (Race it, Start drawing, Fix it), and the blue-gridded paper.
+- **Sidebar:** seven named sections with icons and summaries. Docked at 900 px and wider; an expandable icon rail on smaller screens. Save, Share, Test drive and Race are grouped at the bottom (on short screens they share one row, so the sections keep the room).
+- **Top bar:** visible Freehand / Reshape / Elevation / Pan tools, undo/redo, a fresh page, 3D view and a Quick guide. A status line explains the next step; Close loop, **Fix it** and Show me appear when useful. Phones on their side get two slim rows.
+- **Stats strip** along the bottom: length, corners, **gold lap**, longest straight, max gradient, elevation change and tightest radius (hidden on a blank page). In Elevation mode the height profile sits above it.
+- **On the map:** numbered corners with their bank angle, the pit building, the run-off colour, and the preview car. Dots shrink when they'd crowd each other (zoomed out, or on a phone).
+- **Blank page:** a welcome card in the middle of the paper with the four starting shapes (the same thumbnails as the track library), Start drawing and Surprise me. You can draw straight through it.
 
 | Section | What's in it |
 |---|---|
@@ -116,11 +120,23 @@ A track is a closed loop of **dots** with a smooth spline through them (`TrackDe
 | 4 Start & pits | Laps per race (1 / 3 / 5), pit building on/off, move the start/finish line 10 m back or on, reverse direction |
 | 5 Track edges | Kerbs (raised / flat / none), run-off (grass / gravel / tarmac), barriers (none / concrete / tyres) |
 | 6 Scenery & world | Meadow / Desert / Snow, day / sunset, few / normal / lots of trees |
-| 7 Display | Graphics full / fast, km/h or mph, minimap in the race, corner numbers on the map (player settings, not part of the track) |
+| 7 Display | Graphics full / fast, km/h or mph, minimap in the race, corner numbers on the map, the preview car (player settings, not part of the track) |
 
 **Fast starts and accessible editing.** Starter cards show the real layout before loading it. Surprise me uses the tested generated-track catalog, with mirrored and reversed variants, and creates an editable copy. Every layout change is undoable. Reshape is the initial tool for an existing track; a new blank page switches to Freehand.
 
 **Precise controls.** Select a dot on the canvas or use Previous/Next point in Draw. Move it with the arrow buttons or keyboard (Shift = 5 m); in Elevation, ↑/↓ changes height. Raise/lower and Delete have visible controls. Size & shape includes Soften tight corners. Larger touch hit areas make dots easier to grab. Inputs and buttons are keyboard reachable, fields are named, tool selection and sidebar expansion are exposed to assistive technology, and status messages are announced.
+
+**🔧 Fix it** (X) shows next to the message whenever the track has a problem, and mends it as little as it can (`editor/repair.ts`). It looks at what's wrong and fixes that, again and again (up to 10 rounds), until the track is good:
+- a line that didn't make a loop: its ends are joined (a tiny scribble is grown first);
+- a corner too tight: opened up just there (with more dots first if there are too few to round it off);
+- two roads too close: pushed apart only where they are too close, a little at a time and smoothed along the road (at most 30 m), or, if that isn't enough, the road is made 2 m narrower (not below 8 m);
+- too short: grown;
+- a crossing that can't be level (too shallow, too near the start, or at an awkward height): the later road is lifted 7.5 m over the earlier one as a bridge, or dropped under it if the earlier one is already high;
+- too steep: the heights are smoothed.
+
+The message says what it did ("Fixed! I opened up a corner that was too tight."), and it's one undo step. Closing a loop, or fixing one, throws a little confetti (not with reduced motion).
+
+**Preview car and gold lap** (`editor/previewCar.ts`). Once you stop editing for half a second, the gold-medal bot drives the track: the same simulated flying lap that sets the medal times in a race, worked out a slice per frame (1,200 physics ticks) so editing never stutters. Its time shows as **Gold lap** in the stats strip, exactly as the race will show it, and the car replays the lap on the map at real speed in your paint colour. It can be turned off under Display, and is off by default when the system asks for reduced motion.
 
 **Draft recovery.** Changes are backed up after a short idle period, when leaving the editor, and when the page is hidden. Recover last draft restores unfinished work and is itself undoable. A blank page preserves the last useful draft. Save remains the deliberate way to add a finished track to My tracks. Drafts use the existing platform store and are separate from saved tracks. Editing and menus are available in portrait; racing keeps the landscape prompt.
 
@@ -142,7 +158,7 @@ The **3D view** (V, or the ◈ button) shows the track being edited from an orbi
   - right-click or double-tap a dot to delete it;
   - drag the start flag, or the start/finish line itself, anywhere along the road to move it (a dot is added there if needed);
   - **zoom and pan:** mouse wheel or pinch to zoom (up to 8×), drag with two fingers, the middle button or Space held to move around, and buttons for +, − and fit (+ / − / F);
-  - Undo (Z) and Redo (Y / Shift+Z), Clear (C), switch mode (M), Reverse direction (R);
+  - Undo (Z) and Redo (Y / Shift+Z), Clear (C), switch mode (M), Reverse direction (R), Fix it (X);
   - O opens or closes the sidebar section; the track name is at the top of the sidebar.
 - **Validation runs live** and marks the problem spot:
   - too short to drive (there is no maximum length budget);
@@ -415,7 +431,9 @@ Tested against the real SDK in its `local` mode (localhost): the SDK's own log s
 - [x] Editor sidebar (7 sections), stats strip, numbered corners, road width, kerb / run-off / barrier styles, pits, sunset, laps, tree density, display settings, 3D view
 - [x] Race setup menu (practice / race, laps 1–10, ghost on / off, 1–12 cars, grid: qualifying / random / pick your slot), AI cars with difficulty 1–100 %, car-to-car contact, positions; double-tap R restarts a practice lap
 - [x] AI racing line and speed plan; box-shaped car contact; racing in traffic (lane planner, passing, letting quicker cars by) and slipstream
+- [x] Built-in tracks: 20 more of the game's own and 30 real circuits, kept apart from yours in the menu and library
+- [x] Track editor rework (starters, Surprise me, point controls, draft recovery, no ink budget), in the game's own look, with Fix it, a gold-lap preview car and confetti
 
-## Validation for Circuit Studio
+## Validation for the track editor
 
-`npm test` includes starter/remix validity, draft recovery and corruption handling, the former length-limit regression, score migration, and DOM interaction tests for keyboard editing, undo/redo and narrow layouts. `npm run build` typechecks and packages both web and CrazyGames variants. `.github/workflows/checks.yml` runs these checks on pull requests, then exercises the editor in Chromium and uploads desktop and mobile screenshots.
+`npm test` includes starter/remix validity, draft recovery and corruption handling, the former length-limit regression, score migration, Fix it on each kind of problem, the preview car's lap against the gold medal time, and DOM interaction tests for keyboard editing, undo/redo, Fix it and narrow layouts. `npm run build` typechecks and packages both web and CrazyGames variants. `.github/workflows/checks.yml` runs these checks on pull requests, then exercises the editor in Chromium and uploads desktop and mobile screenshots (`npm run test:browser`; set `PW_CHROMIUM` to use a Chromium that's already installed).

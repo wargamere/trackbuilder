@@ -1,3 +1,4 @@
+import { PAINTS } from '../config/paint.ts';
 import { STR, fmt } from '../config/strings.ts';
 import { DOTS, TRACK, WORLD, type SmoothingLevel, type TrackOptions } from '../config/track.ts';
 import { clamp, dist, dist2, type Dot, type Vec2 } from '../core/math.ts';
@@ -12,13 +13,19 @@ import { EditorUI, type CornerInfo, type DisplaySettings, type EditorMode, type 
 import { pitLayout } from '../track/pits.ts';
 import { trackStats } from '../track/stats.ts';
 import { transformDots, type Transform } from './transform.ts';
+import { medalTimes } from '../race/medals.ts';
 import { ShareDialog } from '../ui/shareDialog.ts';
+import { PreviewCar } from './previewCar.ts';
+import { repairTrack, type Fix } from './repair.ts';
 import { clampHeight, fitCrossings, pathPositions, rollingHeights, smoothHeights, softWeights, withHeights } from './heights.ts';
 import { LazyPen } from './pen.ts';
 import { dotsFromStroke, getSampleTrack, SAMPLE_COUNT, trackFromControl, type BuildResult } from './pipeline.ts';
 import { drawProfile, inRect, profileDotAt, profileMetresPerPx, profileS, type Rect } from './profile.ts';
 import {
+  confettiBurst,
+  drawCar,
   drawChain,
+  drawConfetti,
   drawCornerLabels,
   drawCloseZone,
   drawDots,
@@ -33,7 +40,9 @@ import {
   drawStroke,
   drawTrack,
   flagRect,
+  stepConfetti,
   toScreen,
+  type Confetto,
 } from './render2d.ts';
 import { relaxTightCorners, quantizeBank, reverseDots, rotateDots, snapDot } from './smoothing.ts';
 import { nearestSample, planSection, spliceSection } from './splice.ts';
@@ -75,6 +84,12 @@ type Drag =
   | { kind: 'pinch'; d: number; x: number; y: number };
 
 const MAX_HISTORY = 80;
+
+/** The player's car colour, as CSS. */
+const paintColor = (): string => `#${(PAINTS.find((p) => p.id === settings().paint) ?? PAINTS[0]).hex.toString(16).padStart(6, '0')}`;
+
+/** The player asked for less motion (no confetti). */
+const reducedMotion = (): boolean => typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 const DOUBLE_TAP_MS = 350;
 /** Soft editing reach along the track (m). */
 const SOFT_RADIUS = 50;
@@ -96,6 +111,11 @@ export class EditorScreen implements Screen {
   private readonly game: GameContext;
   private readonly ui: EditorUI;
   private readonly share = new ShareDialog();
+  /** The little car lapping the track (the gold-medal lap). */
+  private readonly car = new PreviewCar();
+  private confetti: Confetto[] = [];
+  /** Throw confetti once the next rebuild shows the track is good (a loop just closed, or fixed). */
+  private celebrate = false;
   private abort: AbortController | null = null;
   private readonly vp = new Viewport();
   private profile: Rect | null = null;
@@ -167,6 +187,7 @@ export class EditorScreen implements Screen {
         restoreDraft: () => this.restoreDraft(),
         closeLoop: () => this.closeLoop(),
         locateIssue: () => this.locateIssue(),
+        fixIt: () => this.fixIt(),
         soften: () => this.softenCorners(),
         selectPoint: (direction) => this.selectPoint(direction),
         nudgePoint: (dx, dy, dh) => this.nudgePoint(dx, dy, dh),
@@ -274,6 +295,8 @@ export class EditorScreen implements Screen {
     this.abort = null;
     this.share.close();
     this.cancelPointer();
+    this.car.set(null);
+    this.confetti = [];
     this.ui.root.remove();
     this.game.surface.canvas.classList.remove('drawing');
     this.game.surface.canvas.style.cursor = '';
@@ -286,7 +309,6 @@ export class EditorScreen implements Screen {
     const inset = this.ui.insets();
     const profH = heights ? clamp(Math.round(s.h * 0.2), 72, 150) : 0;
     const gap = profH ? 8 : 0;
-    this.ui.placeStats(profH + gap);
     this.profile = heights ? { x: inset.left + 8, y: s.h - inset.bottom - profH - 2, w: s.w - inset.left - 16, h: profH } : null;
     // Leave room on the right for the zoom buttons.
     this.vp.setScreen(s.w, s.h, inset.top, inset.bottom + profH + gap, inset.left, 44);
@@ -514,6 +536,64 @@ export class EditorScreen implements Screen {
     const before = this.snapshot();
     this.closed = true;
     this.commit(before);
+    this.celebrate = true;
+  }
+
+  /** A line that didn't make a loop, as one: ends joined, and a scribble too small to drive grown to size. */
+  private loopFromStroke(stroke: readonly Vec2[]): Dot[] | null {
+    let pts = [...stroke, stroke[0]];
+    let len = 0;
+    for (let i = 1; i < pts.length; i++) len += dist(pts[i - 1], pts[i]);
+    if (len < TRACK.minLength * 0.6) {
+      const cx = pts.reduce((a, p) => a + p.x, 0) / pts.length;
+      const cy = pts.reduce((a, p) => a + p.y, 0) / pts.length;
+      const f = (TRACK.minLength * 0.75) / Math.max(1, len);
+      pts = pts.map((p) => ({ x: cx + (p.x - cx) * f, y: cy + (p.y - cy) * f }));
+    }
+    const res = dotsFromStroke(pts, this.smoothing);
+    return res.ok ? res.dots : null;
+  }
+
+  /** Whether "Fix it" has something to try. */
+  private canFix(): boolean {
+    if (this.stroke || this.drag) return false;
+    if (this.failed) return this.failed.stroke.length >= 3;
+    return this.closed && !!this.built && !this.built.ok;
+  }
+
+  /** "Fix it": mends the track (or the line that didn't close) as little as it can, as one undo step. */
+  private fixIt(): void {
+    this.rebuild();
+    if (!this.canFix()) return;
+    const fixes: Fix[] = [];
+    let dots: Dot[] | null = this.dots;
+    if (this.failed) {
+      dots = this.loopFromStroke(this.failed.stroke);
+      fixes.push('closed');
+    }
+    let options = this.options;
+    if (dots && !trackFromControl({ id: 'fix', name: '', control: dots, options }).ok) {
+      const r = repairTrack(dots, options);
+      dots = r?.dots ?? null;
+      if (r) {
+        options = r.options;
+        fixes.push(...r.fixes);
+      }
+    }
+    if (!dots) {
+      this.note = { text: STR.studio.cantFix, kind: 'warn' };
+      return;
+    }
+    const before = this.snapshot();
+    this.dots = dots;
+    this.closed = true;
+    this.failed = null;
+    this.options = options;
+    this.selected = this.hover = -1;
+    const what = fixes.map((f) => STR.studio.fixes[f]);
+    const list = what.length > 1 ? `${what.slice(0, -1).join(', ')}${STR.studio.and}${what[what.length - 1]}` : what[0];
+    this.commit(before, { text: fmt(STR.studio.fixed, { what: list }), kind: 'ok' });
+    this.celebrate = true;
   }
 
   /** The track definition as it is being edited. */
@@ -1326,6 +1406,7 @@ export class EditorScreen implements Screen {
       this.failed = null;
       this.name = STR.editor.customName;
       this.commit(before, res.autoClosed ? { text: STR.editor.autoClosed, kind: 'ok' } : null);
+      this.celebrate = true;
     } else {
       this.dots = [];
       this.closed = false;
@@ -1371,6 +1452,7 @@ export class EditorScreen implements Screen {
       KeyG: () => this.setSnap(!this.snapOn),
       KeyS: () => this.loadSample(this.sampleIndex),
       KeyH: () => this.randomHills(),
+      KeyX: () => this.fixIt(),
       KeyF: () => this.zoom('fit'),
       Equal: () => this.zoom('in'),
       NumpadAdd: () => this.zoom('in'),
@@ -1406,6 +1488,9 @@ export class EditorScreen implements Screen {
       selected: this.selected,
       selectedHeight: this.dots[this.selected]?.h ?? 0,
       hasProblem: !!this.failed?.at || !!(this.built && !this.built.ok && this.built.at),
+      canFix: this.canFix(),
+      // As the race shows it (rounded up to the hundredth).
+      lap: this.closed && this.built?.ok && this.car.lap !== null ? medalTimes(this.car.lap).gold : null,
       hasDraft: !!this.recoverableDraft,
       draftSaved: this.draftSaved,
       canUndo: this.history.length > 0,
@@ -1416,7 +1501,7 @@ export class EditorScreen implements Screen {
       snap: this.snapOn,
       soft: this.soft,
       options: this.options,
-      display: { graphics: settings().graphics, units: settings().units, minimap: settings().minimap, cornerLabels: settings().cornerLabels },
+      display: { graphics: settings().graphics, units: settings().units, minimap: settings().minimap, cornerLabels: settings().cornerLabels, editorCar: settings().editorCar },
       name: this.name,
       stats: this.closed && t ? trackStats(t) : null,
       corners: this.closed && t ? this.cornerInfo() : [],
@@ -1445,9 +1530,18 @@ export class EditorScreen implements Screen {
         (this.crossings ? fmt(STR.editor.readyCrossings, { n: this.crossings }) : '') +
         (this.bridges ? (this.bridges === 1 ? STR.editor.readyBridge : fmt(STR.editor.readyBridges, { n: this.bridges })) : '') +
         (t.center.eased > 0.25 ? STR.editor.readyEased : '');
-      ui.setMessage(fmt(STR.editor.ready, { len: Math.round(t.center.length), corners: t.tightCorners.length, crossings }), 'ok');
+      // The same numbers as the stats strip: km, and the numbered corners.
+      ui.setMessage(fmt(STR.editor.ready, { len: (t.center.length / 1000).toFixed(2), corners: t.kerbs.length, crossings }), 'ok');
     } else if (this.dots.length) ui.setMessage(fmt(STR.editor.openPath, { n: this.dots.length }), 'info');
-    else ui.setMessage(`${this.mode === 'draw' ? STR.editor.hintDraw : STR.editor.hintDots} ${STR.studio.unlimited}`, 'info');
+    else ui.setMessage(this.mode === 'draw' ? STR.editor.hintDraw : STR.editor.hintDots, 'info');
+  }
+
+  /** Typical distance between neighbouring dots on screen (px). */
+  private dotSpacingPx(): number {
+    const n = this.dots.length;
+    if (n < 2) return Infinity;
+    const gaps = this.dots.map((d, i) => dist(d, this.dots[(i + 1) % n])).sort((a, b) => a - b);
+    return gaps[Math.floor(n / 2)] * this.view.scale;
   }
 
   /** Dots worth a height tag: the one being worked on, and the tops of hills. */
@@ -1468,14 +1562,33 @@ export class EditorScreen implements Screen {
 
   // --------------------------------------------------------------- render
 
-  frame(_dt: number, time: number): void {
+  frame(dt: number, time: number): void {
     if (this.draftDue && performance.now() >= this.draftDue && !this.drag) this.flushDraft();
     this.rebuild();
+    const good = this.closed && this.built?.ok ? this.built.track : null;
+    this.car.set(settings().editorCar ? good : null);
+    this.car.update(dt, !!this.drag || !!this.stroke);
     this.refreshUI();
     const s = this.game.surface;
     const ctx = s.begin();
     const v = this.view;
     drawPaper(ctx, v, s.w, s.h);
+    if (this.celebrate) {
+      this.celebrate = false;
+      if (good && !reducedMotion()) {
+        const p = toScreen(v, good.center.points[0]);
+        this.confetti.push(...confettiBurst(p.x, p.y));
+      }
+    }
+    this.drawScene(ctx, time);
+    if (this.confetti.length) {
+      this.confetti = stepConfetti(this.confetti, dt);
+      drawConfetti(ctx, this.confetti);
+    }
+  }
+
+  private drawScene(ctx: CanvasRenderingContext2D, time: number): void {
+    const v = this.view;
     const t = this.built?.track;
 
     if (this.stroke) {
@@ -1500,13 +1613,16 @@ export class EditorScreen implements Screen {
       return;
     }
     const heights = this.mode === 'height';
-    const dotR = this.mode === 'draw' ? 3.5 : 5;
+    // Dots shrink when they'd crowd each other (zoomed out, or on a phone), so the road stays visible.
+    const dotR = Math.min(this.mode === 'draw' ? 3.5 : 5, Math.max(2.5, this.dotSpacingPx() * 0.22));
     if (this.closed && t) {
       drawTrack(ctx, v, t, { heights, walls: this.options.walls });
       if (settings().cornerLabels && !heights) drawCornerLabels(ctx, v, t);
       if (this.built && !this.built.ok && this.built.at) drawProblem(ctx, v, this.built.at, time);
       const d = this.drag;
       const startPreview = d?.kind === 'flag' ? d.target : -1;
+      const pose = this.car.pose();
+      if (pose && !heights) drawCar(ctx, v, pose.x, pose.y, pose.heading, paintColor(), pose.alpha);
       drawDots(ctx, v, this.dots, { r: dotR, hover: this.hover, selected: this.selected });
       if (startPreview > 0) {
         drawStartLine(ctx, v, t.center.points[startPreview], t.center.tangents[startPreview], t.center.width);

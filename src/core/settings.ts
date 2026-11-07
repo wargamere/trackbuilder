@@ -22,6 +22,8 @@ export interface Settings {
   units: 'kmh' | 'mph';
   minimap: boolean;
   cornerLabels: boolean;
+  /** Editor: a little car laps the track on the map (the gold-medal lap). */
+  editorCar: boolean;
   /** Editor sidebar section left open. */
   sidebarSection: number;
   /** Race setup choices (laps come from each track). */
@@ -42,6 +44,8 @@ const DEFAULTS: Settings = {
   units: 'kmh',
   minimap: true,
   cornerLabels: true,
+  // Off by default for people who'd rather things on screen stayed still.
+  editorCar: !(typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches),
   sidebarSection: 0,
   raceSetup: { mode: 'race', ghost: true, opponents: 3, difficulty: 50, grid: 'pick', startSlot: 4 },
 };

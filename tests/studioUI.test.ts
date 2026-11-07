@@ -119,6 +119,23 @@ test('unfinished dots have a visible Close loop action and repair guidance', () 
   assert.equal(close.hidden, true);
 });
 
+test('a broken track shows Fix it, which mends it as one undo step', () => {
+  click('Easy oval: Wide turns. Find your flow.');
+  const fix = ui.querySelector<TestButton>('.btn.fix')!;
+  assert.equal(fix.hidden, true, 'nothing to fix on a good track');
+  click('Next point');
+  for (let i = 0; i < 14; i++) press('ArrowUp', { shiftKey: true });
+  assert.equal(fix.hidden, false, 'a kinked oval can be fixed');
+  click('Fix it');
+  assert.equal(fix.hidden, true);
+  assert.match(ui.querySelector('.message')?.textContent ?? '', /^Fixed!/);
+  click('Undo (Z)');
+  assert.equal(fix.hidden, false, 'undo brings the problem back');
+  click('Redo (Y)');
+  click('Test drive');
+  assert.equal(game.track.def.name, 'Easy oval');
+});
+
 test('draft backup survives leaving and can be recovered without losing undo', () => {
   click('Easy oval: Wide turns. Find your flow.');
   click('Next point');

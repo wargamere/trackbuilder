@@ -17,6 +17,7 @@ import { rng } from '../src/core/random.ts';
 import { pathPositions, rollingHeights, softWeight, withHeights } from '../src/editor/heights.ts';
 import { trackFromControl } from '../src/editor/pipeline.ts';
 import { evenControl, quantizeControl, relaxTightCorners, simplifyLoop } from '../src/editor/smoothing.ts';
+import { separate } from '../src/editor/repair.ts';
 import { crossingsOf } from '../src/editor/validation.ts';
 import { AuthorLap } from '../src/race/medals.ts';
 import { resampleClosed } from '../src/track/spline.ts';
@@ -324,102 +325,6 @@ function bridgeOver(dots: Dot[], t: Track, rise: number, half: number): Dot[] {
     }
     return h > 0.25 ? { ...d, h: Math.round(h * 2) / 2 } : d;
   });
-}
-
-/** Where a polyline loop crosses itself (to leave alone when pushing roads apart). */
-function selfCrossings(p: readonly Vec2[]): Vec2[] {
-  const n = p.length;
-  const out: Vec2[] = [];
-  const cross = (o: Vec2, a: Vec2, b: Vec2) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
-  for (let i = 0; i < n; i++) {
-    const a = p[i];
-    const b = p[(i + 1) % n];
-    for (let j = i + 2; j < n; j++) {
-      if (i === 0 && j === n - 1) continue;
-      const c = p[j];
-      const d = p[(j + 1) % n];
-      if (cross(a, b, c) * cross(a, b, d) < 0 && cross(c, d, a) * cross(c, d, b) < 0) out.push({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
-    }
-  }
-  return out;
-}
-
-/**
- * Pairs of points on unrelated stretches of road closer than `minSep`, the way
- * the track's validation sees it: from each point, the road either side of it
- * until it first gets `minSep` away is its own; anything else that close is a
- * different part of the track coming back. Crossings are left out.
- */
-function tooClose(p: readonly Vec2[], minSep: number, skip: (v: Vec2) => boolean): [number, number, number][] {
-  const n = p.length;
-  const out: [number, number, number][] = [];
-  for (let i = 0; i < n; i++) {
-    let fwd = 1;
-    while (fwd < n && dist(p[i], p[(i + fwd) % n]) < minSep) fwd++;
-    let back = 1;
-    while (back < n && dist(p[i], p[(i - back + n) % n]) < minSep) back++;
-    for (let k = fwd; k <= n - back; k++) {
-      const j = (i + k) % n;
-      if (j <= i) continue;
-      const d = dist(p[i], p[j]);
-      if (d < minSep && !(skip(p[i]) && skip(p[j]))) out.push([i, j, d]);
-    }
-  }
-  return out;
-}
-
-/**
- * Pushes apart stretches of road that come back too close to each other (the
- * real road's parallel straights, squeezed together by the scaling), only
- * where they really are too close, a little at a time and smoothing the push
- * along the road, so the layout stays recognisable. Crossings (a figure of
- * eight) are left alone. Null if it can't be done without moving the road far.
- */
-function separate(p0: readonly Vec2[], minSep: number): Vec2[] | null {
-  const spacing = 3;
-  let p = resampleClosed(p0, spacing).points as Vec2[];
-  const start = p.map((v) => ({ ...v }));
-  const xs = selfCrossings(p);
-  const skip = (v: Vec2) => xs.some((x) => dist(x, v) < minSep * 3);
-  for (let it = 0; it < 300; it++) {
-    const pairs = tooClose(p, minSep, skip);
-    if (!pairs.length) {
-      // How far the road moved, at most (m): a little is fine, a lot isn't the real track any more.
-      let moved = 0;
-      const q = resampleClosed(p, spacing).points;
-      for (let i = 0; i < Math.min(q.length, start.length); i += 4) moved = Math.max(moved, Math.min(...start.map((v) => dist(v, q[i]))));
-      return moved < 12 ? p : null;
-    }
-    const n = p.length;
-    const disp = p.map(() => ({ x: 0, y: 0 }));
-    for (const [i, j, d] of pairs) {
-      const push = ((minSep - d) / 2) * 0.35;
-      const ux = (p[j].x - p[i].x) / Math.max(d, 1e-6);
-      const uy = (p[j].y - p[i].y) / Math.max(d, 1e-6);
-      disp[i].x -= ux * push;
-      disp[i].y -= uy * push;
-      disp[j].x += ux * push;
-      disp[j].y += uy * push;
-    }
-    const sm = disp.map((_, i) => {
-      let x = 0;
-      let y = 0;
-      let w = 0;
-      for (let k = -5; k <= 5; k++) {
-        const q = disp[(i + k + n) % n];
-        const wk = 1 - Math.abs(k) / 6;
-        x += q.x * wk;
-        y += q.y * wk;
-        w += wk;
-      }
-      return { x: (x / w) * 1.8, y: (y / w) * 1.8 };
-    });
-    p = resampleClosed(
-      p.map((v, i) => ({ x: v.x + sm[i].x, y: v.y + sm[i].y })),
-      spacing,
-    ).points as Vec2[];
-  }
-  return null;
 }
 
 function real(dir: string): Baked[] {

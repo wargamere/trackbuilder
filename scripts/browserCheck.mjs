@@ -15,7 +15,8 @@ try {
   }
   assert.ok(ready, 'Vite starts');
   await mkdir('test-results', { recursive: true });
-  browser = await chromium.launch({ args: ['--enable-unsafe-swiftshader'] });
+  // PW_CHROMIUM: use an already installed Chromium instead of Playwright's own download.
+  browser = await chromium.launch({ args: ['--enable-unsafe-swiftshader'], executablePath: process.env.PW_CHROMIUM || undefined });
   page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   const errors = [];
   page.on('pageerror', (error) => errors.push(error.message));

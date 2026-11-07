@@ -19,6 +19,9 @@ export const AUTHOR_VERSION = 5;
 
 export type MedalTimes = Record<MedalId, number>;
 
+/** Physics ticks between the points of a recorded lap (AuthorLap.trace). */
+export const TRACE_TICKS = 4;
+
 export function medalTimes(author: number): MedalTimes {
   // Rounded up to the hundredth shown on screen, so "equal on screen" earns the medal.
   const t = (f: number) => Math.ceil(author * f * 100) / 100;
@@ -56,8 +59,12 @@ export class AuthorLap {
   private readonly driver: RacingDriver;
   /** Lap time in seconds, null if the bot could not finish, undefined while running. */
   result: number | null | undefined = undefined;
+  /** With `record`: the timed lap as x, z, heading every TRACE_TICKS ticks (from the line round to it). */
+  readonly trace: number[] = [];
+  private readonly record: boolean;
 
-  constructor(track: Track, difficulty: number = AI.medalDifficulty) {
+  constructor(track: Track, difficulty: number = AI.medalDifficulty, record = false) {
+    this.record = record;
     this.driver = new RacingDriver(track, aiPace(difficulty, track));
     this.car = new CarPhysics(track);
     this.length = track.center.length;
@@ -93,6 +100,10 @@ export class AuthorLap {
         }
       }
       this.prevS = s;
+      if (this.record && this.crossings.length === 2 && this.tick % TRACE_TICKS === 0) {
+        const st = this.car.state;
+        this.trace.push(st.x, st.z, st.heading);
+      }
       if (this.tick >= this.maxTicks) {
         this.result = null;
         return true;

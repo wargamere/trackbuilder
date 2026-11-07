@@ -14,12 +14,12 @@ export interface View {
 }
 
 export const PAPER = {
-  bg: '#f2f3e9',
-  gridMinor: 'rgba(83, 116, 82, 0.07)',
-  gridMajor: 'rgba(83, 116, 82, 0.14)',
-  border: 'rgba(67, 104, 76, 0.25)',
-  ink: '#12665c',
-  inkWash: 'rgba(18, 102, 92, 0.13)',
+  bg: '#f4efe1',
+  gridMinor: 'rgba(60, 100, 170, 0.10)',
+  gridMajor: 'rgba(60, 100, 170, 0.22)',
+  border: 'rgba(27, 58, 138, 0.35)',
+  ink: '#1b3a8a',
+  inkWash: 'rgba(27, 58, 138, 0.13)',
   asphalt: '#4a4f58',
   edge: '#f8f8f4',
   kerbRed: '#d8342c',
@@ -72,7 +72,7 @@ export function drawPaper(ctx: CanvasRenderingContext2D, v: View, w: number, h: 
   grid(WORLD.gridMajor, PAPER.gridMajor);
 
   // Shade outside the drawable area slightly.
-  ctx.fillStyle = 'rgba(67, 104, 76, 0.035)';
+  ctx.fillStyle = 'rgba(27, 58, 138, 0.05)';
   ctx.beginPath();
   ctx.rect(0, 0, w, h);
   ctx.rect(x0, y0, x1 - x0, y1 - y0);
@@ -589,4 +589,105 @@ export function drawCornerLabels(ctx: CanvasRenderingContext2D, v: View, track: 
     }
   });
   ctx.textAlign = 'left';
+}
+
+/**
+ * The preview car: a little top-down car in the player's paint at (x, y),
+ * facing `heading`. Never smaller than a few pixels, so it shows zoomed out.
+ */
+export function drawCar(ctx: CanvasRenderingContext2D, v: View, x: number, y: number, heading: number, color: string, alpha = 1): void {
+  const s = toScreen(v, { x, y });
+  const len = Math.max(17, 4.3 * v.scale);
+  const wid = Math.max(8.5, 2 * v.scale);
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.translate(s.x, s.y);
+  ctx.rotate(heading);
+  // Shadow, body, cockpit, front wing.
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.25)';
+  roundRect(ctx, -len / 2 + 1.5, -wid / 2 + 1.5, len, wid, wid * 0.35);
+  ctx.fill();
+  ctx.fillStyle = color;
+  ctx.strokeStyle = '#1b1b1b';
+  ctx.lineWidth = Math.max(1, wid * 0.14);
+  roundRect(ctx, -len / 2, -wid / 2, len, wid, wid * 0.35);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = 'rgba(20, 30, 50, 0.85)';
+  roundRect(ctx, -len * 0.08, -wid * 0.3, len * 0.26, wid * 0.6, wid * 0.2);
+  ctx.fill();
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(len * 0.36, -wid * 0.32, len * 0.08, wid * 0.64);
+  ctx.restore();
+}
+
+function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number): void {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+/** One piece of confetti (screen px). */
+export interface Confetto {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  a: number;
+  va: number;
+  life: number;
+  color: string;
+  w: number;
+}
+
+const CONFETTI_COLORS = ['#f2b705', '#d8342c', '#2f6fd6', '#2fa84f', '#e8559a', '#1b3a8a', '#ffffff'];
+
+/** A burst of confetti from screen point (x, y). */
+export function confettiBurst(x: number, y: number, count = 90, rand: () => number = Math.random): Confetto[] {
+  return Array.from({ length: count }, () => {
+    const a = -Math.PI / 2 + (rand() - 0.5) * Math.PI * 1.3;
+    const sp = 260 + rand() * 520;
+    return {
+      x,
+      y,
+      vx: Math.cos(a) * sp,
+      vy: Math.sin(a) * sp,
+      a: rand() * Math.PI,
+      va: (rand() - 0.5) * 16,
+      life: 1.4 + rand() * 0.9,
+      color: CONFETTI_COLORS[Math.floor(rand() * CONFETTI_COLORS.length)],
+      w: 5 + rand() * 5,
+    };
+  });
+}
+
+/** Moves confetti on by `dt` (gravity, air) and drops the pieces that are done. */
+export function stepConfetti(ps: Confetto[], dt: number): Confetto[] {
+  const drag = Math.exp(-2.2 * dt);
+  for (const p of ps) {
+    p.vx *= drag;
+    p.vy = p.vy * drag + 900 * dt;
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    p.a += p.va * dt;
+    p.life -= dt;
+  }
+  return ps.filter((p) => p.life > 0);
+}
+
+export function drawConfetti(ctx: CanvasRenderingContext2D, ps: readonly Confetto[]): void {
+  for (const p of ps) {
+    ctx.save();
+    ctx.globalAlpha = Math.min(1, p.life * 2);
+    ctx.translate(p.x, p.y);
+    ctx.rotate(p.a);
+    ctx.scale(1, Math.abs(Math.cos(p.a * 1.7)) * 0.8 + 0.2);
+    ctx.fillStyle = p.color;
+    ctx.fillRect(-p.w / 2, -p.w / 4, p.w, p.w / 2);
+    ctx.restore();
+  }
 }
