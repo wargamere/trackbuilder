@@ -21,6 +21,7 @@ export class TouchControls {
   private readonly state: TouchState;
   private readonly steerPointers = new Map<number, number>();
   private abort = new AbortController();
+  private readonly shiftBox: HTMLElement;
 
   constructor(state: TouchState) {
     this.state = state;
@@ -29,7 +30,14 @@ export class TouchControls {
     const steer = h('div', { class: 'touch-steer' }, left, right);
     const brake = h('div', { class: 'touch-pedal brake', text: STR.race.touchBrake });
     const gas = h('div', { class: 'touch-pedal gas', text: STR.race.touchGas });
-    this.root = h('div', { class: 'touch-controls' }, steer, h('div', { class: 'spacer' }), brake, gas);
+    // Manual gears: change up / down (one gear per tap).
+    const up = h('div', { class: 'touch-shift', text: '▲' });
+    const down = h('div', { class: 'touch-shift', text: '▼' });
+    up.setAttribute('aria-label', STR.race.shiftUp);
+    down.setAttribute('aria-label', STR.race.shiftDown);
+    this.shiftBox = h('div', { class: 'touch-shifts' }, up, down);
+    this.shiftBox.hidden = true;
+    this.root = h('div', { class: 'touch-controls' }, steer, h('div', { class: 'spacer' }), this.shiftBox, brake, gas);
 
     const o = { signal: this.abort.signal };
     const sideOf = (e: PointerEvent) => {
@@ -74,6 +82,18 @@ export class TouchControls {
     }
     this.pedal(gas, (v) => (this.state.throttle = v));
     this.pedal(brake, (v) => (this.state.brake = v));
+    for (const [el, dir] of [[up, 1], [down, -1]] as const) {
+      el.addEventListener(
+        'pointerdown',
+        (e) => {
+          e.preventDefault();
+          this.state.shift += dir;
+          el.classList.add('active');
+        },
+        o,
+      );
+      for (const type of ['pointerup', 'pointercancel', 'pointerleave'] as const) el.addEventListener(type, () => el.classList.remove('active'), o);
+    }
     this.root.addEventListener('contextmenu', (e) => e.preventDefault(), o);
   }
 
@@ -106,12 +126,18 @@ export class TouchControls {
     }
   }
 
+  /** Shows the ▲ ▼ gear buttons (manual gears only). */
+  setManualGears(on: boolean): void {
+    this.shiftBox.hidden = !on;
+  }
+
   /** Lifts every finger (e.g. on pause). */
   release(): void {
     this.steerPointers.clear();
     this.state.steer = 0;
     this.state.throttle = false;
     this.state.brake = false;
+    this.state.shift = 0;
     for (const el of this.root.querySelectorAll('.active')) el.classList.remove('active');
   }
 

@@ -26,6 +26,25 @@ export const RACE = {
 } as const;
 
 /** AI opponents (race mode only). */
+/**
+ * Driving assists: braking, steering and the racing line's colours all follow
+ * the racing line at this share of the tyres' grip and the brakes. That's a
+ * little short of the gold medal pace (fully assisted laps come out about 1.5 %
+ * slower than gold), so driving it yourself pays.
+ */
+export const ASSISTS = {
+  grip: 0.8,
+  brake: 0.66,
+  /** Below this speed (m/s) the braking and steering assists leave the car alone. */
+  minSpeed: 3,
+  /** The racing line: drawn this far ahead (m), this wide (m), this far above the road (m). */
+  lineAhead: 170,
+  lineWidth: 0.9,
+  lineLift: 0.06,
+  /** Line colours: red where your speed now is over the limit there (brake), yellow within this share of it (lift), green otherwise. */
+  liftShare: 0.92,
+} as const;
+
 export const AI = {
   /** Up to this many AI cars (12 cars with you). */
   maxOpponents: 11,

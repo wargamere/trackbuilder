@@ -2,6 +2,20 @@ import type { PaintId } from '../config/paint.ts';
 import type { RaceSetup } from './screen.ts';
 import { loadJSON, saveJSON } from '../platform/storage.ts';
 
+/** Driving assists (see race/assists.ts). */
+export interface Assists {
+  /** The racing line on the road: off, only where you need to brake or lift, or all of it. */
+  line: 'off' | 'brake' | 'full';
+  /** Brakes for you before corners (a little early). */
+  brake: boolean;
+  /** Steers along the racing line while you're not steering. */
+  steer: boolean;
+  /** Who changes gear: the automatic (a little slower) or you. */
+  gears: 'auto' | 'manual';
+}
+
+export const DEFAULT_ASSISTS: Assists = { line: 'off', brake: false, steer: false, gears: 'auto' };
+
 /** Player preferences, saved between visits. */
 export interface Settings {
   muted: boolean;
@@ -26,6 +40,7 @@ export interface Settings {
   editorCar: boolean;
   /** Editor sidebar section left open. */
   sidebarSection: number;
+  assists: Assists;
   /** Race setup choices (laps come from each track). */
   raceSetup: Omit<RaceSetup, 'laps'>;
 }
@@ -47,6 +62,7 @@ const DEFAULTS: Settings = {
   // Off by default for people who'd rather things on screen stayed still.
   editorCar: !(typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches),
   sidebarSection: 0,
+  assists: DEFAULT_ASSISTS,
   raceSetup: { mode: 'race', ghost: true, opponents: 3, difficulty: 50, grid: 'pick', startSlot: 4 },
 };
 const KEY = 'settings';
@@ -54,7 +70,10 @@ const KEY = 'settings';
 let current: Settings | null = null;
 
 export function settings(): Settings {
-  current ??= { ...DEFAULTS, ...loadJSON<Partial<Settings>>(KEY, {}) };
+  if (!current) {
+    const saved = loadJSON<Partial<Settings>>(KEY, {});
+    current = { ...DEFAULTS, ...saved, assists: { ...DEFAULT_ASSISTS, ...saved.assists } };
+  }
   return current;
 }
 

@@ -47,17 +47,20 @@ src/
               under a car), scenery.ts (trees, cones, gantry), code.ts (track
               codes), library.ts (saved tracks)
   render/     view3d.ts (renderer, sky, ground, hills, lights), textures.ts
-              (procedural canvas textures), geom.ts (merge/tint helpers)
-  car/        physics.ts (fixed-step arcade physics), contact.ts (car-to-car
-              bumps), slipstream.ts (drafting), input.ts (keyboard, gamepad, touch),
+              (procedural canvas textures), geom.ts (merge/tint helpers),
+              racingLineOverlay.ts (the racing line assist)
+  car/        physics.ts (fixed-step arcade physics), gearbox.ts (six gears),
+              contact.ts (car-to-car bumps), slipstream.ts (drafting), input.ts
+              (keyboard, gamepad, touch),
               model.ts (low-poly car), camera.ts (chase + bonnet)
   race/       raceScreen.ts (fixed-step loop, interpolation, pause), session.ts
               (countdown, checkpoints, lap timing, splits, race distance), ghost.ts,
               records.ts, resultsScreen.ts, ai.ts (AI opponents), racingLine.ts
               (line + speed plan), driver.ts (drives it), traffic.ts (racing other
-              cars), bot.ts (test driver), medals.ts (medal times)
+              cars), bot.ts (test driver), medals.ts (medal times), assists.ts
+              (braking and steering assists)
   ui/         dom helpers, menuScreen.ts (main menu), raceSetupScreen.ts (race
-              setup), gridOverlay.ts (grid after qualifying), editor overlay, HUD,
+              setup), assistsPanel.ts, gridOverlay.ts (grid after qualifying), editor overlay, HUD,
               minimap, pause menu, touch controls,
               libraryScreen.ts (track library), shareDialog.ts, style.css
   audio/      audio.ts (synthesised engine, tyre squeal, grass rumble, beeps)
@@ -97,8 +100,22 @@ Physics runs at a fixed 120 Hz from an accumulator (`core/fixedStep.ts`), and re
 | Steer | A D / ← → | left stick, D-pad | ◀ ▶ pads |
 | Reset to road | R | Back | pause menu |
 | Restart the lap (practice) | R R (twice quickly) | Back Back | pause menu: Back to the grid |
+| Gear up / down (manual gears) | E / Q | RB / LB | ▲ ▼ buttons |
 | Camera (chase / bonnet) | C | Y | — |
 | Pause | Esc / P | Start | Ⅱ button |
+
+**Gears** (`car/gearbox.ts`, tuning in `HANDLING.gearbox`). The car has six gears; the HUD shows the gear (R when reversing), AUTO or MAN, and a rev bar.
+- *Revs:* the engine pulls fully from half the revs to 90 % of the limit, less low down (except in 1st, where the clutch slips to get going), tailing off above 90 %, and not at all on the limiter. Changing up at 90 % lands in the full band of the next gear.
+- *Manual:* E / Q (RB / LB, ▲ ▼ on touch) change up and down, one gear per press, instantly. A change down that would over-rev is refused, and the car drops to 1st when it stops. The rev bar turns red from the change-up point and flashes on the limiter. Leave it in too high a gear out of a corner and it pulls weakly; leave it in too low a gear and it sits on the limiter.
+- *Automatic (the default):* changes at the same revs as the AI, but each change up cuts the drive for 0.2 s. That makes it a little slower than changing gear yourself at the right revs: about 0.6 % a lap on average (0.15–1 % depending on the track), say 0.2–0.4 s on a 40-second lap.
+- *AI cars and the medal bot* change instantly at the ideal points, so they drive exactly as before gears existed (medal times are unchanged, and a test checks it).
+- The engine sound follows the real revs, dropping at every change up.
+
+**Assists** (`race/assists.ts`, the 🛞 Assists button in the race setup (A) and the pause menu; remembered between visits):
+- *Racing line* (Off / Braking / Full, `render/racingLineOverlay.ts`): the AI's racing line drawn on the road for the next 170 m, following its height and banking. Each point is coloured by what to do when you get there at the speed you're doing now: green (keep going), yellow (lift: within 8 % of the limit there) and red (brake: the corner's limit there, braking included, is below your speed). So the red starts exactly where you would have to start braking, and moves as you speed up or slow down. "Braking" draws only the yellow and red.
+- *Braking assist:* where the assist would brake, it brakes at least that hard and lifts off the throttle.
+- *Steering assist:* while you're not steering it steers along the racing line; the more you steer, the more it's yours, and full lock (any key press) is all yours.
+- *How fast:* the assists drive the line at 80 % of the tyres' grip and 66 % of the brakes, a little short of gold medal pace. With everything on, laps come out about 1.5 % slower than gold (up to 3 %): silver is easy, gold takes your own driving. A test checks fully assisted laps against gold.
 
 ### Track editor
 
@@ -433,6 +450,7 @@ Tested against the real SDK in its `local` mode (localhost): the SDK's own log s
 - [x] AI racing line and speed plan; box-shaped car contact; racing in traffic (lane planner, passing, letting quicker cars by) and slipstream
 - [x] Built-in tracks: 20 more of the game's own and 30 real circuits, kept apart from yours in the menu and library
 - [x] Track editor rework (starters, Surprise me, point controls, draft recovery, no ink budget), in the game's own look, with Fix it, a gold-lap preview car and confetti
+- [x] Six-speed gearbox (manual or automatic) and driving assists: racing line (braking / full), braking and steering assists, each a little slower than doing it yourself
 
 ## Validation for the track editor
 

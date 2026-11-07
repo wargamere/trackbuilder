@@ -222,6 +222,36 @@ export const STR = {
     navigationHelp: 'Scroll or pinch to zoom. Space + drag, middle mouse, or two fingers to pan. F fits the map. Z / Y undo and redo. X fixes a problem. V opens 3D view.',
   },
 
+  /** Driving assists (race setup and pause menu). */
+  assists: {
+    title: 'Assists',
+    open: 'Assists',
+    intro: 'Help with the driving. Assists drive a little slower than you can yourself: the gold medal takes your own driving.',
+    line: 'Racing line',
+    lineOff: 'Off',
+    lineBrake: 'Braking',
+    lineFull: 'Full',
+    lineHint: 'The fastest way round, on the road. Green: keep going. Yellow: lift. Red: brake now. “Braking” shows only the yellow and red.',
+    brake: 'Braking assist',
+    brakeHint: 'Brakes for you before corners, a little early.',
+    steer: 'Steering assist',
+    steerHint: 'Steers along the racing line while you’re not steering. Steer yourself any time to take over.',
+    gears: 'Gears',
+    gearsAuto: 'Automatic',
+    gearsManual: 'Manual',
+    gearsHint: 'The automatic is a little slower at changing up. Manual: E / Q (gamepad RB / LB, or ▲ ▼ on screen). Change up when the rev bar turns red.',
+    on: 'On',
+    off: 'Off',
+    done: 'Done',
+    /** One-line summary in the race setup. */
+    summaryNone: 'None (automatic gears)',
+    summaryLine: 'racing line',
+    summaryBrake: 'braking',
+    summarySteer: 'steering',
+    summaryAuto: 'automatic gears',
+    summaryManual: 'manual gears',
+  },
+
   medals: { gold: 'Gold', silver: 'Silver', bronze: 'Bronze' },
 
   /** The editor's left sidebar. */
@@ -356,7 +386,7 @@ export const STR = {
     ],
     start: 'Start',
     back: 'Back',
-    keys: 'Enter start · Esc back · P practice · R race',
+    keys: 'Enter start · Esc back · P practice · R race · A assists',
   },
 
   grid: {
@@ -409,6 +439,15 @@ export const STR = {
     controlsTitle: 'Controls',
     touchGas: 'GAS',
     touchBrake: 'BRAKE',
+    shiftUp: 'Change up a gear',
+    shiftDown: 'Change down a gear',
+    gearTitle: 'Gear',
+    gearAuto: 'AUTO',
+    gearManual: 'MAN',
+    gearReverse: 'R',
+    hintGearsKeyboard: ' · E / Q gear up / down',
+    hintGearsGamepad: ' · RB / LB gear up / down',
+    hintGearsTouch: ' ▲ ▼ change gear.',
     lap: 'Lap {n}/{total}',
     warmup: 'Cross the line to start',
     last: 'Last',

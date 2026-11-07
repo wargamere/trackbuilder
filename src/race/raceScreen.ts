@@ -22,6 +22,8 @@ import { groundPose, type GroundPose } from '../track/ground.ts';
 import { locatorFor } from '../track/locator.ts';
 import { surfaceFor, terrainHeight } from '../track/surface.ts';
 import type { Track } from '../track/track.ts';
+import { RacingLineOverlay } from '../render/racingLineOverlay.ts';
+import { AssistsPanel } from '../ui/assistsPanel.ts';
 import { h } from '../ui/dom.ts';
 import { Hud } from '../ui/hud.ts';
 import { PauseMenu } from '../ui/pauseMenu.ts';
@@ -29,6 +31,7 @@ import { TouchControls } from '../ui/touchControls.ts';
 import { GridOverlay, type GridEntry } from '../ui/gridOverlay.ts';
 import { AiDriver, aiField, gridOrder, gridPlace, qualifyingOrder, YOU } from './ai.ts';
 import { GhostRecorder, ghostPose, type GhostLap } from './ghost.ts';
+import { applyAssists, assistDriver } from './assists.ts';
 import { AuthorLap, medalTimes } from './medals.ts';
 import { scoreFor, type RunResult } from './records.ts';
 import { formatDelta, formatTime, RaceSession, type Progress, type RaceEvent } from './session.ts';
@@ -77,6 +80,9 @@ export class RaceScreen implements Screen {
   private readonly game: GameContext;
   private readonly hud: Hud;
   private readonly pauseMenu: PauseMenu;
+  private readonly assistsPanel = new AssistsPanel();
+  /** The racing line on the road (built for the track when first shown). */
+  private lineOverlay: RacingLineOverlay | null = null;
   private readonly input = new InputManager();
   private readonly touch: TouchControls;
   private readonly fixed = new FixedStep(HANDLING.tickRate);
@@ -143,6 +149,7 @@ export class RaceScreen implements Screen {
       },
       restart: () => this.restart(),
       raceSettings: () => this.game.openSetup(),
+      assists: () => this.assistsPanel.open(this.game.ui, () => this.pauseMenu.show(this.controlsText())),
       skipQualifying: () => this.showGrid(),
       mainMenu: () => this.game.go('menu'),
       drawTrack: () => this.game.go('editor'),
@@ -227,6 +234,8 @@ export class RaceScreen implements Screen {
     this.qualSims = [];
     this.touch.root.remove();
     this.hud.clearFlash();
+    this.assistsPanel.close();
+    if (this.lineOverlay) this.lineOverlay.mesh.visible = false;
     if (this.ghostModel) this.ghostModel.root.visible = false;
     this.ghostLabel.hidden = true;
     this.clearOpponents();
@@ -416,13 +425,19 @@ export class RaceScreen implements Screen {
 
   private controlsText(): string {
     const d = this.input.lastDevice;
-    if (d === 'touch') return STR.race.hintTouch;
+    const manual = settings().assists.gears === 'manual';
+    if (d === 'touch') return STR.race.hintTouch + (manual ? STR.race.hintGearsTouch : '');
     const practice = this.game.mode === 'practice';
-    if (d === 'gamepad') return STR.race.hintGamepad + (practice ? STR.race.hintRestartGamepad : '');
-    return STR.race.hintKeyboard + (practice ? STR.race.hintRestartKeyboard : '');
+    if (d === 'gamepad') return STR.race.hintGamepad + (manual ? STR.race.hintGearsGamepad : '') + (practice ? STR.race.hintRestartGamepad : '');
+    return STR.race.hintKeyboard + (manual ? STR.race.hintGearsKeyboard : '') + (practice ? STR.race.hintRestartKeyboard : '');
   }
 
   private onAction(a: InputAction): void {
+    // The assists panel (over the pause menu): Esc closes it, nothing else gets through.
+    if (this.assistsPanel.isOpen) {
+      if (a === 'pause') this.assistsPanel.close();
+      return;
+    }
     if (this.stage === 'grid') {
       if (a === 'mute') this.toggleSound();
       return; // the grid overlay has its own buttons
@@ -488,7 +503,10 @@ export class RaceScreen implements Screen {
       car.draft = carriedTow(car.draft, this.drafts[0], dt);
       this.opponents.forEach((o, k) => (o.ai.car.draft = carriedTow(o.ai.car.draft, this.drafts[k + 1], dt)));
     } else car.draft = 0;
-    const inp = session.phase === 'racing' ? this.input.sample(this.tickInput) : session.phase === 'finished' ? BRAKE : NO_INPUT;
+    const assists = settings().assists;
+    car.gearbox = assists.gears;
+    let inp = session.phase === 'racing' ? this.input.sample(this.tickInput) : session.phase === 'finished' ? BRAKE : NO_INPUT;
+    if (session.phase === 'racing') inp = applyAssists(this.game.track, car.state, this.tickInput, assists);
     const prev = this.progress();
     car.step(inp);
     this.hit = Math.max(this.hit, car.state.wallHit);
@@ -687,6 +705,26 @@ export class RaceScreen implements Screen {
     el.style.transform = `translate(${((p.x + 1) / 2) * s.w}px, ${((1 - p.y) / 2) * s.h}px) translate(-50%, -100%)`;
   }
 
+  /** Shows the racing line ahead of the car (built for the track the first time it's needed). */
+  private updateLine(mode: 'off' | 'brake' | 'full'): void {
+    const v = this.game.view3d;
+    const t = this.game.track;
+    if (mode === 'off' || !v || this.stage === 'grid') {
+      if (this.lineOverlay) this.lineOverlay.mesh.visible = false;
+      return;
+    }
+    if (this.lineOverlay?.track !== t) {
+      if (this.lineOverlay) {
+        v.scene.remove(this.lineOverlay.mesh);
+        this.lineOverlay.dispose();
+      }
+      this.lineOverlay = new RacingLineOverlay(t, assistDriver(t));
+      v.scene.add(this.lineOverlay.mesh);
+    }
+    this.lineOverlay.mesh.visible = true;
+    this.lineOverlay.update(this.view.trackIndex, this.view.speed, mode);
+  }
+
   /** Advances the bot's timed lap a little; when done, the medal times are saved and shown. */
   private measureAuthor(): void {
     const a = this.author;
@@ -741,7 +779,7 @@ export class RaceScreen implements Screen {
     }
     if (!this.paused) {
       const st = car.state;
-      audio.update({ speed: this.view.speed, throttle: session.phase === 'racing' ? this.tickInput.throttle : 0, slip: st.slip, grass: st.grass });
+      audio.update({ speed: this.view.speed, rpm: st.rpm, throttle: session.phase === 'racing' ? this.tickInput.throttle : 0, slip: st.slip, grass: st.grass });
     }
 
     // Ghost: where the best lap was at this point of the current lap.
@@ -780,6 +818,10 @@ export class RaceScreen implements Screen {
     if (this.stage === 'qualifying') this.runQualifyingSims();
     v.render();
     this.hud.setSpeed(this.view.speed);
+    const assists = settings().assists;
+    this.hud.setGear(car.state.gear, car.state.rpm, car.state.speed, assists.gears === 'manual', HANDLING.gearbox.shiftLight);
+    this.touch.setManualGears(assists.gears === 'manual');
+    this.updateLine(assists.line);
     this.hud.setSlipstream(car.draft, SLIPSTREAM.show);
     this.updateHud(alpha);
     this.hud.tick(dt);

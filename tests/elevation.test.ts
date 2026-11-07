@@ -336,16 +336,21 @@ function slopeTrack(grade: number): Track {
 }
 
 test('climbing is slower than driving on the flat, descending is faster', () => {
-  const speedAfter = (grade: number) => {
+  // Distance covered in 4 s from a standstill (the speed at one instant could catch a gear change).
+  const distanceIn4s = (grade: number) => {
     const car = new CarPhysics(slopeTrack(grade));
     Object.assign(car.state, { x: -480, z: -300, heading: 0, vx: 0, vz: 0, trackIndex: -1 });
-    for (let k = 0; k < HANDLING.tickRate * 4; k++) car.step({ throttle: 1, brake: 0, steer: 0, handbrake: false });
-    return car.state.speed;
+    let d = 0;
+    for (let k = 0; k < HANDLING.tickRate * 4; k++) {
+      car.step({ throttle: 1, brake: 0, steer: 0, handbrake: false });
+      d += car.state.speed / HANDLING.tickRate;
+    }
+    return d;
   };
-  const up = speedAfter(0.04);
-  const flat = speedAfter(0);
-  const down = speedAfter(-0.04);
-  assert.ok(up < flat - 0.5 && flat < down - 0.5, `up ${up.toFixed(1)} flat ${flat.toFixed(1)} down ${down.toFixed(1)}`);
+  const up = distanceIn4s(0.04);
+  const flat = distanceIn4s(0);
+  const down = distanceIn4s(-0.04);
+  assert.ok(up < flat - 1 && flat < down - 1, `up ${up.toFixed(1)} m, flat ${flat.toFixed(1)} m, down ${down.toFixed(1)} m`);
 });
 
 test('a barrier stops the car leaving the road; a glancing hit keeps most of the speed', () => {

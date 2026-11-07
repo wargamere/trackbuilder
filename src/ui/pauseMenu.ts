@@ -7,6 +7,8 @@ export interface PauseActions {
   restart(): void;
   /** Opens the race setup (practice or race, laps, ghost, AI cars). */
   raceSettings(): void;
+  /** Opens the driving assists (racing line, braking, steering, gears). */
+  assists(): void;
   /** Qualifying: stop now and go to the grid. */
   skipQualifying(): void;
   mainMenu(): void;
@@ -44,6 +46,10 @@ export class PauseMenu {
           this.restartBtn,
           this.skipBtn,
           button(STR.buttons.raceSettings, actions.raceSettings, { icon: '🏁' }),
+          button(STR.assists.open, () => {
+            this.hide();
+            actions.assists();
+          }, { icon: '🛞' }),
           button(STR.buttons.drawTrack, actions.drawTrack, { icon: '✎' }),
           button(STR.buttons.myTracks, actions.myTracks, { icon: '☰' }),
           button(STR.buttons.mainMenu, actions.mainMenu, { icon: '⌂' }),

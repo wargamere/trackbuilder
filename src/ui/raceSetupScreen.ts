@@ -3,6 +3,7 @@ import { STR, fmt } from '../config/strings.ts';
 import type { DriveMode, GameContext, RaceSetup, Screen } from '../core/screen.ts';
 import { settings } from '../core/settings.ts';
 import { TrackOrbit } from '../render/orbit.ts';
+import { AssistsPanel, assistsSummary } from './assistsPanel.ts';
 import { button, h, segmented, slider, type Choice, type Slider } from './dom.ts';
 
 type GridKind = RaceSetup['grid'];
@@ -38,6 +39,8 @@ export class RaceSetupScreen implements Screen {
   private readonly withAi: HTMLElement[];
   private readonly slotRow: HTMLElement;
   private readonly orbit = new TrackOrbit();
+  private readonly assistsPanel = new AssistsPanel();
+  private readonly assistsLine: HTMLElement;
   /** The choices being made (the game's setup only changes on Start). */
   private draft: RaceSetup;
   private abort: AbortController | null = null;
@@ -90,6 +93,14 @@ export class RaceSetupScreen implements Screen {
     const diff = field(S.difficulty, this.diffSlider.el, this.diffHint);
     const grid = field(S.grid, this.gridChoice.el, this.gridHint);
     this.slotRow = field(S.startSlot, this.slotSlider.el);
+    this.assistsLine = h('span', { class: 'assists-summary' });
+    const assists = h(
+      'div',
+      { class: 'setup-assists' },
+      h('span', { class: 'label', text: STR.assists.title }),
+      this.assistsLine,
+      button(STR.assists.open, () => this.assistsPanel.open(this.game.ui, () => this.renderHints()), { icon: '🛞', class: 'compact', key: 'A' }),
+    );
     this.raceOnly = [laps, cars];
     this.withAi = [diff, grid];
     this.panel = h(
@@ -103,6 +114,7 @@ export class RaceSetupScreen implements Screen {
         h('div', { class: 'setup-col' }, field(S.mode, this.modeChoice.el, this.modeHint), laps, field(S.ghost, this.ghostChoice.el, this.ghostHint)),
         h('div', { class: 'setup-col race-col' }, cars, diff, grid, this.slotRow),
       ),
+      assists,
       h(
         'div',
         { class: 'menu row setup-buttons' },
@@ -131,12 +143,21 @@ export class RaceSetupScreen implements Screen {
       'keydown',
       (e) => {
         if (e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;
+        // The assists panel on top: Esc closes it, nothing else here.
+        if (this.assistsPanel.isOpen) {
+          if (e.code === 'Escape') {
+            e.preventDefault();
+            this.assistsPanel.close();
+          }
+          return;
+        }
         const act: Record<string, () => void> = {
           Enter: () => this.start(),
           NumpadEnter: () => this.start(),
           Escape: () => this.game.closeSetup(),
           KeyP: () => this.set({ mode: 'practice' }),
           KeyR: () => this.set({ mode: 'race' }),
+          KeyA: () => this.assistsPanel.open(this.game.ui, () => this.renderHints()),
         };
         const a = act[e.code];
         if (!a) return;
@@ -148,6 +169,7 @@ export class RaceSetupScreen implements Screen {
   }
 
   exit(): void {
+    this.assistsPanel.close();
     this.abort?.abort();
     this.abort = null;
     this.root.remove();
@@ -217,6 +239,7 @@ export class RaceSetupScreen implements Screen {
     const k = d.difficulty >= 95 ? 4 : d.difficulty >= 75 ? 3 : d.difficulty >= 45 ? 2 : d.difficulty >= 20 ? 1 : 0;
     this.diffHint.textContent = hints[k];
     this.gridHint.textContent = fmt(S.gridHints[d.grid], { n: AI.qualifyingLaps });
+    this.assistsLine.textContent = assistsSummary(settings().assists);
     // The slot slider's labels depend on the number of cars.
     this.slotSlider.setRange(1, Math.max(2, d.opponents + 1));
     this.slotSlider.set(d.startSlot);

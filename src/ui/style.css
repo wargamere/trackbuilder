@@ -297,6 +297,74 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+/* Gear and rev bar beside / under the speed. */
+.hud-speed {
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: 0.55rem;
+  padding-bottom: 0.45em;
+}
+
+.hud-gear {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1;
+  padding-right: 0.55rem;
+  border-right: 1px solid rgba(255, 255, 255, 0.25);
+}
+
+.gear-value {
+  font-size: 1.9rem;
+  font-weight: 900;
+  color: var(--highlight);
+  min-width: 1ch;
+  text-align: center;
+}
+
+.gear-mode {
+  font-size: 0.55rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  opacity: 0.7;
+}
+
+.speed-main {
+  display: flex;
+  align-items: baseline;
+  gap: 0.3rem;
+}
+
+.rev-bar {
+  flex-basis: 100%;
+  height: 0.32rem;
+  margin-top: 0.2rem;
+  border-radius: 1rem;
+  background: rgba(255, 255, 255, 0.18);
+  overflow: hidden;
+}
+
+.rev-fill {
+  height: 100%;
+  width: 0;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #3fb36b, #f2b705 80%);
+}
+
+.rev-bar.shift .rev-fill {
+  background: #e8453c;
+}
+
+.rev-bar.limit .rev-fill {
+  animation: rev-limit 0.12s steps(2) infinite;
+}
+
+@keyframes rev-limit {
+  50% {
+    opacity: 0.35;
+  }
+}
+
 .speed-value {
   font-size: 2.1rem;
   font-weight: 900;
@@ -330,10 +398,11 @@ body {
   opacity: 1;
 }
 
-/* With touch controls, move the speedometer and hint up, clear of the pads. */
+/* With touch controls, move the speedometer and hint up, clear of the pads (the speedometer beside the minimap). */
 .hud.touch .hud-speed {
   bottom: auto;
-  top: 3.6rem;
+  top: calc(0.6rem + max(2.5rem, 32px) + 0.5rem);
+  right: calc(0.6rem + var(--minimap-w) + 0.5rem);
 }
 
 .hud.touch .hud-hint {
@@ -454,6 +523,30 @@ body {
   height: clamp(64px, 20vh, 130px);
 }
 
+.touch-shifts {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  pointer-events: auto;
+}
+
+.touch-shift {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: clamp(52px, 9vw, 84px);
+  height: clamp(44px, 13vh, 80px);
+  border: 3px solid rgba(255, 255, 255, 0.75);
+  border-radius: 1rem;
+  background: rgba(14, 18, 28, 0.38);
+  color: #fff;
+  font-size: 1.4rem;
+  font-weight: 900;
+  touch-action: none;
+  transition: background 0.06s, transform 0.06s;
+}
+
+.touch-shift.active,
 .steer-half.active,
 .touch-pedal.active {
   background: rgba(242, 183, 5, 0.75);
@@ -1187,11 +1280,15 @@ body {
 
 /* ------------------------------------------------------- minimap, medals */
 
+.hud {
+  --minimap-w: clamp(96px, 14vw, 190px);
+}
+
 .minimap {
   position: absolute;
   top: calc(0.6rem + max(2.5rem, 32px) + 0.5rem);
   right: 0.6rem;
-  width: clamp(96px, 14vw, 190px);
+  width: var(--minimap-w);
   height: clamp(64px, 9.5vw, 128px);
   border-radius: 0.6rem;
   background: rgba(20, 26, 38, 0.38);
@@ -1923,6 +2020,66 @@ body {
 .race-setup .segmented .btn {
   flex: 1;
   justify-content: center;
+}
+
+/* Assists: a summary line in the race setup, and their own panel. */
+.setup-assists {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.3rem 0.6rem;
+  margin: 0.5rem 0 0.2rem;
+  padding: 0.45rem 0.6rem;
+  border: 1.5px solid rgba(27, 58, 138, 0.18);
+  border-radius: 0.7rem;
+  background: #fff;
+}
+
+.assists-summary {
+  flex: 1;
+  min-width: 10rem;
+  font-weight: 700;
+  font-size: 0.88rem;
+  color: #2a3150;
+}
+
+.setup-assists .btn.compact {
+  min-height: 2rem;
+  font-size: 0.85rem;
+}
+
+.assists-overlay {
+  z-index: 12;
+}
+
+.assists-panel {
+  width: min(30rem, calc(100vw - 24px));
+  max-height: calc(100dvh - 24px);
+  overflow-y: auto;
+  text-align: left;
+}
+
+.assists-panel .field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin-bottom: 0.7rem;
+}
+
+.assists-panel .segmented .btn {
+  min-width: 4.8rem;
+  justify-content: center;
+}
+
+.assists-intro {
+  margin: -0.3rem 0 0.8rem;
+  font-size: 0.85rem;
+  color: #4a5270;
+}
+
+.assists-panel .menu.row {
+  justify-content: flex-end;
+  margin: 0.2rem 0 0;
 }
 
 .setup-hint {

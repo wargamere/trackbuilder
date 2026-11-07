@@ -2,8 +2,8 @@ import { settings, updateSettings } from '../core/settings.ts';
 
 /**
  * All game audio, synthesised with WebAudio (no files):
- *  - engine: two oscillators through a low-pass filter; pitch follows speed
- *    through five gears, and the filter opens with throttle,
+ *  - engine: two oscillators through a low-pass filter; pitch follows the
+ *    car's revs (its real gearbox), and the filter opens with throttle,
  *  - tyre squeal: band-passed noise when the car slides on tarmac,
  *  - grass rumble: low-passed noise when wheels are on the grass,
  *  - short beeps for the countdown and laps, and a knock for barrier hits.
@@ -13,13 +13,13 @@ import { settings, updateSettings } from '../core/settings.ts';
  * suspends it after interruptions such as calls or the app switcher).
  */
 
-/** Speeds (m/s) where each gear tops out. */
-const GEARS = [12, 22, 31, 40, 60];
 const IDLE_RPM = 900;
 const MAX_RPM = 6500;
 
 export interface EngineInput {
   speed: number;
+  /** Engine revs as a share of the rev limit (from the car's gearbox). */
+  rpm: number;
   throttle: number;
   slip: number;
   grass: number;
@@ -183,23 +183,10 @@ export class AudioEngine {
     if (!ctx || !this.engineOn || !this.osc1 || !this.osc2 || !this.filter || !this.engineVoice || !this.squeal || !this.rumble) return;
     const t = ctx.currentTime;
     const v = Math.abs(inp.speed);
-    // Simulated gearbox: rpm climbs through each gear, drops at the shift.
-    let lo = 0;
-    let frac = 0;
-    let gear = 0;
-    for (const hi of GEARS) {
-      if (v <= hi) {
-        frac = (v - lo) / (hi - lo);
-        break;
-      }
-      lo = hi;
-      gear++;
-      frac = 1;
-    }
+    // The revs climb through each gear and drop at every change up.
+    const frac = Math.max(0, Math.min(1, inp.rpm));
     const load = Math.max(0, Math.min(1, inp.throttle));
-    // After an upshift the revs drop to about half, not all the way to idle.
-    const band = gear === 0 ? frac : 0.45 + 0.55 * frac;
-    const rpm = IDLE_RPM + (MAX_RPM - IDLE_RPM) * Math.min(1, band * 0.92 + load * 0.08);
+    const rpm = IDLE_RPM + (MAX_RPM - IDLE_RPM) * Math.min(1, frac * 0.92 + load * 0.08);
     const hz = (rpm / 60) * 2; // four-cylinder firing frequency
     this.osc1.frequency.setTargetAtTime(hz, t, 0.03);
     this.osc2.frequency.setTargetAtTime(hz * 0.5, t, 0.03);

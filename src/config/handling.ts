@@ -30,6 +30,35 @@ export const HANDLING = {
   /** Extra slowing when coasting (no throttle, no brake). */
   engineBraking: 1.6,
 
+  // ------------------------------------------------------------------ gearbox
+  /**
+   * Six gears. The engine pulls fully through the middle of the revs and less
+   * at low revs and near the limiter (none at it). Changing at the right revs
+   * gives the pull of `engineAccel` above, so the AI's speed plans still hold.
+   * Manual and AI changes are instant; the automatic's changes up cut the
+   * drive for a moment, which is what makes it a little slower.
+   */
+  gearbox: {
+    /** Speed (m/s) at the rev limit in each gear, 1st to 6th. */
+    top: [13, 20, 27, 35, 45, 58],
+    /** Pull (share of full) at idle; full from `fullFrom` to `fullTo` of the rev limit; `limitPull` just under the limit. */
+    lowPull: 0.55,
+    fullFrom: 0.5,
+    fullTo: 0.9,
+    limitPull: 0.8,
+    /** Revs (share of the limit) to change up and down at, for the AI's box and the automatic gearbox alike. */
+    idealUp: 0.9,
+    idealDown: 0.5,
+    /** The shift light comes on from here (a manual change up from here on loses nothing). */
+    shiftLight: 0.88,
+    /**
+     * Seconds without drive while a gear goes up: none for a manual (or AI)
+     * change, a moment for the automatic's (what makes it a little slower).
+     */
+    shiftTime: 0,
+    autoShiftTime: 0.2,
+  },
+
   // ----------------------------------------------------------------- steering
   /** Front-wheel angle at a standstill. */
   maxSteerAngle: 0.6,

@@ -5,6 +5,7 @@ import { pitLayout } from '../track/pits.ts';
 import { placeTrees } from '../track/placement.ts';
 import { leftOf, sampleAt } from '../track/spline.ts';
 import { groundPose } from '../track/ground.ts';
+import { enginePull, stepGearbox, type GearboxMode } from './gearbox.ts';
 import { surfaceFor, terrainHeight, type TrackSurface } from '../track/surface.ts';
 import type { Track } from '../track/track.ts';
 
@@ -19,6 +20,8 @@ export interface DriveInput {
   /** -1 (left) .. +1 (right) */
   steer: number;
   handbrake: boolean;
+  /** A gear change asked for this tick (manual gearbox): +1 up, -1 down. */
+  shift?: number;
 }
 
 export const NO_INPUT: Readonly<DriveInput> = { throttle: 0, brake: 0, steer: 0, handbrake: false };
@@ -58,6 +61,10 @@ export class CarState {
   roll = 0;
   /** Speed into the barrier on the last tick it was hit (0 = no hit), for sound and camera shake. */
   wallHit = 0;
+  /** Gear (1..6), engine revs (share of the rev limit) and seconds left of a gear change. */
+  gear = 1;
+  rpm = 0;
+  shift = 0;
 
   copyFrom(o: CarState): this {
     Object.assign(this, o);
@@ -153,6 +160,8 @@ export class CarPhysics {
   readonly prev = new CarState();
   /** How much of the slipstream of a car ahead this car is in, 0..1 (set before each step; see slipstream.ts). */
   draft = 0;
+  /** Who changes gear (see gearbox.ts): AI cars and the medal bot shift perfectly; the player shifts by hand or with the automatic. */
+  gearbox: GearboxMode = 'ideal';
   private readonly track: Track;
   private readonly locator: TrackLocator;
   private readonly obstacles: ObstacleGrid;
@@ -238,13 +247,15 @@ export class CarPhysics {
 
     // --- longitudinal: driving force, then resistances that can only slow the car
     let drive = 0;
+    stepGearbox(st, this.gearbox, inp.shift ?? 0, vf, dt);
+    const pull = enginePull(st, vf);
     // In another car's slipstream the air resistance drops and the tow pulls the car along,
     // past its usual top speed: enough to draw alongside on a straight.
     const tow = this.draft;
     let resist = H.rollingDrag + surfDrag + H.aeroDrag * (1 - H.slipstreamDragCut * tow) * vf * vf;
     if (throttle > 0) {
       const fade = Math.max(0, 1 - vf / (H.maxSpeed * speedF * (1 + H.slipstreamTopSpeed * tow)));
-      if (vf >= -0.5) drive += (H.engineAccel * accelF + H.slipstreamPush * tow) * throttle * fade;
+      if (vf >= -0.5) drive += (H.engineAccel * accelF * pull + H.slipstreamPush * tow) * throttle * fade;
       else resist += H.brakeDecel * throttle;
     }
     if (brake > 0) {

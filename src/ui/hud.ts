@@ -40,6 +40,12 @@ export class Hud {
   private lastSpeed = -1;
   private cut = false;
   private readonly speedUnit: HTMLElement;
+  private readonly gearValue: HTMLElement;
+  private readonly gearMode: HTMLElement;
+  private readonly revFill: HTMLElement;
+  private readonly revBar: HTMLElement;
+  private lastGear = '';
+  private lastRev = -1;
   private readonly raceBtn: HTMLButtonElement;
   private lastTime = '';
   private hintTimer = 0;
@@ -73,7 +79,17 @@ export class Hud {
     this.center = h('div', { class: 'hud-center' });
     this.speedValue = h('span', { class: 'speed-value', text: '0' });
     this.speedUnit = h('span', { class: 'speed-unit', text: STR.race.speedUnit });
-    const speed = h('div', { class: 'hud-speed' }, this.speedValue, this.speedUnit);
+    this.gearValue = h('span', { class: 'gear-value', text: '1' });
+    this.gearMode = h('span', { class: 'gear-mode', text: STR.race.gearAuto });
+    this.revFill = h('div', { class: 'rev-fill' });
+    this.revBar = h('div', { class: 'rev-bar' }, this.revFill);
+    const speed = h(
+      'div',
+      { class: 'hud-speed' },
+      h('div', { class: 'hud-gear', title: STR.race.gearTitle }, this.gearValue, this.gearMode),
+      h('div', { class: 'speed-main' }, this.speedValue, this.speedUnit),
+      this.revBar,
+    );
     this.draft = h('div', { class: 'hud-draft', text: STR.race.slipstream });
     this.hint = h('div', { class: 'hud-hint' });
     this.debug = h('div', { class: 'hud-debug' });
@@ -135,6 +151,29 @@ export class Hud {
     }
     const unit = mph ? STR.race.speedUnitMph : STR.race.speedUnit;
     if (this.speedUnit.textContent !== unit) this.speedUnit.textContent = unit;
+  }
+
+  /**
+   * The gear (R when reversing), AUTO or MAN under it, and the rev bar. With
+   * manual gears the bar lights up from the shift point and flashes on the
+   * limiter.
+   */
+  setGear(gear: number, rpm: number, speed: number, manual: boolean, shiftLight: number): void {
+    const g = speed < -0.5 ? STR.race.gearReverse : String(gear);
+    const mode = manual ? STR.race.gearManual : STR.race.gearAuto;
+    const key = `${g}|${mode}`;
+    if (key !== this.lastGear) {
+      this.lastGear = key;
+      this.gearValue.textContent = g;
+      this.gearMode.textContent = mode;
+    }
+    const r = Math.round(Math.max(0, Math.min(1, rpm)) * 100) / 100;
+    if (r !== this.lastRev) {
+      this.lastRev = r;
+      this.revFill.style.width = `${(r * 100).toFixed(0)}%`;
+    }
+    this.revBar.classList.toggle('shift', manual && r >= shiftLight);
+    this.revBar.classList.toggle('limit', manual && r >= 0.99);
   }
 
   /** Practice shows a "Start a race" button; a race doesn't. */
