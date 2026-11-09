@@ -27,7 +27,7 @@ test('tyres fade steadily, then go off: heavily slower, never blown up', () => {
   assert.equal(tyreCurve(50), T.deadGrip, 'and no further');
   // Off, they never wear, and every car is on a standard set.
   const car = new CarPhysics(getSampleTrack(0));
-  car.tyreAge = 99;
+  car.tyreUse = 99;
   assert.equal(car.gripScale, 1, 'tyre wear off: as new');
   assert.equal(car.tyreLeft, 1);
   car.wet = true;
@@ -38,9 +38,9 @@ test('tyres fade steadily, then go off: heavily slower, never blown up', () => {
   car.mediumLife = 5;
   car.newTyres('medium');
   assert.equal(car.tyreLife, 5);
-  car.tyreAge = 2.5;
+  car.tyreUse = 0.5;
   assert.equal(car.tyreLeft, 0.5);
-  car.tyreAge = 7;
+  car.tyreUse = 1.4;
   assert.equal(car.tyreLeft, 0);
   assert.equal(car.gripScale, T.deadGrip);
   car.newTyres();
@@ -48,14 +48,14 @@ test('tyres fade steadily, then go off: heavily slower, never blown up', () => {
 });
 
 test('the kinds of tyre: softs grip more and go off soonest, hards the other way, wets for the rain', () => {
-  const life = (c: Compound, wet = false) => compoundLife(c, wet, 5);
-  assert.ok(compoundGrip('soft', false) > compoundGrip('medium', false) && compoundGrip('medium', false) > compoundGrip('hard', false));
+  const life = (c: Compound, wet = false) => compoundLife(c, wet ? 1 : 0, 5);
+  assert.ok(compoundGrip('soft', 0) > compoundGrip('medium', 0) && compoundGrip('medium', 0) > compoundGrip('hard', 0));
   assert.ok(life('soft') < life('medium') && life('medium') < life('hard'));
-  assert.equal(compoundGrip('medium', true), CONDITIONS.rainGrip, 'mediums in the rain are the standard set');
+  assert.equal(compoundGrip('medium', 1), CONDITIONS.rainGrip, 'mediums in the rain are the standard set');
   for (const c of ['soft', 'medium', 'hard'] as const) {
-    assert.ok(compoundGrip('wet', true) > compoundGrip(c, true), `in the rain wets beat ${c}s`);
-    assert.ok(compoundGrip('wet', false) < compoundGrip(c, false), `in the dry ${c}s beat wets`);
-    assert.ok(compoundBrake('wet', true) > compoundBrake(c, true));
+    assert.ok(compoundGrip('wet', 1) > compoundGrip(c, 1), `in the rain wets beat ${c}s`);
+    assert.ok(compoundGrip('wet', 0) < compoundGrip(c, 0), `in the dry ${c}s beat wets`);
+    assert.ok(compoundBrake('wet', 1) > compoundBrake(c, 1));
   }
   assert.ok(life('wet', false) < life('soft'), 'wets wear out fast in the dry');
   assert.ok(life('wet', true) > life('medium', true), 'and last in the rain');
@@ -94,7 +94,9 @@ function oneLap(track: Track, driver: RacingDriver, setup: (car: CarPhysics) => 
 test('a lap at racing speed is about a lap of wear; sliding wears them faster', () => {
   const t = getSampleTrack(0);
   const { car } = oneLap(t, new RacingDriver(t, aiPace(0.75, t)), (c) => (c.wear = true));
-  assert.ok(car.tyreAge > 0.95 && car.tyreAge < 1.3, `one lap: ${car.tyreAge.toFixed(2)} laps of wear`);
+  const worn = car.tyreUse * car.tyreLife;
+  assert.ok(Math.abs(car.tyreAge - 1) < 0.05, `one lap on them: ${car.tyreAge.toFixed(2)}`);
+  assert.ok(worn > 0.95 && worn < 1.3, `one lap: ${worn.toFixed(2)} laps of their life used`);
   // Sideways at 5 m/s: wear runs faster than distance alone.
   const slide = new CarPhysics(t);
   slide.wear = true;
@@ -104,7 +106,7 @@ test('a lap at racing speed is about a lap of wear; sliding wears them faster', 
   st.vx = Math.cos(h) * 20;
   st.vz = Math.sin(h) * 20;
   slide.step({ throttle: 0, brake: 0, steer: 0, handbrake: false });
-  const perMetre = slide.tyreAge / (Math.abs(st.speed) * DT / t.center.length);
+  const perMetre = (slide.tyreUse * slide.tyreLife) / (Math.abs(st.speed) * DT / t.center.length);
   assert.ok(perMetre > 1.5, `sliding: ×${perMetre.toFixed(2)}`);
 });
 
@@ -148,11 +150,11 @@ test('the AI on tyres that have gone off is heavily slower and stays on the road
           car.wear = true;
           car.mediumLife = trackTyreLife(t);
           car.newTyres(c);
-          car.tyreAge = age;
+          car.tyreUse = age;
         },
         (car) => {
-          car.tyreAge = age; // (held: the whole lap on tyres this old)
-          return { grip: car.gripScale / standardGrip(false) };
+          car.tyreUse = age; // (held: the whole lap on tyres this worn)
+          return { grip: car.gripScale / standardGrip(0) };
         },
       );
     const fresh = on('medium', 0);
@@ -209,7 +211,7 @@ test('a pit stop: stop in the box and the crew fits the tyres asked for in the s
   }
   assert.ok(st.s > box.s + box.length / 2 || st.s < box.s - L / 2, 'it drove through');
   // Stopped in it on worn tyres: the stop.
-  car.tyreAge = 5;
+  car.tyreUse = 1.2;
   car.placeAt(box.s - 30, box.lateral);
   crew.reset(car.state);
   car.placeAt(box.s, box.lateral);
@@ -254,11 +256,11 @@ function soloRace(track: Track, laps: number, wet = false) {
 
 test('AI strategy: the quickest tyres that last the race, else a stop before they go off, choosing for the laps left', () => {
   // Mediums last 5 laps here: softs 3.25, hards 8.
-  assert.equal(pickCompound(3, 5, false, 'medium'), 'soft');
-  assert.equal(pickCompound(5, 5, false, 'soft'), 'medium');
-  assert.equal(pickCompound(8, 5, false, 'soft'), 'hard');
-  assert.equal(pickCompound(20, 5, false, 'soft'), 'soft', 'there will be stops anyway: its own choice');
-  assert.equal(pickCompound(20, 5, true, 'soft'), 'wet', 'wets in the rain');
+  assert.equal(pickCompound(3, 5, 0, 'medium'), 'soft');
+  assert.equal(pickCompound(5, 5, 0, 'soft'), 'medium');
+  assert.equal(pickCompound(8, 5, 0, 'soft'), 'hard');
+  assert.equal(pickCompound(20, 5, 0, 'soft'), 'soft', 'there will be stops anyway: its own choice');
+  assert.equal(pickCompound(20, 5, 1, 'soft'), 'wet', 'wets in the rain');
   // A short race on a track: no stop (the tyres they start on last it).
   const t = getSampleTrack(2);
   const short = soloRace(t, 3);

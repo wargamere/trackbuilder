@@ -47,7 +47,8 @@ export class AudioEngine {
   private squeal: Voice | null = null;
   private rumble: Voice | null = null;
   private rainVoice: Voice | null = null;
-  private raining = false;
+  /** How hard it's raining (0..1). */
+  private raining = 0;
   private noise: AudioBuffer | null = null;
   /** The player's sound toggle (read from settings in installUnlock, after platform init). */
   private muted = false;
@@ -182,9 +183,9 @@ export class AudioEngine {
     }
   }
 
-  /** It's raining (the rain is heard while racing; wet tyres hardly squeal). */
-  setRain(on: boolean): void {
-    this.raining = on;
+  /** How hard it's raining, 0..1 (true: full rain). It's heard while racing, and wet tyres hardly squeal. */
+  setRain(level: boolean | number): void {
+    this.raining = Math.min(1, Math.max(0, Number(level)));
   }
 
   /** Called every frame while racing. */
@@ -204,9 +205,9 @@ export class AudioEngine {
     this.engineVoice.gain.gain.setTargetAtTime(0.07 + 0.09 * load + 0.03 * frac, t, 0.05);
 
     const moving = Math.min(1, v / 8);
-    const squeal = Math.max(0, Math.min(1, (inp.slip - 2.2) / 4)) * (1 - inp.grass) * moving * (this.raining ? 0.35 : 1);
+    const squeal = Math.max(0, Math.min(1, (inp.slip - 2.2) / 4)) * (1 - inp.grass) * moving * (1 - 0.65 * this.raining);
     this.squeal.gain.gain.setTargetAtTime(squeal * 0.13, t, 0.04);
-    this.rainVoice?.gain.gain.setTargetAtTime(this.raining ? 0.035 + 0.05 * Math.min(1, v / 40) : 0, t, 0.25);
+    this.rainVoice?.gain.gain.setTargetAtTime(this.raining * (0.035 + 0.05 * Math.min(1, v / 40)), t, 0.25);
     this.rumble.gain.gain.setTargetAtTime(inp.grass * Math.min(1, v / 10) * 0.22, t, 0.06);
   }
 

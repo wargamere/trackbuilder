@@ -1,7 +1,7 @@
 import { CarPhysics, NO_INPUT, type CarState, type DriveInput } from '../car/physics.ts';
-import { standardGrip } from '../car/tyres.ts';
+import { standardBrake, standardGrip } from '../car/tyres.ts';
 import { HANDLING } from '../config/handling.ts';
-import { AI, CONDITIONS, SETUP, TRAFFIC, type Compound } from '../config/race.ts';
+import { AI, CONDITIONS, SETUP, TRAFFIC, WEATHER, type Compound } from '../config/race.ts';
 import { clamp, wrap } from '../core/math.ts';
 import { edgeOffsets } from '../track/spline.ts';
 import type { Track } from '../track/track.ts';
@@ -171,6 +171,8 @@ export class AiDriver {
   private pitFrom = 0;
   private pitWait = 0;
   private readonly length: number;
+  /** The road its speed plan was made for: dry (0) or soaked (1). As the road gets wetter or drier it drives by the grip and brakes there are against that. */
+  private readonly planWetness: number;
 
   constructor(track: Track, opts: { name: string; paint: number; difficulty: number; laps: number; slot: number; wet?: boolean; tyreWear?: boolean }) {
     const wet = !!opts.wet;
@@ -189,6 +191,7 @@ export class AiDriver {
     this.car = new CarPhysics(track);
     this.car.setup = setup;
     this.car.wet = wet;
+    this.planWetness = wet ? 1 : 0;
     this.car.wear = !!opts.tyreWear;
     this.length = track.center.length;
     // Not everyone stops on the same lap, or picks the same tyres for a stint.
@@ -197,7 +200,7 @@ export class AiDriver {
     if (opts.tyreWear) {
       this.car.mediumLife = trackTyreLife(track);
       // The quickest tyres that last the race, else its own choice.
-      this.car.newTyres(pickCompound(opts.laps, this.car.mediumLife, wet, this.preference));
+      this.car.newTyres(pickCompound(opts.laps, this.car.mediumLife, wet ? 1 : 0, this.preference));
     }
     aiCars.set(this.car.state, opts.difficulty);
     const g = gridPlace(track, opts.slot);
@@ -236,13 +239,21 @@ export class AiDriver {
     const smooth = (u: number) => u * u * (3 - 2 * u);
     if (this.pit === 'none') {
       const s = this.session;
-      // In now if they'd go off before the box comes round again (give or take its own margin)…
       const car = this.car;
-      const life = car.tyreLife;
-      if (finished || s.lapStart === null || car.tyreAge + 1 + this.pitEarly <= life) return null;
-      // …unless the race is all but over, or they'll last to the finish.
+      if (finished || s.lapStart === null) return null;
       const left = (s.lapsToRun * L - s.raceDistance(st.s)) / L;
-      if (left < C.pitMinLaps || car.tyreAge + left <= life + C.pitEndSlack) return null;
+      // The weather: wets once the road is wet enough, slicks once it's dried enough (each car
+      // makes its own call: some early, some late).
+      const k = this.slot % WEATHER.aiToWets.length;
+      const onWets = car.compound === 'wet';
+      const wantWets = onWets ? car.wetness > WEATHER.aiToSlicks[k] : car.wetness > WEATHER.aiToWets[k];
+      if (wantWets === onWets) {
+        // Wear: in now if they'd go off before the box comes round again (give or take its own
+        // margin), unless the race is all but over, or they'll last to the finish.
+        const onTyres = car.tyreLapsLeft;
+        if (onTyres >= 1 + this.pitEarly) return null;
+        if (left < C.pitMinLaps || left <= onTyres + C.pitEndSlack) return null;
+      } else if (left < C.pitMinLaps) return null;
       // Far enough ahead to brake for it gently, not so far it would pull over too soon.
       const v = Math.max(0, st.speed);
       const need = Math.max(C.pitApproach, (v * v) / (2 * C.pitDecel) + 40);
@@ -251,7 +262,7 @@ export class AiDriver {
       this.pit = 'in';
       this.pitFrom = d;
       this.pitWait = 0;
-      this.nextTyres = pickCompound(left, car.mediumLife, car.wet, this.preference);
+      this.nextTyres = pickCompound(left, car.mediumLife, wantWets ? 1 : 0, this.preference);
     }
     if (this.pit === 'in' || this.pit === 'stop') {
       const ev = crew.step(this.car, dt, this.nextTyres);
@@ -351,7 +362,7 @@ export class AiDriver {
       this.lane = st.lateral - this.driver.lateralAt(st.s);
       this.laneVel = 0;
     }
-    const inp = this.driver.drive(st, this.lane, this.inp, { pace, cap, tow: this.car.draft, keep, late: this.planner.fighting, route, grip: this.car.gripScale / standardGrip(this.car.wet) });
+    const inp = this.driver.drive(st, this.lane, this.inp, { pace, cap, tow: this.car.draft, keep, late: this.planner.fighting, route, grip: this.car.gripScale / standardGrip(this.planWetness), brake: this.car.brakeScale / standardBrake(this.planWetness) });
     // Sliding (knocked, or ran wide): easing off the throttle until it gathers itself. No braking,
     // which would only surprise the car behind. (Being off its path is already taken care of:
     // the speed then comes from the path it's really on.)

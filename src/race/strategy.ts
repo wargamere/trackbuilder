@@ -47,14 +47,14 @@ export function preferredCompound(slot: number): Compound {
 }
 
 /**
- * The tyres to fit for `lapsLeft` laps: wets in the rain; in the dry the
- * quickest kind that lasts to the finish (going off at most
- * CONDITIONS.pitEndSlack laps before it), else `preference` (there will be
- * another stop anyway).
+ * The tyres to fit for `lapsLeft` laps: wets on a wet road (more than half
+ * wet); in the dry the quickest kind that lasts to the finish (going off at
+ * most CONDITIONS.pitEndSlack laps before it), else `preference` (there will
+ * be another stop anyway).
  */
-export function pickCompound(lapsLeft: number, mediumLife: number, wet: boolean, preference: Compound): Compound {
-  if (wet) return 'wet';
-  for (const c of ['soft', 'medium', 'hard'] as const) if (compoundLife(c, false, mediumLife) + CONDITIONS.pitEndSlack >= lapsLeft) return c;
+export function pickCompound(lapsLeft: number, mediumLife: number, wetness: number, preference: Compound): Compound {
+  if (wetness >= 0.5) return 'wet';
+  for (const c of ['soft', 'medium', 'hard'] as const) if (compoundLife(c, 0, mediumLife) + CONDITIONS.pitEndSlack >= lapsLeft) return c;
   return preference;
 }
 
@@ -84,4 +84,17 @@ export function bestWing(track: Track): WingLevel {
 /** The setup the AI teams run on `track` (and the one suggested to you): the quickest wing, standard gears and brakes. */
 export function suggestedSetup(track: Track): CarSetup {
   return { ...DEFAULT_SETUP, wing: bestWing(track) };
+}
+
+const lapTimes = new WeakMap<Track, number>();
+
+/** About how long a lap of `track` takes in a race (s): the medal pace's planned lap. */
+export function trackLapTime(track: Track): number {
+  const known = lapTimes.get(track);
+  if (known !== undefined) return known;
+  const line = racingLine(track);
+  const p = AI.pace[3];
+  const t = planLapTime(line, speedProfile(track, line, { grip: p[0], maxSpeed: HANDLING.maxSpeed * p[1], brake: p[2] }));
+  lapTimes.set(track, t);
+  return t;
 }

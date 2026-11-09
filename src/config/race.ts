@@ -60,6 +60,43 @@ export const CONDITIONS = {
   pitExit: 90,
 } as const;
 
+/**
+ * Changing weather (race/weather.ts): rain that comes and goes during a race,
+ * and a road that gets wet in it and dries out after, the racing line first.
+ */
+export const WEATHER = {
+  /** Time constants (s): the road getting wet in the rain, and drying out on the racing line (where the cars run) and off it. */
+  wetting: 40,
+  dryingLine: 75,
+  dryingOff: 240,
+  /** Rain comes in, or eases off, over this long (s). */
+  rainRamp: 20,
+  /** The racing line dries across this far (m) either side of it, blending into the rest of the road over `lineBlend` m. */
+  lineHalf: 1.2,
+  lineBlend: 2.5,
+  /**
+   * In a race it starts dry. Rain comes at between rainFrom and rainTo of
+   * the way through it, and (with stopChance) stops again between stopFrom
+   * and stopTo. In practice it changes every practiceMin…practiceMax s.
+   */
+  rainFrom: 0.2,
+  rainTo: 0.5,
+  stopChance: 0.65,
+  stopFrom: 0.55,
+  stopTo: 0.8,
+  practiceMin: 150,
+  practiceMax: 300,
+  /** The HUD forecasts a change this long (s) before it comes. */
+  forecast: 90,
+  /**
+   * AI cars change to wets once the road on the line is this wet, and back
+   * to slicks once it's dried to this, by grid slot (some gamble early, some
+   * late; the gap stops them flip-flopping).
+   */
+  aiToWets: [0.4, 0.5, 0.62],
+  aiToSlicks: [0.42, 0.33, 0.25],
+} as const;
+
 /** The car's setup (see SETUP). */
 export type WingLevel = 'low' | 'medium' | 'high';
 export type GearSet = 'short' | 'medium' | 'long';

@@ -3160,3 +3160,24 @@ html:not([data-screen="race"]) .rotate-prompt { display: none; }
   font-variant-numeric: tabular-nums;
   font-weight: 700;
 }
+
+/* Changing weather: how wet the track is, and what's coming, under the minimap. */
+.hud-weather {
+  position: absolute;
+  right: 0.6rem;
+  top: calc(0.6rem + max(2.5rem, 32px) + 0.5rem + clamp(64px, 9.5vw, 128px) + 0.4rem);
+  max-width: var(--minimap-w);
+  padding: 0.25em 0.55em;
+  border-radius: 0.5em;
+  background: var(--panel-dark);
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: 700;
+  line-height: 1.35;
+  white-space: pre-line;
+  pointer-events: none;
+}
+
+.hud-weather[hidden] {
+  display: none;
+}

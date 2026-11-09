@@ -58,7 +58,7 @@ src/
               model.ts (low-poly car), camera.ts (chase + bonnet)
   race/       raceScreen.ts (fixed-step loop, interpolation, pause), session.ts
               (countdown, checkpoints, lap timing, splits, race distance), ghost.ts,
-              records.ts, resultsScreen.ts, timing.ts (gaps between cars), ai.ts (AI opponents), racingLine.ts
+              records.ts, resultsScreen.ts, timing.ts (gaps between cars), weather.ts (changing weather), ai.ts (AI opponents), racingLine.ts
               (line + speed plan), driver.ts (drives it), traffic.ts (racing other
               cars), bot.ts (test driver), medals.ts (medal times), assists.ts
               (braking and steering assists), pitStop.ts (pit box and pit stops),
@@ -421,6 +421,13 @@ In a race with AI cars a timing tower runs down the left of the screen (`ui/timi
 The race setup's **Conditions** row (🌦, key C) opens a panel with three switches. They apply to every car on the track, the AI cars too, and are remembered for the next race. Each one is on or off on its own.
 
 - **Weather: Dry / Rain.** In the rain the tyres have 80 % of their grip and the brakes 78 % of their bite (`CONDITIONS.rainGrip`, `rainBrake`). That's the most the car can corner and brake: it still answers the wheel as quickly as in the dry. The AI drives the same share of what grip there is, so its laps come out about 7–9 % slower (a test checks a few %, and that its lap stays clean). So do the racing line and the braking assist, which start braking earlier. Qualifying is in the rain too, but medal times are always the dry ones. It looks wet: a low grey sky, mist that hides the distance, a darker road and falling rain, a few thousand streaks that slant towards you at speed (`render/rain.ts`, one draw call). It sounds wet too: a hiss that grows with speed, and tyres that hardly squeal.
+- **Weather: Changing** (`race/weather.ts`, `WEATHER` in `config/race.ts`). The race starts dry. Rain comes somewhere between 20 % and 50 % of the way through, and in about two races out of three it stops again between 55 % and 80 %. In practice it changes every 2½–5 minutes.
+  - *The road* gets wet as it rains (over about 40 s) and dries out after. The racing line dries first, in about 75 s, because the cars clear it; the rest takes about 4 minutes. So for a while there's a dry line on a damp track, and running off it means more water.
+  - *Grip and brakes* blend between dry and wet by how wet the road is under each car, and so does tyre life. Slicks and wets cross over at about half wet, so the call is when to change.
+  - *The HUD* shows the weather under the minimap: "🌧 Rain · track 41% wet", how wet the line is once it's drying, and a forecast 90 s ahead ("Rain in ~30 s"). It also flashes when the rain starts and stops. The sky, mist, rain, road and sound all blend with it.
+  - *The AI* drives a dry plan and scales it by the grip and the brakes there are, so it brakes earlier as the road gets wet. With tyre wear on it pits for wets once the road is wet enough and back to slicks once it has dried enough. Each car makes its own call, by grid slot: some go early, some late, with a gap so none flip-flops. A test checks one car makes both changes in a 7-lap race.
+  - Without tyre wear nobody can change tyres: every car is on standard tyres that blend between dry and wet.
+  - Tyre wear is counted as the share of their life used (`tyreUse`), so a set's life can change with the weather without its wear jumping.
 - **Time of day: Track / Day / Sunset / Night.** "Track" keeps the track's own time of day. The others override it for this race only (the track itself doesn't change). The race setup's background shows the choice.
 - **Tyre wear & pit stops: Off / On**, with the **starting tyres** (shown when tyre wear is on).
   - *Kinds of tyre* (`TYRES.compounds` in `config/race.ts`, `car/tyres.ts`):
@@ -512,6 +519,7 @@ Tested against the real SDK in its `local` mode (localhost): the SDK's own log s
 - [x] Race conditions, each switchable: rain, time of day (track / day / sunset / night, with car lights), tyre wear with working pit stops for you and the AI
 - [x] Live timing tower (gaps, tyres, stops, where you'd rejoin after a stop)
 - [x] Car setup: wing, gears, brake balance; the AI teams pick the quickest wing for each track
+- [x] Changing weather: rain that comes and goes, a road that dries on the racing line first, and wet/slick calls for you and the AI
 - [x] Kinds of tyre (soft / medium / hard / wet) with a life that depends on the track (4–6 laps for mediums) and a heavy drop-off once they go; choose them at the start and at each stop; races up to 50 laps
 
 ## Validation for the track editor

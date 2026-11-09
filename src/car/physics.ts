@@ -1,5 +1,5 @@
 import { HANDLING } from '../config/handling.ts';
-import { CONDITIONS, DEFAULT_SETUP, SETUP, TYRES, type CarSetup, type Compound } from '../config/race.ts';
+import { DEFAULT_SETUP, SETUP, TYRES, type CarSetup, type Compound } from '../config/race.ts';
 import { clamp } from '../core/math.ts';
 import { locatorFor, type TrackLocator } from '../track/locator.ts';
 import { pitLayout } from '../track/pits.ts';
@@ -7,7 +7,7 @@ import { placeTrees } from '../track/placement.ts';
 import { leftOf, sampleAt } from '../track/spline.ts';
 import { groundPose } from '../track/ground.ts';
 import { enginePull, stepGearbox, type GearboxMode } from './gearbox.ts';
-import { compoundBrake, compoundGrip, compoundLife, standardGrip, tyreCurve } from './tyres.ts';
+import { compoundBrake, compoundGrip, compoundLife, standardBrake, standardGrip, tyreCurve } from './tyres.ts';
 import { surfaceFor, terrainHeight, type TrackSurface } from '../track/surface.ts';
 import type { Track } from '../track/track.ts';
 
@@ -164,16 +164,21 @@ export class CarPhysics {
   draft = 0;
   /** Who changes gear (see gearbox.ts): AI cars and the medal bot shift perfectly; the player shifts by hand or with the automatic. */
   gearbox: GearboxMode = 'ideal';
-  /** A wet track: less grip and weaker brakes (CONDITIONS.rainGrip, rainBrake; with tyre wear, the tyres' own). */
-  wet = false;
+  /**
+   * How wet the road under the car is: 0 dry … 1 soaked (the weather sets it,
+   * race/weather.ts). Less grip and weaker brakes (CONDITIONS.rainGrip,
+   * rainBrake; with tyre wear, the tyres' own).
+   */
+  wetness = 0;
   /** Tyre wear on: the tyres fade as they wear and go off at the end of their life (car/tyres.ts). */
   wear = false;
   /** The kind of tyres on (with tyre wear on; with it off every car is on a standard medium set). */
   compound: Compound = 'medium';
   /** Laps medium tyres last on this track (see trackTyreLife()); the race sets it. */
   mediumLife = 5;
-  /** Laps driven on these tyres (sliding counts extra). */
+  /** Laps driven on these tyres, and the share of their life used (sliding uses it faster; 1 = they've gone off). */
   tyreAge = 0;
+  tyreUse = 0;
   /** Wing, gears and brake balance (see SETUP); the default is the car as it always was. */
   setup: CarSetup = DEFAULT_SETUP;
   private readonly track: Track;
@@ -209,32 +214,46 @@ export class CarPhysics {
     this.prev.copyFrom(st);
   }
 
-  /** Laps these tyres last before they go off. */
+  /** A wet road (more than half wet); setting it makes the road soaked or dry. */
+  get wet(): boolean {
+    return this.wetness >= 0.5;
+  }
+
+  set wet(on: boolean) {
+    this.wetness = on ? 1 : 0;
+  }
+
+  /** Laps these tyres would last, new, on the road as it is now. */
   get tyreLife(): number {
-    return compoundLife(this.compound, this.wet, this.mediumLife);
+    return compoundLife(this.compound, this.wetness, this.mediumLife);
   }
 
   /** Share of their life the tyres have left: 1 new, 0 once they've gone off (1 with wear off). */
   get tyreLeft(): number {
-    return this.wear ? Math.max(0, 1 - this.tyreAge / this.tyreLife) : 1;
+    return this.wear ? Math.max(0, 1 - this.tyreUse) : 1;
   }
 
-  /** The tyres' grip now, as a share of the road's: their kind, the weather and their wear. */
+  /** Laps the tyres have left before they go off, on the road as it is now. */
+  get tyreLapsLeft(): number {
+    return this.tyreLeft * this.tyreLife;
+  }
+
+  /** The tyres' grip now, as a share of the road's: their kind, how wet the road is, and their wear. */
   get gripScale(): number {
-    if (!this.wear) return standardGrip(this.wet);
-    return compoundGrip(this.compound, this.wet) * tyreCurve(this.tyreAge / this.tyreLife);
+    if (!this.wear) return standardGrip(this.wetness);
+    return compoundGrip(this.compound, this.wetness) * tyreCurve(this.tyreUse);
   }
 
-  /** Share of the brakes' bite the tyres give (less in the rain). */
+  /** Share of the brakes' bite the tyres give (less on a wet road). */
   get brakeScale(): number {
-    if (!this.wet) return 1;
-    return this.wear ? compoundBrake(this.compound, true) : CONDITIONS.rainBrake;
+    return this.wear ? compoundBrake(this.compound, this.wetness) : standardBrake(this.wetness);
   }
 
   /** A fresh set of tyres (a pit stop, or a new run), of `compound` (the same kind by default). */
   newTyres(compound: Compound = this.compound): void {
     this.compound = compound;
     this.tyreAge = 0;
+    this.tyreUse = 0;
   }
 
   /** "R": back onto the road at the nearest point, facing the right way. */
@@ -367,7 +386,9 @@ export class CarPhysics {
     // Tyre wear: a lap per lap driven, faster while sliding.
     if (this.wear) {
       const T = TYRES;
-      this.tyreAge += ((Math.abs(vf) * dt) / this.track.center.length) * (1 + T.slideWear * Math.max(0, st.slip - T.slideFrom));
+      const laps = (Math.abs(vf) * dt) / this.track.center.length;
+      this.tyreAge += laps;
+      this.tyreUse += (laps * (1 + T.slideWear * Math.max(0, st.slip - T.slideFrom))) / this.tyreLife;
     }
   }
 

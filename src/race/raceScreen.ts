@@ -39,7 +39,9 @@ import { GhostRecorder, ghostPose, type GhostLap } from './ghost.ts';
 import { applyAssists, assistDriver } from './assists.ts';
 import { AuthorLap, medalTimes } from './medals.ts';
 import { PitCrew, pitBox } from './pitStop.ts';
-import { pitLoss, suggestedSetup, trackTyreLife } from './strategy.ts';
+import { pitLoss, suggestedSetup, trackLapTime, trackTyreLife } from './strategy.ts';
+import { Weather } from './weather.ts';
+import type { TimeOfDay } from '../config/track.ts';
 import { formatGap, GapTracker } from './timing.ts';
 import { TimingTower, type TowerRow } from '../ui/timingTower.ts';
 import { scoreFor, type RunResult } from './records.ts';
@@ -162,6 +164,10 @@ export class RaceScreen implements Screen {
   private nextTyres: Compound = 'medium';
   /** The weather the racing line was built for. */
   private lineWet = false;
+  /** The weather this run (changing weather: the road gets wet and dries), the time of day, and whether it's raining (for the messages). */
+  private weather = new Weather('dry', Infinity);
+  private timeOfDay: TimeOfDay = 'day';
+  private raining = false;
   /** The timing tower, the gaps it shows, and when it's next refreshed (s). */
   private readonly tower = new TimingTower();
   private gaps: GapTracker | null = null;
@@ -301,10 +307,13 @@ export class RaceScreen implements Screen {
     const setup = this.game.setup;
     const t = this.game.track;
     const v = this.game.view3d;
+    // (Changing weather starts dry: see updateWeather().)
     this.wet = setup.weather === 'rain';
+    this.raining = this.wet;
+    this.timeOfDay = timeFor(setup, t.options.time);
     audio.setRain(this.wet);
     if (!v) return;
-    v.setConditions({ time: timeFor(setup, t.options.time), rain: this.wet });
+    v.setConditions({ time: this.timeOfDay, rain: this.wet });
     // (A real light costs on slow GPUs: with fast graphics only the lamps glow.)
     for (const m of [this.model, ...this.aiModels]) m?.setLights(v.night, settings().graphics === 'full');
     if (setup.tyreWear && this.pitMeshTrack !== t) {
@@ -402,6 +411,7 @@ export class RaceScreen implements Screen {
     this.session = practice
       ? new RaceSession(t.center.length, rec.best, Infinity, t.center.width, 0)
       : new RaceSession(t.center.length, rec.best, setup.laps, t.center.width);
+    this.weather = new Weather(setup.weather, practice ? Infinity : setup.laps * trackLapTime(t));
     this.startOpponents(practice ? [YOU] : order);
     if (this.opponents.length) {
       const g = gridPlace(t, order.indexOf(YOU));
@@ -439,7 +449,8 @@ export class RaceScreen implements Screen {
     this.session = new RaceSession(t.center.length, rec.best, AI.qualifyingLaps, t.center.width, 0);
     car.placeAt(-8);
     this.playerStart = -8;
-    // Qualifying is on new tyres (no wear), in the weather of the race.
+    // Qualifying is on new tyres (no wear), in the weather of the race's start.
+    this.weather = new Weather(setup.weather === 'rain' ? 'rain' : 'dry', Infinity);
     this.prepareCar(car, false);
     this.gaps = null;
     this.tower.hide();
@@ -620,6 +631,7 @@ export class RaceScreen implements Screen {
       car.draft = carriedTow(car.draft, this.drafts[0], dt);
       this.opponents.forEach((o, k) => (o.ai.car.draft = carriedTow(o.ai.car.draft, this.drafts[k + 1], dt)));
     } else car.draft = 0;
+    if (session.phase === 'racing' && this.weather.kind === 'changing') this.updateWeather(car.dt);
     const assists = settings().assists;
     car.gearbox = assists.gears;
     let inp = session.phase === 'racing' ? this.input.sample(this.tickInput) : session.phase === 'finished' ? BRAKE : NO_INPUT;
@@ -664,6 +676,45 @@ export class RaceScreen implements Screen {
     }
   }
 
+  /**
+   * Changing weather: moves it on, and sets how wet the road is under each car
+   * (the racing line dries first, so a car off it is on a wetter road).
+   */
+  private updateWeather(dt: number): void {
+    const w = this.weather;
+    w.step(dt);
+    const line = assistDriver(this.game.track);
+    const wetAt = (st: CarState) => w.wetnessAt(st.lateral - line.lateralAt(st.s));
+    if (this.car) this.car.wetness = wetAt(this.car.state);
+    for (const o of this.opponents) o.ai.car.wetness = wetAt(o.ai.car.state);
+    this.wet = w.lineWet >= 0.5;
+    const raining = w.rain > 0.3;
+    if (raining !== this.raining) {
+      this.raining = raining;
+      this.hud.flash(raining ? STR.weather.started : STR.weather.stopped, 'info', 2.5);
+    }
+  }
+
+  /** The weather on screen and in the speakers, and the HUD's weather line (changing weather only). */
+  private showWeather(v: NonNullable<GameContext['view3d']>): void {
+    const w = this.weather;
+    if (w.kind !== 'changing') {
+      this.hud.setWeather(null);
+      return;
+    }
+    const q = (x: number) => Math.round(x * 20) / 20;
+    v.setConditions({ time: this.timeOfDay, rain: q(w.rain), wet: q((w.lineWet + w.offWet) / 2) });
+    audio.setRain(w.rain);
+    const W = STR.weather;
+    const now = w.rain > 0.6 ? W.rain : w.rain > 0.05 ? W.light : W.dry;
+    const pct = (x: number) => Math.round(x * 100);
+    let text = `${now} · ${fmt(W.track, { n: pct(w.offWet) })}`;
+    if (Math.abs(w.lineWet - w.offWet) > 0.08) text += ` · ${fmt(W.line, { n: pct(w.lineWet) })}`;
+    const f = w.forecast();
+    if (f) text += `\n${fmt(f.to === 'rain' ? W.rainIn : W.dryIn, { s: Math.max(5, Math.round(f.in / 5) * 5) })}`;
+    this.hud.setWeather(text);
+  }
+
   /** The player's pit stop (stopped in the box: new tyres), and warnings as the tyres wear. */
   private pitTick(car: CarPhysics): void {
     const ev = this.crew?.step(car, car.dt, this.nextTyres);
@@ -671,7 +722,7 @@ export class RaceScreen implements Screen {
       // The same kind again unless you pick another (1–4, or a tap) while the crew works.
       this.nextTyres = car.compound;
       this.hud.showTyrePicker({
-        choices: TYRES.order.map((c) => ({ compound: c, laps: compoundLife(c, car.wet, car.mediumLife) })),
+        choices: TYRES.order.map((c) => ({ compound: c, laps: compoundLife(c, car.wetness, car.mediumLife) })),
         selected: this.nextTyres,
         pick: (c) => this.pickTyres(c),
       });
@@ -1044,6 +1095,7 @@ export class RaceScreen implements Screen {
     this.touch.setManualGears(assists.gears === 'manual');
     this.updateLine(assists.line);
     this.hud.setSlipstream(car.draft, SLIPSTREAM.show);
+    this.showWeather(v);
     this.towerIn -= dt;
     if (this.towerIn <= 0) {
       this.towerIn = 0.25;

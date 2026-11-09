@@ -260,7 +260,9 @@ export const STR = {
     weather: 'Weather',
     dry: 'Dry',
     rain: 'Rain',
+    changing: 'Changing',
     weatherHint: 'Rain: less grip and longer braking for every car. Brake earlier and go easy on the throttle out of corners.',
+    changingHint: 'It starts dry; rain comes during the race, and may stop again. The road dries on the racing line first. With tyre wear on, pit for wets or slicks at the right moment: the AI cars make their own calls.',
     time: 'Time of day',
     times: { track: 'Track', day: 'Day', sunset: 'Sunset', night: 'Night' },
     timeHint: 'The track’s own is {time}. At night it’s floodlights and headlights.',
@@ -279,6 +281,7 @@ export const STR = {
     /** One-line summary in the race setup: "Rain · night · tyre wear". */
     summaryDry: 'Dry',
     summaryRain: 'Rain',
+    summaryChanging: 'Changing weather',
     summaryTimes: { day: 'day', sunset: 'sunset', night: 'night' },
     summaryWear: 'tyre wear & pit stops',
     summaryWearOn: 'tyre wear, {tyres} tyres',
@@ -318,6 +321,19 @@ export const STR = {
       balanced: 'balanced',
       rear: 'rear-biased',
     },
+  },
+
+  /** The weather on the HUD with changing weather (race/weather.ts). */
+  weather: {
+    dry: '☀ Dry',
+    light: '🌦 Light rain',
+    rain: '🌧 Rain',
+    track: 'track {n}% wet',
+    line: 'line {n}%',
+    rainIn: 'Rain in ~{s} s',
+    dryIn: 'Rain easing in ~{s} s',
+    started: 'Rain is starting to fall',
+    stopped: 'The rain has stopped: the line will dry first',
   },
 
   /** The timing tower in a race (ui/timingTower.ts). */

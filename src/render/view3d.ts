@@ -38,7 +38,9 @@ import { makeAsphaltTexture, makeAtlasTexture, makeGroundTexture } from './textu
 /** What a run is driven in, when it isn't the track's own time of day in the dry. */
 export interface ViewConditions {
   time: TimeOfDay;
-  rain: boolean;
+  /** How hard it's raining (true: full rain), and how wet the road looks (0..1; the rain's by default). */
+  rain: boolean | number;
+  wet?: number;
 }
 
 const GROUND_SIZE = 2800;
@@ -70,7 +72,7 @@ export class View3D {
   private conditions: ViewConditions | null = null;
   /** The time of day and weather shown now. */
   private shownTime: TimeOfDay = 'day';
-  private shownRain = false;
+  private shownRain = 0;
   private lastRender = 0;
   private readonly maxAniso: number;
   private readonly mats: {
@@ -128,7 +130,7 @@ export class View3D {
     this.hills = this.buildHills();
     this.stars = this.buildStars();
     this.scene.add(this.sky, this.ground, this.hills, this.stars, this.rain.mesh);
-    this.applyTheme('meadow', 'day', false);
+    this.applyTheme('meadow', 'day', 0, 0);
   }
 
   /** A few hundred stars on the upper sky (shown on clear nights). */
@@ -237,7 +239,7 @@ export class View3D {
     this.quality = q;
     this.renderer.setPixelRatio(q === 'fast' ? 1 : Math.min(2, window.devicePixelRatio || 1));
     this.applyFog();
-    this.rain.configure(q, this.shownTime === 'night');
+    this.rain.configure(q, this.shownTime === 'night', this.shownRain);
     this.camera.far = q === 'fast' ? 1100 : 2400;
     this.camera.updateProjectionMatrix();
     const size = this.renderer.getSize(new Vector2());
@@ -253,10 +255,10 @@ export class View3D {
       near = 80;
       far = fast ? 650 : 800;
     }
-    if (this.shownRain) {
-      near = 20;
-      far = fast ? 330 : 400;
-    }
+    // The rain closes in the distance as it gets heavier.
+    const r = this.shownRain;
+    near += (20 - near) * r;
+    far += ((fast ? 330 : 400) - far) * r;
     this.fog.near = near;
     this.fog.far = far;
   }
@@ -269,7 +271,8 @@ export class View3D {
   setConditions(c: ViewConditions | null): void {
     this.conditions = c;
     const t = this.currentTrack;
-    this.applyTheme(t?.options.theme ?? 'meadow', c?.time ?? t?.options.time ?? 'day', c?.rain ?? false);
+    const rain = Number(c?.rain ?? 0);
+    this.applyTheme(t?.options.theme ?? 'meadow', c?.time ?? t?.options.time ?? 'day', rain, c?.wet ?? rain);
   }
 
   /** It's night (cars need their lights). */
@@ -277,9 +280,12 @@ export class View3D {
     return this.shownTime === 'night';
   }
 
-  /** Recolours sky, fog, light, hills, ground and road for a theme at a time of day, dry or in the rain. */
-  private applyTheme(id: ThemeId, time: TimeOfDay, rain: boolean): void {
-    const key = `${id}/${time}/${rain}`;
+  /**
+   * Recolours sky, fog, light, hills, ground and road for a theme at a time
+   * of day, in `rain` (0 dry … 1 full rain) on a road `wet` wet (0..1).
+   */
+  private applyTheme(id: ThemeId, time: TimeOfDay, rain: number, wet: number): void {
+    const key = `${id}/${time}/${rain.toFixed(2)}/${wet.toFixed(2)}`;
     if (this.theme === key) return;
     this.theme = key;
     this.shownTime = time;
@@ -333,16 +339,16 @@ export class View3D {
       near = new Color(th.hills[0]);
       far = new Color(th.hills[1]);
     }
-    if (rain) {
+    if (rain > 0) {
       // Low grey cloud: a flat grey sky, the sun hidden, the distance lost in the murk.
       const grey = new Color(night ? 0x161a24 : dusk ? 0x8a7f86 : 0xa3abb6);
-      top.lerp(grey, 0.8).multiplyScalar(night ? 1 : 0.88);
-      hor.lerp(grey, 0.8);
-      fog = hor.clone();
-      hemiSky.lerp(new Color(night ? 0x3c4458 : 0xc2c8d2), 0.6);
-      sunIntensity *= 0.3;
-      near.lerp(fog, 0.5);
-      far.lerp(fog, 0.7);
+      top.lerp(grey, 0.8 * rain).multiplyScalar(night ? 1 : 1 - 0.12 * rain);
+      hor.lerp(grey, 0.8 * rain);
+      fog.lerp(hor, rain);
+      hemiSky.lerp(new Color(night ? 0x3c4458 : 0xc2c8d2), 0.6 * rain);
+      sunIntensity *= 1 - 0.7 * rain;
+      near.lerp(fog, 0.5 * rain);
+      far.lerp(fog, 0.7 * rain);
     }
     this.scene.background = hor;
     this.fog.color.copy(fog);
@@ -361,7 +367,7 @@ export class View3D {
       sc.setXYZ(i, c.r, c.g, c.b);
     }
     sc.needsUpdate = true;
-    this.stars.visible = night && !rain;
+    this.stars.visible = night && rain < 0.2;
 
     const hc = this.hills.geometry.getAttribute('color');
     for (let i = 0; i < hc.count; i++) {
@@ -383,18 +389,19 @@ export class View3D {
     // A wet road is darker; at night the floodlights light the track (its own texture, lit
     // evenly however dark the sky).
     const M = this.mats;
-    M.road.color.setHex(rain ? 0x7f858f : 0xffffff);
-    M.deck.color.setHex(rain ? 0x7f858f : 0xffffff);
-    M.runoffTarmac.color.setHex(rain ? 0x8e939c : 0xb9bec8);
+    const wetLook = (dry: number, soaked: number) => new Color(dry).lerp(new Color(soaked), wet);
+    M.road.color.copy(wetLook(0xffffff, 0x7f858f));
+    M.deck.color.copy(wetLook(0xffffff, 0x7f858f));
+    M.runoffTarmac.color.copy(wetLook(0xb9bec8, 0x8e939c));
     for (const m of [M.road, M.deck, M.runoffTarmac, M.gravel]) {
       m.emissiveMap = night ? m.map : null;
-      m.emissive.setHex(night ? (rain ? 0x202329 : 0x2a2d33) : 0x000000);
+      m.emissive.copy(night ? wetLook(0x2a2d33, 0x202329) : new Color(0x000000));
       m.needsUpdate = true;
     }
     M.kerb.emissive.setHex(night ? 0x26262b : 0x000000);
     M.wall.emissive.setHex(night ? 0x1a1b20 : 0x000000);
-    this.rain.show(rain);
-    this.rain.configure(this.quality, night);
+    this.rain.show(rain > 0.02);
+    this.rain.configure(this.quality, night, rain);
     this.applyFog();
   }
 
@@ -444,7 +451,8 @@ export class View3D {
     this.clearTrack();
     this.currentTrack = track;
     const c = this.conditions;
-    this.applyTheme(track.options.theme, c?.time ?? track.options.time, c?.rain ?? false);
+    const rain = Number(c?.rain ?? 0);
+    this.applyTheme(track.options.theme, c?.time ?? track.options.time, rain, c?.wet ?? rain);
     const surf = surfaceFor(track);
     const group = new Group();
     group.name = 'track';

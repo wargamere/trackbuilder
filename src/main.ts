@@ -83,7 +83,7 @@ class Game implements GameContext {
       difficulty: clamp(Math.round(saved?.difficulty ?? 50), 1, 100),
       grid: saved?.grid === 'qualifying' || saved?.grid === 'random' ? saved.grid : 'pick',
       startSlot: clamp(Math.round(saved?.startSlot ?? 99), 1, AI.maxOpponents + 1),
-      weather: saved?.weather === 'rain' ? 'rain' : 'dry',
+      weather: saved?.weather === 'rain' || saved?.weather === 'changing' ? saved.weather : 'dry',
       time: saved?.time === 'day' || saved?.time === 'sunset' || saved?.time === 'night' ? saved.time : 'track',
       tyreWear: saved?.tyreWear === true,
       tyres: saved?.tyres === 'soft' || saved?.tyres === 'hard' || saved?.tyres === 'wet' ? saved.tyres : 'medium',

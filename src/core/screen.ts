@@ -12,8 +12,8 @@ export type ScreenId = 'menu' | 'setup' | 'race' | 'editor' | 'results' | 'libra
 /** How the race screen runs: free practice laps, or a timed race with a countdown and results. */
 export type DriveMode = 'practice' | 'race';
 
-/** The weather for a run: dry, or rain (less grip and weaker brakes, for everyone). */
-export type Weather = 'dry' | 'rain';
+/** The weather for a run: dry, rain (less grip and weaker brakes, for everyone), or changing (rain comes and goes; see race/weather.ts). */
+export type Weather = 'dry' | 'rain' | 'changing';
 
 /** What the race setup menu chooses for the next run. */
 export interface RaceSetup {

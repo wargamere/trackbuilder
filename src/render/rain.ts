@@ -41,9 +41,9 @@ export class RainEffect {
     this.mesh.visible = false;
   }
 
-  /** Fewer drops with fast graphics; dimmer at night. */
-  configure(quality: 'full' | 'fast', night: boolean): void {
-    this.count = quality === 'fast' ? DROPS_FAST : DROPS_FULL;
+  /** Fewer drops with fast graphics or lighter rain (`amount` 0..1); dimmer at night. */
+  configure(quality: 'full' | 'fast', night: boolean, amount = 1): void {
+    this.count = Math.round((quality === 'fast' ? DROPS_FAST : DROPS_FULL) * Math.min(1, Math.max(0, amount)));
     this.mesh.geometry.setDrawRange(0, this.count * 2);
     this.material.color.setHex(night ? 0x8c97ad : 0xcdd6e4);
     this.material.opacity = night ? 0.4 : 0.5;

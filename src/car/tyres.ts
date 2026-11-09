@@ -13,22 +13,27 @@ export function tyreCurve(x: number): number {
   return 1 - T.fadeLoss - (1 - T.fadeLoss - T.deadGrip) * k;
 }
 
-/** Grip of a new set of `c` (a share of the road's), in the rain or the dry. */
-export function compoundGrip(c: Compound, wet: boolean): number {
+const lerp = (a: number, b: number, t: number) => a + (b - a) * Math.min(1, Math.max(0, t));
+
+/** Grip of a new set of `c` (a share of the road's) on a road `wetness` wet (0 dry … 1 soaked). */
+export function compoundGrip(c: Compound, wetness: number): number {
   const t = TYRES.compounds[c];
-  return wet ? t.rainGrip : t.grip;
+  return lerp(t.grip, t.rainGrip, wetness);
 }
 
-/** How much of the brakes' bite `c` gives (all of it in the dry). */
-export function compoundBrake(c: Compound, wet: boolean): number {
-  return wet ? TYRES.compounds[c].rainBrake : 1;
+/** How much of the brakes' bite `c` gives on a road `wetness` wet (all of it in the dry). */
+export function compoundBrake(c: Compound, wetness: number): number {
+  return lerp(1, TYRES.compounds[c].rainBrake, wetness);
 }
 
-/** Laps a set of `c` lasts before it goes off, where mediums last `mediumLife` laps (in the dry). */
-export function compoundLife(c: Compound, wet: boolean, mediumLife: number): number {
+/** Laps a set of `c` lasts before it goes off on a road `wetness` wet, where mediums last `mediumLife` laps in the dry. */
+export function compoundLife(c: Compound, wetness: number, mediumLife: number): number {
   const t = TYRES.compounds[c];
-  return mediumLife * (wet ? t.rainLife : t.life);
+  return mediumLife * lerp(t.life, t.rainLife, wetness);
 }
 
-/** With tyre wear off every car is on a standard set: medium's grip, and the rain's. */
-export const standardGrip = (wet: boolean): number => (wet ? CONDITIONS.rainGrip : 1);
+/** With tyre wear off every car is on a standard set: medium's grip, and the rain's on a wet road. */
+export const standardGrip = (wetness: number): number => lerp(1, CONDITIONS.rainGrip, wetness);
+
+/** …and the standard set's brakes. */
+export const standardBrake = (wetness: number): number => lerp(1, CONDITIONS.rainBrake, wetness);

@@ -51,6 +51,7 @@ export class Hud {
   private readonly tyreChip: HTMLElement;
   private readonly tyreFill: HTMLElement;
   private readonly picker: HTMLElement;
+  private readonly weather: HTMLElement;
   private readonly pickerButtons = new Map<Compound, HTMLButtonElement>();
   private readonly tyreValue: HTMLElement;
   private lastTyres = '';
@@ -100,6 +101,8 @@ export class Hud {
     this.picker.setAttribute('role', 'group');
     this.picker.setAttribute('aria-label', STR.race.pitPick);
     this.picker.hidden = true;
+    this.weather = h('div', { class: 'hud-weather' });
+    this.weather.hidden = true;
     const speed = h(
       'div',
       { class: 'hud-speed' },
@@ -111,7 +114,7 @@ export class Hud {
     this.draft = h('div', { class: 'hud-draft', text: STR.race.slipstream });
     this.hint = h('div', { class: 'hud-hint' });
     this.debug = h('div', { class: 'hud-debug' });
-    this.root = h('div', { class: 'screen hud' }, top, timer, this.minimap.root, this.center, speed, this.draft, this.picker, this.hint, this.debug);
+    this.root = h('div', { class: 'screen hud' }, top, timer, this.minimap.root, this.center, speed, this.draft, this.weather, this.picker, this.hint, this.debug);
   }
 
   /** Medal targets under the timer; the ones your best lap has won are lit. */
@@ -236,6 +239,12 @@ export class Hud {
     });
     this.picker.replaceChildren(h('span', { class: 'tyre-picker-title', text: STR.race.pitPick }), ...buttons);
     this.setTyrePick(opts.selected);
+  }
+
+  /** The weather line under the minimap (changing weather), or null to hide it. */
+  setWeather(text: string | null): void {
+    this.weather.hidden = !text;
+    if (text && this.weather.textContent !== text) this.weather.textContent = text;
   }
 
   /** Marks the tyres chosen in the pit stop. */

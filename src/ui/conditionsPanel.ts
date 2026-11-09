@@ -17,13 +17,15 @@ export function timeFor(c: Pick<RaceSetup, 'time'>, trackTime: TimeOfDay): TimeO
 export function conditionsSummary(c: Conditions, trackTime: TimeOfDay): string {
   const C = STR.conditions;
   const wear = c.tyreWear ? fmt(C.summaryWearOn, { tyres: STR.tyres.lower[c.tyres] }) : C.summaryNoWear;
-  return [c.weather === 'rain' ? C.summaryRain : C.summaryDry, C.summaryTimes[timeFor(c, trackTime)], wear].join(' · ');
+  const weather = c.weather === 'rain' ? C.summaryRain : c.weather === 'changing' ? C.summaryChanging : C.summaryDry;
+  return [weather, C.summaryTimes[timeFor(c, trackTime)], wear].join(' · ');
 }
 
 /** Changing the weather puts on the tyres for it: wets in the rain, mediums (from wets) in the dry. */
 export function withWeather(c: Conditions, weather: Conditions['weather']): Partial<Conditions> {
   if (weather === 'rain' && c.tyres !== 'wet') return { weather, tyres: 'wet' };
-  if (weather === 'dry' && c.tyres === 'wet') return { weather, tyres: 'medium' };
+  // (Changing weather starts dry.)
+  if (weather !== 'rain' && c.tyres === 'wet') return { weather, tyres: 'medium' };
   return { weather };
 }
 
@@ -44,6 +46,7 @@ export class ConditionsPanel {
   private readonly startHint: HTMLElement;
   private readonly lifeLine: HTMLElement;
   private readonly timeHint: HTMLElement;
+  private readonly weatherHint: HTMLElement;
   private get: () => Conditions = () => ({ weather: 'dry', time: 'track', tyreWear: false, tyres: 'medium' });
   private trackTime: TimeOfDay = 'day';
   private mediumLife = 5;
@@ -60,6 +63,7 @@ export class ConditionsPanel {
       [
         ['dry', C.dry, '☀'],
         ['rain', C.rain, '🌧'],
+        ['changing', C.changing, '🌦'],
       ],
       (v) => set(withWeather(this.get(), v)),
     );
@@ -94,6 +98,7 @@ export class ConditionsPanel {
       return h('div', { class: 'field' }, h('span', { class: 'label', text: label }), control, typeof hint === 'string' ? h('p', { class: 'setup-hint', text: hint }) : hint);
     };
     this.timeHint = h('p', { class: 'setup-hint' });
+    this.weatherHint = h('p', { class: 'setup-hint' });
     this.startHint = h('p', { class: 'setup-hint' });
     this.lifeLine = h('p', { class: 'setup-hint tyre-life' });
     this.startField = field(C.startTyres, this.start.el, h('div', {}, this.startHint, this.lifeLine));
@@ -102,7 +107,7 @@ export class ConditionsPanel {
       { class: 'panel assists-panel conditions-panel' },
       h('h2', { text: C.title }),
       h('p', { class: 'assists-intro', text: C.intro }),
-      field(C.weather, this.weather.el, C.weatherHint),
+      field(C.weather, this.weather.el, this.weatherHint),
       field(C.time, this.time.el, this.timeHint),
       field(C.tyres, this.tyres.el, fmt(C.tyresHint, { s: CONDITIONS.service })),
       this.startField,
@@ -153,8 +158,9 @@ export class ConditionsPanel {
     this.start.set(c.tyres);
     this.startField.hidden = !c.tyreWear;
     this.startHint.textContent = STR.tyres.hints[c.tyres];
+    this.weatherHint.textContent = c.weather === 'changing' ? STR.conditions.changingHint : STR.conditions.weatherHint;
     const wet = c.weather === 'rain';
-    const list = TYRES.order.map((k) => fmt(STR.conditions.lifeItem, { name: STR.tyres.names[k], n: compoundLife(k, wet, this.mediumLife).toFixed(1) })).join(' · ');
+    const list = TYRES.order.map((k) => fmt(STR.conditions.lifeItem, { name: STR.tyres.names[k], n: compoundLife(k, wet ? 1 : 0, this.mediumLife).toFixed(1) })).join(' · ');
     this.lifeLine.textContent = fmt(STR.conditions.lifeLine, { weather: wet ? STR.conditions.lifeRain : STR.conditions.lifeDry, list });
     this.timeHint.textContent = fmt(STR.conditions.timeHint, { time: STR.conditions.summaryTimes[this.trackTime] });
   }
