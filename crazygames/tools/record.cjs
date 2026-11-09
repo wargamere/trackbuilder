@@ -11,6 +11,7 @@ const fs = require('fs');
   const b = await chromium.launch(process.env.PW_CHROMIUM ? { executablePath: process.env.PW_CHROMIUM } : {});
   const ctx = await b.newContext({ viewport: { width: W, height: H }, deviceScaleFactor: 1 });
   const p = await ctx.newPage();
+  p.setDefaultTimeout(300000);
   const errs = [];
   p.on('pageerror', (e) => errs.push(e.message));
   await p.addInitScript(() => {
