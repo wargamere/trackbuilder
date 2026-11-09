@@ -1,8 +1,9 @@
 import { BufferGeometry, Color, Float32BufferAttribute, Uint32BufferAttribute, Vector3 } from 'three';
 import { THEMES } from '../config/themes.ts';
-import { TRACK } from '../config/track.ts';
+import { OPTION_CHOICES, TRACK } from '../config/track.ts';
 import { wrap } from '../core/math.ts';
 import { QuadBuilder } from '../render/geom.ts';
+import { runoffLayout } from './extras.ts';
 import { kerbAt, kerbLayout } from './kerbs.ts';
 import { pitLayout } from './pits.ts';
 import { edgeOffsets, leftOf, sampleAt, surfaceY, type Centerline } from './spline.ts';
@@ -237,9 +238,11 @@ export function buildWallGeometry(track: Track, surf: TrackSurface): BufferGeome
   const kerbs = kerbLayout(track);
   // The skirt takes the colour of the ground, so where it shows it looks like the bank of earth.
   const skirt = new Color(THEMES[track.options.theme].ground.base).multiplyScalar(0.72).getHex();
+  const lay = runoffLayout(track);
   const outerEdge = (i: number, side: 1 | -1) => {
     const e = side === 1 ? left[i] : right[i];
-    if (track.options.runoff !== 'grass') {
+    // (Grass is run-off index 0: the ground itself.)
+    if ((side === 1 ? lay.left : lay.right)[i] !== 0) {
       const k = Math.abs(c.curvature[i]);
       const inside = (c.curvature[i] > 0 && side === -1) || (c.curvature[i] < 0 && side === 1);
       return inside ? Math.max(e, Math.min(c.wallOffset + 0.4, 0.9 / Math.max(1e-6, k))) : c.wallOffset + 0.4;
@@ -278,8 +281,11 @@ export function buildWallGeometry(track: Track, surf: TrackSurface): BufferGeome
  * and without writing depth. Skipped on bridge decks, which have their own
  * concrete shoulders. UVs are in world metres / 4.
  */
-export function buildRunoffGeometry(track: Track, surf: TrackSurface): BufferGeometry | null {
-  if (track.options.runoff === 'grass') return null;
+export function buildRunoffGeometry(track: Track, surf: TrackSurface, kind: 'gravel' | 'tarmac' = track.options.runoff === 'gravel' ? 'gravel' : 'tarmac'): BufferGeometry | null {
+  // Which stretches have this run-off (it can be painted, or set per corner).
+  const lay = runoffLayout(track);
+  const want = (OPTION_CHOICES.runoff as readonly string[]).indexOf(kind);
+  if (!lay.left.includes(want) && !lay.right.includes(want)) return null;
   const c = track.center;
   const n = c.points.length;
   const { left, right } = edgeOffsets(c);
@@ -305,8 +311,10 @@ export function buildRunoffGeometry(track: Track, surf: TrackSurface): BufferGeo
         uv.push(x / 4, z / 4);
       }
     }
+    const has = side === 1 ? lay.left : lay.right;
     for (let r = 0; r < n; r++) {
       if (surf.deck[r] || surf.deck[(r + 1) % n]) continue;
+      if (has[r] !== want) continue;
       const a = base + r * 2;
       // Winding so the face points up on either side.
       if (side === 1) idx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3);

@@ -12,6 +12,7 @@ import {
   Matrix4,
   Mesh,
   Object3D,
+  Quaternion,
   Vector3,
 } from 'three';
 import { THEMES, type PropKind } from '../config/themes.ts';
@@ -19,6 +20,7 @@ import { merge, tint } from '../render/geom.ts';
 import { ATLAS } from '../render/textures.ts';
 import { ROAD_Y } from './mesh.ts';
 import { placeCones, placeTrees } from './placement.ts';
+import { BRAKE_BOARDS, clumpTrees, PLACED_SPEC, placedOn, type Placed, type PlacedKind } from './extras.ts';
 import { leftOf, type Centerline } from './spline.ts';
 import { surfaceFor, terrainHeight, type Terrain } from './surface.ts';
 import type { Track } from './track.ts';
@@ -237,6 +239,93 @@ function buildStartAtlasMesh(frame: Matrix4, mat: Material, width: number): Mesh
   return new Mesh(geo, mat);
 }
 
+// ------------------------------------------------------------ placed by hand
+
+const SEAT_COLOURS = [0x2f6fd8, 0xd8342c, 0xf2b705, 0x2fa35a] as const;
+const BILLBOARD_COLOURS = [0xf2b705, 0x2f6fd8, 0xd8342c, 0x18a9b8] as const;
+
+const box = (w: number, h: number, d: number, x: number, y: number, z: number, hex: number) => tint(new BoxGeometry(w, h, d).translate(x, y + h / 2, z), hex);
+
+/**
+ * One placed thing in its own frame: x along its length, y up from the ground,
+ * z towards its front (the side that faces the road). `seed` varies colours.
+ */
+function placedParts(kind: Exclude<PlacedKind, 'trees'>, seed: number): BufferGeometry[] {
+  const s = PLACED_SPEC[kind];
+  const plinth = box(s.w, 3, s.d, 0, -3, 0, 0x9ea2aa);
+  switch (kind) {
+    case 'grandstand': {
+      // Tiers rising away from the road, a back wall, and a roof on posts.
+      const parts = [plinth];
+      for (let t = 0; t < 5; t++) parts.push(box(s.w, 1 + t * 1.3, 1.9, 0, 0, s.d / 2 - 1 - t * 1.9, t % 2 ? 0xf2f2ee : SEAT_COLOURS[seed % SEAT_COLOURS.length]));
+      parts.push(box(s.w, 8, 0.4, 0, 0, -s.d / 2 + 0.2, 0xc9ccd2));
+      for (const x of [-s.w / 2 + 0.3, 0, s.w / 2 - 0.3]) parts.push(box(0.3, 8.6, 0.3, x, 0, s.d / 2 - 0.4, 0x8f969f));
+      parts.push(box(s.w + 1, 0.35, s.d + 1, 0, 8.6, 0, 0xf6f6f4));
+      return parts;
+    }
+    case 'garages': {
+      const parts = [plinth, box(s.w, s.h, s.d, 0, 0, 0, 0xe9ebef), box(s.w + 0.6, 0.4, s.d + 2, 0, s.h, 0.6, 0xf6f6f4)];
+      const doors = 5;
+      for (let k = 0; k < doors; k++) {
+        const x = ((k + 0.5) / doors - 0.5) * s.w;
+        parts.push(box(s.w / doors - 1.2, 3.2, 0.12, x, 0, s.d / 2 + 0.05, 0x22262e));
+        parts.push(box(s.w / doors - 1.2, 0.7, 0.12, x, 3.6, s.d / 2 + 0.05, SEAT_COLOURS[(k + seed) % SEAT_COLOURS.length]));
+      }
+      return parts;
+    }
+    case 'tower':
+      return [plinth, box(4.5, 17, 4.5, 0, 0, 0, 0xd5d8de), box(s.w, 4, s.d, 0, 17, 0, 0x45627f), box(s.w + 0.6, 0.5, s.d + 0.6, 0, 21, 0, 0xf6f6f4), box(0.15, 3, 0.15, 0, 21.5, 0, 0x5b6067)];
+    case 'building':
+      return [plinth, building(s.w, 6, 0xc9ccd2, 0x45627f, 0x9aa0a8)];
+    case 'billboard':
+      return [
+        box(0.3, 6.5, 0.3, -4.5, -0.5, 0, 0x5b6067),
+        box(0.3, 6.5, 0.3, 4.5, -0.5, 0, 0x5b6067),
+        box(s.w, 3.4, 0.25, 0, 3, 0, 0xf2f2ee),
+        box(s.w * 0.62, 2.4, 0.06, -s.w * 0.17, 3.5, 0.15, BILLBOARD_COLOURS[seed % BILLBOARD_COLOURS.length]),
+        box(s.w * 0.26, 2.4, 0.06, s.w * 0.33, 3.5, 0.15, BILLBOARD_COLOURS[(seed + 1) % BILLBOARD_COLOURS.length]),
+      ];
+    case 'brakeboards': {
+      // 300, 200, 100: three, two and one black bars on white boards, facing the cars coming
+      // (they run along the road, which goes towards +x).
+      const parts: BufferGeometry[] = [];
+      BRAKE_BOARDS.forEach((x, k) => {
+        parts.push(box(0.15, 1.6, 0.15, x, -0.3, 0, 0x5b6067), box(0.12, 1.1, 1.3, x, 1.3, 0, 0xf6f6f4));
+        const bars = 3 - k;
+        for (let b = 0; b < bars; b++) parts.push(box(0.04, 0.8, 0.16, x - 0.08, 1.45, (b - (bars - 1) / 2) * 0.32, 0x1d1f23));
+      });
+      return parts;
+    }
+    case 'bump':
+      // A yellow sausage lying along the road.
+      return [tint(new CylinderGeometry(0.3, 0.3, s.w, 10, 1, false, 0, Math.PI).rotateZ(Math.PI / 2).scale(1, s.h / 0.3, 1), 0xf2c200)];
+  }
+}
+
+/** Everything placed by hand around the track (that's clear of the road), as one vertex-coloured mesh. */
+function buildPlaced(track: Track, mat: Material, terrain: Terrain): Mesh | null {
+  const list = placedOn(track);
+  if (!list.length) return null;
+  const parts: BufferGeometry[] = [];
+  const kinds = THEMES[track.options.theme].props;
+  const m = new Matrix4();
+  list.forEach((p: Placed, i) => {
+    if (p.kind === 'trees') {
+      for (const t of clumpTrees(p)) {
+        m.compose(new Vector3(t.x, terrainHeight(terrain, t.x, t.y) - 0.1, t.y), new Quaternion().setFromAxisAngle(UP, t.x * 7.3), new Vector3(t.scale, t.scale, t.scale));
+        parts.push(propGeometry(kinds[t.kind]).clone().applyMatrix4(m));
+      }
+      return;
+    }
+    const y = terrainHeight(terrain, p.x, p.y) + (p.kind === 'bump' ? 0.01 : 0);
+    m.compose(new Vector3(p.x, y, p.y), new Quaternion().setFromAxisAngle(UP, -p.rot), new Vector3(1, 1, 1));
+    for (const g of placedParts(p.kind, i)) parts.push(g.applyMatrix4(m));
+  });
+  return parts.length ? new Mesh(merge(parts), mat) : null;
+}
+
+const UP = new Vector3(0, 1, 0);
+
 /** Everything placed around one track. Dispose it when the track changes. */
 export function buildScenery(track: Track, mats: SceneryMaterials): { group: Group; dispose(): void } {
   const group = new Group();
@@ -254,6 +343,11 @@ export function buildScenery(track: Track, mats: SceneryMaterials): { group: Gro
   const cones = buildCones(track, mats.prop, terrain);
   if (cones) instanced.push(cones);
   for (const m of instanced) group.add(m);
+  const placed = buildPlaced(track, mats.prop, terrain);
+  if (placed) {
+    owned.push(placed.geometry);
+    group.add(placed);
+  }
 
   return {
     group,

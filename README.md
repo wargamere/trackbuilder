@@ -142,10 +142,10 @@ A track is a closed loop of **dots** with a smooth spline through them (`TrackDe
 |---|---|
 | 1 Draw | **Pick a track** to edit (your saved ones, the game's, the real circuits, or paste a code), how you draw (Freehand / Dots), **generate one** (Grand Prix / Flowing / Technical / Street / Oval / Kart), Surprise me, a blank page, **trace an image**, smoothing, snap, soft editing, the starters and samples, and precise point controls |
 | 2 Size & shape | **Track length** slider, road width slider (8–20 m, with 10 / 12 / 15 m shortcuts), **terrain climb** slider (flat to 40 m) and flat / rolling / hilly presets, smooth heights, **corner smoothing** slider, smaller / bigger / rotate / mirror the whole track |
-| 3 Corners | Banking level for the whole track (off / normal / steep), **banking for every corner at once** (shows Mixed when they differ), ‹ › to step from corner to corner, Flatten all, Back to the level, and a bank slider (0–30°) for every numbered corner, with Auto to go back to the level; tap a corner's number to zoom to it |
+| 3 Corners | Banking level for the whole track (off / normal / steep), **banking for every corner at once** (shows Mixed when they differ), ‹ › to step from corner to corner, Flatten all, Back to the level; the picked corner's **run-off** (Auto / Gravel / Tarmac / Grass) and **bump kerb**; run-off for every corner; bump kerbs **on every chicane** (and remove them); **paint run-off** with a brush (gravel / tarmac / grass / erase, brush size, undo / redo stroke, clear); and a bank slider (0–30°) for every numbered corner, with Auto to go back to the level; tap a corner's number to zoom to it |
 | 4 Start & pits | Laps per race (1 / 3 / 5), pit building on/off, move the start/finish line 10 m back or on, reverse direction |
 | 5 Track edges | Kerbs (raised / flat / painted / none), run-off (grass / gravel / tarmac), barriers (none / concrete / tyres / TecPro / Armco), **barrier distance** (2.8 m to 32.8 m from the road) |
-| 6 Scenery & world | **Ground** (tarmac / dirt / snow), landscape (Countryside / Alpine / Desert / Snow / Forest / City), day / sunset / night, few / normal / lots of trees |
+| 6 Scenery & world | **Ground** (tarmac / dirt / snow), landscape (Countryside / Alpine / Desert / Snow / Forest / City), day / sunset / night, few / normal / lots of trees, **place scenery** by tapping the map (grandstand, pit garages, tower, building, trees, billboard, brake boards) |
 | 7 Display | Graphics full / fast, km/h or mph, minimap in the race, corner numbers on the map, the preview car (player settings, not part of the track) |
 
 **New tools in Draw, Size & shape and Corners.**
@@ -178,6 +178,20 @@ A track is a closed loop of **dots** with a smooth spline through them (`TrackDe
   - **Alpine:** high meadows, pines and grey boulders under tall snowy peaks;
   - **Forest:** trees right up to the barriers;
   - **City:** offices and low blocks square to a street grid, standing well clear of the barriers, with a low skyline on the horizon. Pick the time of day for a city by day or by night.
+
+**Placed scenery, run-off and bump kerbs** (`track/extras.ts`). These go on the track as well as its dots and options, in world metres, so they stay where they were put when the road is reshaped. Anything the road now runs over is shown struck out and left out of the race.
+- **Place scenery:** pick a kind, then tap beside the track.
+  - Each thing faces the road (brake boards run along it, their 3-2-1 boards facing the cars coming) and is moved out just far enough to clear it. Big things go behind the barriers; billboards and brake boards just past the kerbs.
+  - Tap one again to take it away; Esc or Done stops placing.
+  - Cars hit them: they're obstacles in the physics, like the trees.
+- **Run-off per corner:**
+  - The picked corner (‹ › or its row) can have Auto (as the track's run-off), gravel, tarmac or grass beside it; "Run-off, every corner" sets them all.
+  - Under the hood this paints a coarse 4 m grid over the paper, which the **run-off brush** paints too (gravel, tarmac, grass or erase, 2–16 m). Each stroke is one undo step, so Undo / Redo stroke are the usual undo and redo.
+  - The physics, the 3D run-off and the map all read the run-off stretch by stretch from it.
+- **Bump kerbs:**
+  - A yellow sausage just past the inside kerb at a corner's apex (not where the corner's too tight for one), for the picked corner or on every chicane.
+  - Running over one costs about 7 % of your speed and kicks the car sideways. The AI's line never touches them: its lap times on Monza, Baku and Imola are the same with or without.
+- **Saving and sharing:** all of it is saved with the track, in drafts and in track codes (v5 extras: placed things as kind, position and a 1/64-turn rotation; the paint grid run-length coded), and is part of the track's id.
 
 **Fast starts and accessible editing.** Starter cards show the real layout before loading it. Surprise me uses the tested generated-track catalog, with mirrored and reversed variants, and creates an editable copy. Every layout change is undoable. Reshape is the initial tool for an existing track; a new blank page switches to Freehand.
 
@@ -554,7 +568,8 @@ Tested against the real SDK in its `local` mode (localhost): the SDK's own log s
 - [x] Kinds of tyre (soft / medium / hard / wet) with a life that depends on the track (4–6 laps for mediums) and a heavy drop-off once they go; choose them at the start and at each stop; races up to 50 laps
 - [x] Editor: pick any track to edit, six track generators, trace an image, track length / terrain climb / corner smoothing sliders, banking for every corner at once
 - [x] Editor: TecPro and Armco barriers, barrier distance, painted kerbs, dirt and snow roads, Alpine / Forest / City landscapes (track codes v5)
+- [x] Editor: tap-to-place scenery, run-off per corner and painted with a brush, bump kerbs (per corner and on every chicane)
 
 ## Validation for the track editor
 
-`npm test` includes starter/remix validity, every generator style (valid, no crossings, on the paper, reproducible), draft recovery and corruption handling, the former length-limit regression, score migration, Fix it on each kind of problem, the preview car's lap against the gold medal time, and DOM interaction tests for keyboard editing, undo/redo, Fix it, generating, picking and pasting tracks, the shape sliders, banking every corner and narrow layouts. `npm run build` typechecks and packages both web and CrazyGames variants. `.github/workflows/checks.yml` runs these checks on pull requests, then exercises the editor in Chromium and uploads desktop and mobile screenshots (`npm run test:browser`; set `PW_CHROMIUM` to use a Chromium that's already installed).
+`npm test` includes starter/remix validity, every generator style (valid, no crossings, on the paper, reproducible), draft recovery and corruption handling, the former length-limit regression, score migration, Fix it on each kind of problem, the preview car's lap against the gold medal time, and DOM interaction tests for keyboard editing, undo/redo, Fix it, generating, picking and pasting tracks, the shape sliders, banking every corner, placing scenery, corner run-off, bump kerbs and narrow layouts. `npm run build` typechecks and packages both web and CrazyGames variants. `.github/workflows/checks.yml` runs these checks on pull requests, then exercises the editor in Chromium and uploads desktop and mobile screenshots (`npm run test:browser`; set `PW_CHROMIUM` to use a Chromium that's already installed).

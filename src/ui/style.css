@@ -3301,3 +3301,15 @@ html:not([data-screen="race"]) .rotate-prompt { display: none; }
   border-left-width: 2px;
   justify-content: center;
 }
+
+/* The picked corner's own run-off and bump kerb. */
+.picked-corner {
+  border: 2px solid var(--ink);
+  border-radius: 0.7em;
+  padding: 0.4rem 0.6rem;
+  background: rgba(27, 58, 138, 0.05);
+}
+
+.picked-corner[hidden] {
+  display: none;
+}

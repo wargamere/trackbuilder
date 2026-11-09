@@ -3,6 +3,7 @@ import type { Dot } from '../core/math.ts';
 import { hashString } from '../core/random.ts';
 import { findCorners, type Corner } from './corners.ts';
 import { buildCenterline, type Centerline } from './spline.ts';
+import { extrasKey, type TrackExtras } from './extras.ts';
 
 /**
  * The canonical, storable description of a track: a closed loop of dots
@@ -19,6 +20,8 @@ export interface TrackDef {
   builtIn?: boolean;
   /** Where a real-world circuit is (its country). */
   place?: string;
+  /** Scenery placed by hand, bump kerbs and painted run-off (see track/extras.ts). */
+  extras?: TrackExtras;
 }
 
 /** A track ready to race: definition plus all derived geometry. */
@@ -53,7 +56,7 @@ export function newTrackId(): string {
  * Heights and options are only part of the hash when they differ from the
  * defaults, so flat default tracks keep the ids they had before elevation existed.
  */
-export function contentId(control: readonly Dot[], options?: Partial<TrackOptions>): string {
+export function contentId(control: readonly Dot[], options?: Partial<TrackOptions>, extras?: TrackExtras): string {
   // Heights and bank overrides only appear when set, so older tracks keep their ids.
   const dots = control.map((p) => (p.h ? `${p.x},${p.y},${p.h}` : `${p.x},${p.y}`) + (p.b !== undefined ? `/${p.b}` : '')).join(';');
   const o = { ...DEFAULT_OPTIONS, ...options };
@@ -61,5 +64,8 @@ export function contentId(control: readonly Dot[], options?: Partial<TrackOption
     .filter((k) => o[k] !== DEFAULT_OPTIONS[k])
     .map((k) => `${k}=${o[k]}`)
     .join('&');
-  return 't' + hashString(extra ? `${dots}|${extra}` : dots).toString(36);
+  // Placed scenery and painted run-off change the racing too, so they're part of it when there are any.
+  const more = extrasKey(extras);
+  const body = extra ? `${dots}|${extra}` : dots;
+  return 't' + hashString(more ? `${body}|${more}` : body).toString(36);
 }

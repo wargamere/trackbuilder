@@ -107,10 +107,10 @@ export type CodeResult = { ok: true; track: Track } | { ok: false; error: 'forma
 export function trackFromCode(text: string): CodeResult {
   const d = decodeTrack(text);
   if (!d.ok) return d;
-  const id = contentId(d.dots, d.options);
+  const id = contentId(d.dots, d.options, d.extras);
   byContent ??= new Map(builtInTracks().map((b) => [contentId(b.def.control, b.def.options), b]));
   const known = byContent.get(id);
   if (known) return { ok: true, track: known.track() };
-  const res = trackFromControl({ id, name: d.name.trim() || 'Shared track', control: d.dots, options: d.options });
+  const res = trackFromControl({ id, name: d.name.trim() || 'Shared track', control: d.dots, options: d.options, ...(d.extras ? { extras: d.extras } : {}) });
   return res.ok ? res : { ok: false, error: res.issue };
 }

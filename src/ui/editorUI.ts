@@ -4,6 +4,7 @@ import type { Settings } from '../core/settings.ts';
 import { STARTERS, starterTrack, type StarterId } from '../editor/starters.ts';
 import { GEN_STYLES, type GenStyle } from '../editor/generate.ts';
 import type { TrackStats } from '../track/stats.ts';
+import type { PlacedKind } from '../track/extras.ts';
 import { button, h, segmented, slider, type Choice, type Slider } from './dom.ts';
 import { drawThumbnail } from './thumbnail.ts';
 import { formatTime } from '../race/session.ts';
@@ -75,7 +76,24 @@ export interface EditorActions {
   setCornerSmoothing(radius: number): void;
   /** Every corner's bank (degrees, as the banking level's; null: back to the level). */
   bankAll(deg: number | null): void;
+  /** Place-scenery tool (null: stop). */
+  placeTool(what: PlacedKind | null): void;
+  /** Paint-run-off tool with a paint value (0 erase, 1 grass, 2 gravel, 3 tarmac; null: stop), and its brush size (m). */
+  paintTool(value: number | null): void;
+  brushSize(m: number): void;
+  /** Run-off at the picked corner or every corner (paint value; 0 = as the track). */
+  cornerRunoff(which: 'picked' | 'all', value: number): void;
+  /** Bump kerb at the picked corner. */
+  cornerBump(on: boolean): void;
+  chicaneBumps(): void;
+  clearExtras(what: 'bumps' | 'placed' | 'paint'): void;
 }
+
+/** Placeable scenery, in the order the palette shows it. */
+const PLACE_KINDS: Exclude<PlacedKind, 'bump'>[] = ['grandstand', 'garages', 'tower', 'building', 'trees', 'billboard', 'brakeboards'];
+/** Run-off choices by paint value: Auto (as the track), Gravel, Tarmac, Grass. */
+const RUNOFF_VALUES = [0, 2, 3, 1] as const;
+const PAINT_VALUES = [2, 3, 1, 0] as const;
 
 /** One numbered corner, for the Corners section. */
 export interface CornerInfo {
@@ -125,6 +143,14 @@ export interface EditorViewState {
   bankAll: number | 'mixed' | null;
   /** An image is being traced. */
   tracing: boolean;
+  /** The hand tool in use: painting run-off (its paint value) or placing scenery. */
+  tool: { paint: number } | { place: PlacedKind } | null;
+  brush: number;
+  /** The picked numbered corner: its run-off (paint value) and whether it has a bump kerb. */
+  picked: { n: number; runoff: number; bump: boolean } | null;
+  placedCount: number;
+  bumpCount: number;
+  painted: boolean;
 }
 
 function checkbox(label: string, onChange: (on: boolean) => void): { el: HTMLElement; input: HTMLInputElement } {
@@ -222,12 +248,27 @@ export class EditorUI {
     bankAll: Slider;
     bankAllState: HTMLElement;
     traceTools: HTMLElement;
+    pickedTitle: HTMLElement;
+    pickedRunoff: Choice<number>;
+    pickedBump: Choice<boolean>;
+    pickedBox: HTMLElement;
+    pickHint: HTMLElement;
+    paintBtn: HTMLButtonElement;
+    paintKind: Choice<number>;
+    paintTools: HTMLElement;
+    brush: Slider;
+    placeButtons: Map<PlacedKind, HTMLButtonElement>;
+    placeDone: HTMLButtonElement;
+    placedInfo: HTMLElement;
   };
   private readonly picker: HTMLDialogElement;
   private cornerSel = -1;
   private cornerKey = '';
   private cornerActions: EditorActions | null = null;
   private cornerRows: { slider: Slider; auto: HTMLElement; label: HTMLElement }[] = [];
+  /** The hand tool in use, as last shown (so the buttons toggle it). */
+  private painting = false;
+  private placing: PlacedKind | null = null;
 
   constructor(actions: EditorActions, sampleNames: readonly string[], openSection = 0) {
     const k = STR.editor.keys;
@@ -449,6 +490,62 @@ export class EditorUI {
       }, { icon: '↺', class: 'compact' }),
     );
 
+    // ---- scenery, run-off and bump kerbs
+    const X = STR.editorScenery;
+    const pickedTitle = h('span', { class: 'bank-all-state' });
+    const pickedRunoff = segmented<number>(RUNOFF_VALUES.map((v) => [v, X.runoffChoices[v]] as [number, string]), (v) => actions.cornerRunoff('picked', v));
+    const pickedBump = segmented<boolean>(
+      [
+        [true, S.on],
+        [false, S.off],
+      ],
+      (on) => actions.cornerBump(on),
+    );
+    const pickedBox = h('div', { class: 'picked-corner' }, field(X.runoff, pickedTitle, pickedRunoff.el), field(X.bump, pickedBump.el));
+    const pickHint = h('p', { class: 'help', text: X.pickCorner });
+    const runoffAll = h('div', { class: 'row wrap' }, ...RUNOFF_VALUES.map((v) => button(X.runoffChoices[v], () => actions.cornerRunoff('all', v), { class: 'compact' })));
+    const bumpRow = h(
+      'div',
+      { class: 'row wrap' },
+      button(X.chicanes, () => actions.chicaneBumps(), { icon: '⚠', class: 'compact' }),
+      button(X.clearBumps, () => actions.clearExtras('bumps'), { icon: '×', class: 'compact' }),
+    );
+    const paintKindState = { value: 2 };
+    const paintBtn = button(X.paintStart, () => actions.paintTool(this.painting ? null : paintKindState.value), { icon: '🖌', class: 'compact' });
+    const paintKind = segmented<number>(PAINT_VALUES.map((v) => [v, X.paintKinds[v]] as [number, string]), (v) => {
+      paintKindState.value = v;
+      actions.paintTool(v);
+    });
+    const brushSl = slider(2, 16, 1, (m) => actions.brushSize(m), () => {}, (m) => fmt(X.brushValue, { m }));
+    brushSl.set(6);
+    const paintTools = h(
+      'div',
+      { class: 'trace-tools' },
+      field(X.paintWith, paintKind.el),
+      field(X.brush, brushSl.el),
+      h(
+        'div',
+        { class: 'row wrap' },
+        button(X.undoStroke, () => actions.undo(), { icon: '↶', class: 'compact' }),
+        button(X.redoStroke, () => actions.redo(), { icon: '↷', class: 'compact' }),
+        button(X.clearPaint, () => actions.clearExtras('paint'), { icon: '×', class: 'compact' }),
+        button(X.done, () => actions.paintTool(null), { icon: '✓', class: 'compact primary' }),
+      ),
+    );
+    const placeButtons = new Map<PlacedKind, HTMLButtonElement>();
+    const placeGrid = h(
+      'div',
+      { class: 'segmented grid3' },
+      ...PLACE_KINDS.map((k) => {
+        const b = button(X.kinds[k], () => actions.placeTool(this.placing === k ? null : k), { class: 'compact' });
+        placeButtons.set(k, b);
+        return b;
+      }),
+    );
+    const placeDone = button(X.done, () => actions.placeTool(null), { icon: '✓', class: 'compact primary' });
+    const placedInfo = h('span', { class: 'bank-all-state' });
+    const placeRow = h('div', { class: 'row wrap' }, placeDone, button(X.clearPlaced, () => actions.clearExtras('placed'), { icon: '×', class: 'compact' }), placedInfo);
+
     const minimap = checkbox(S.minimap, (on) => actions.setDisplay({ minimap: on }));
     const cornerLabels = checkbox(S.cornerLabels, (on) => actions.setDisplay({ cornerLabels: on }));
     const car = checkbox(T.carToggle, (on) => actions.setDisplay({ editorCar: on }));
@@ -483,6 +580,18 @@ export class EditorUI {
       bankAll: bankAllSl,
       bankAllState,
       traceTools,
+      pickedTitle,
+      pickedRunoff,
+      pickedBump,
+      pickedBox,
+      pickHint,
+      paintBtn,
+      paintKind,
+      paintTools,
+      brush: brushSl,
+      placeButtons,
+      placeDone,
+      placedInfo,
     };
 
     this.pointLabel = h('p', { class: 'studio-point-label', text: T.pointNone });
@@ -549,6 +658,14 @@ export class EditorUI {
           field(STR.editor.optBanking, banking.el),
           field(P.bankAll, bankAllState, bankAllSl.el),
           cornerNav,
+          pickHint,
+          pickedBox,
+          field(X.runoffAll, runoffAll),
+          h('p', { class: 'help', text: X.runoffHelp }),
+          field(X.bump, bumpRow),
+          h('p', { class: 'help', text: X.bumpHelp }),
+          field(X.paint, paintBtn),
+          paintTools,
           field(S.cornerListLabel, cornerList),
         ],
       ],
@@ -591,6 +708,9 @@ export class EditorUI {
           h('p', { class: 'help', text: S.themeHelp }),
           field(S.time, time.el),
           field(S.trees, trees.el),
+          field(STR.editorScenery.place, placeGrid),
+          h('p', { class: 'help', text: STR.editorScenery.placeHelp }),
+          placeRow,
         ],
       ],
       [S.sections.display, [field(S.graphics, graphics.el), h('p', { class: 'help', text: S.graphicsHelp }), field(S.units, units.el), minimap.el, cornerLabels.el, car.el]],
@@ -894,6 +1014,31 @@ export class EditorUI {
     if (s.stats) c.length.set(s.stats.length);
     c.climb.set(s.climb);
     c.traceTools.hidden = !s.tracing;
+    // Scenery, run-off and bump kerbs.
+    const X = STR.editorScenery;
+    const paintOn = !!s.tool && 'paint' in s.tool;
+    this.painting = paintOn;
+    this.placing = s.tool && 'place' in s.tool ? s.tool.place : null;
+    c.paintBtn.classList.toggle('on', paintOn);
+    c.paintBtn.setAttribute('aria-pressed', String(paintOn));
+    c.paintTools.hidden = !paintOn;
+    if (s.tool && 'paint' in s.tool) c.paintKind.set(s.tool.paint);
+    c.brush.set(s.brush);
+    for (const [k, b] of c.placeButtons) {
+      b.classList.toggle('on', this.placing === k);
+      b.setAttribute('aria-pressed', String(this.placing === k));
+    }
+    c.placeDone.hidden = !this.placing;
+    const placedText = s.placedCount ? fmt(X.placedCount, { n: s.placedCount }) : '';
+    if (c.placedInfo.textContent !== placedText) c.placedInfo.textContent = placedText;
+    c.pickedBox.hidden = !s.picked;
+    c.pickHint.hidden = !!s.picked;
+    if (s.picked) {
+      const title = fmt(X.thisCorner, { n: s.picked.n + 1 });
+      if (c.pickedTitle.textContent !== title) c.pickedTitle.textContent = title;
+      c.pickedRunoff.set(s.picked.runoff);
+      c.pickedBump.set(s.picked.bump);
+    }
     const bankState = s.bankAll === 'mixed' ? STR.editorPlus.bankMixed : s.bankAll === null ? STR.editorPlus.bankLevel : '';
     if (c.bankAllState.textContent !== bankState) c.bankAllState.textContent = bankState;
     if (typeof s.bankAll === 'number') c.bankAll.set(s.bankAll);

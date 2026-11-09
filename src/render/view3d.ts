@@ -493,8 +493,8 @@ export class View3D {
     }
     add(road.ground, this.mats.road, 1);
     add(road.deck, this.mats.deck, 2);
-    const runoff = track.options.runoff === 'gravel' ? this.mats.gravel : this.mats.runoffTarmac;
-    add(buildRunoffGeometry(track, surf), runoff, 0.5);
+    add(buildRunoffGeometry(track, surf, 'gravel'), this.mats.gravel, 0.5);
+    add(buildRunoffGeometry(track, surf, 'tarmac'), this.mats.runoffTarmac, 0.5);
     add(buildKerbGeometry(track), this.mats.kerb);
     add(buildWallGeometry(track, surf), this.mats.wall);
     add(buildPitGeometry(track, surf), this.mats.wall);

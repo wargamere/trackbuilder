@@ -77,7 +77,7 @@ export class ShareDialog {
   }
 
   open(def: TrackDef, host: HTMLElement): void {
-    this.current = encodeTrack(def.name, def.control, def.options);
+    this.current = encodeTrack(def.name, def.control, def.options, def.extras);
     this.code.value = this.current;
     this.status.textContent = '';
     host.append(this.root);

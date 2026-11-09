@@ -356,7 +356,7 @@ export class RaceScreen implements Screen {
   private resetRun(): void {
     const def = this.game.track.def;
     this.applyPaint();
-    if (CAPS.links) writeHashCode(encodeTrack(def.name, def.control, def.options));
+    if (CAPS.links) writeHashCode(encodeTrack(def.name, def.control, def.options, def.extras));
     const rec = this.game.records.get(def.id);
     this.ghost = this.game.setup.ghost ? rec.ghost : null;
     if (rec.author === undefined && this.author?.id !== def.id) this.author = { id: def.id, lap: new AuthorLap(this.game.track) };

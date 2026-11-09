@@ -4,6 +4,7 @@ import { clamp } from '../core/math.ts';
 import { locatorFor, type TrackLocator } from '../track/locator.ts';
 import { pitLayout } from '../track/pits.ts';
 import { placeTrees } from '../track/placement.ts';
+import { axes, placedObstacles, placedOn, runoffLayout, type Placed, type RunoffLayout } from '../track/extras.ts';
 import { leftOf, sampleAt } from '../track/spline.ts';
 import { groundPose } from '../track/ground.ts';
 import { enginePull, stepGearbox, type GearboxMode } from './gearbox.ts';
@@ -27,6 +28,11 @@ export interface DriveInput {
 }
 
 export const NO_INPUT: Readonly<DriveInput> = { throttle: 0, brake: 0, steer: 0, handbrake: false };
+
+/** The run-off kinds, by index (OPTION_CHOICES.runoff order). */
+const RUNOFFS = ['grass', 'gravel', 'tarmac'] as const;
+/** A bump kerb: the share of speed kept, the sideways kick (rad/s) and how rough it feels. */
+const BUMP = { keep: 0.93, kick: 0.45, rough: 1.3 } as const;
 
 /**
  * Full car state. Heading 0 points east (+x) and increases clockwise seen from
@@ -185,6 +191,11 @@ export class CarPhysics {
   private readonly locator: TrackLocator;
   private readonly obstacles: ObstacleGrid;
   private readonly surf: TrackSurface;
+  /** Painted or per-corner run-off beside each stretch of road. */
+  private readonly runoffs: RunoffLayout;
+  /** Bump kerbs, and the one the car is on (-1: none). */
+  private readonly bumps: Placed[];
+  private onBump = -1;
   /** The road as a surface: tarmac, or dirt or snow (slower to pull away on, rougher). */
   private readonly roadSurface: { speedFactor: number; accelFactor: number; drag: number; gripFactor: number; rough: number };
 
@@ -194,7 +205,9 @@ export class CarPhysics {
     this.roadSurface = { ...HANDLING.road, accelFactor: kind.accel, rough: kind.rough };
     this.locator = locatorFor(track);
     this.surf = surfaceFor(track);
-    this.obstacles = new ObstacleGrid([...placeTrees(track).map((t) => ({ x: t.x, z: t.z, r: t.radius })), ...pitObstacles(track)]);
+    this.obstacles = new ObstacleGrid([...placeTrees(track).map((t) => ({ x: t.x, z: t.z, r: t.radius })), ...pitObstacles(track), ...placedObstacles(track)]);
+    this.runoffs = runoffLayout(track);
+    this.bumps = placedOn(track).filter((p) => p.kind === 'bump');
     this.placeAt(-8);
   }
 
@@ -287,10 +300,11 @@ export class CarPhysics {
     const edgeR = -this.locator.edge(pos.index, -1);
     // Off the road, the run-off surface reaches out to the barrier line; beyond it is grass.
     const runoffEdge = this.track.center.wallOffset + 1.5;
-    const runoff = H[this.track.options.runoff];
+    const runoffL = H[RUNOFFS[this.runoffs.left[pos.index]] ?? this.track.options.runoff];
+    const runoffR = H[RUNOFFS[this.runoffs.right[pos.index]] ?? this.track.options.runoff];
     const onTheRoad = (w: number) => w <= edgeL && w >= edgeR;
     const road = this.roadSurface;
-    const surfaceAt = (w: number) => (onTheRoad(w) ? road : Math.abs(w) <= runoffEdge ? runoff : H.grass);
+    const surfaceAt = (w: number) => (onTheRoad(w) ? road : Math.abs(w) <= runoffEdge ? (w > 0 ? runoffL : runoffR) : H.grass);
     const a = surfaceAt(pos.lateral + H.halfTrack);
     const b = surfaceAt(pos.lateral - H.halfTrack);
     // Dirt or snow: less grip in corners and less bite from the brakes, on the share of the car on it.
@@ -386,11 +400,12 @@ export class CarPhysics {
 
     this.collide();
     this.collideWalls();
+    const bumped = this.bumpKerbs();
     this.updateGround();
 
     st.speed = vf;
     st.slip = Math.abs(vr);
-    st.grass = grass;
+    st.grass = bumped ? Math.max(grass, BUMP.rough) : grass;
     st.longAccel = (vf - vf0) / dt;
     st.latAccel = vf * st.yawRate;
     st.spin = (st.spin + (vf / H.wheelRadius) * dt) % (Math.PI * 2);
@@ -452,6 +467,39 @@ export class CarPhysics {
       st.wallHit = vn;
     }
     st.lateral = pos.lateral - side * excess;
+  }
+
+  /**
+   * Bump kerbs: running over one (either wheel) costs some speed and kicks the
+   * car sideways, once per bump.
+   */
+  private bumpKerbs(): boolean {
+    if (!this.bumps.length) return false;
+    const st = this.state;
+    const H = HANDLING;
+    let on = -1;
+    let across = 0;
+    for (let k = 0; k < this.bumps.length; k++) {
+      const b = this.bumps[k];
+      const dx = st.x - b.x;
+      const dz = st.z - b.y;
+      if (dx * dx + dz * dz > 25) continue;
+      const { ax, ay, nx, ny } = axes(b);
+      const u = dx * ax + dz * ay;
+      const v = dx * nx + dz * ny;
+      if (Math.abs(u) < 1.5 + 1.6 && Math.abs(v) < 0.3 + H.halfWidth) {
+        on = k;
+        across = v;
+        break;
+      }
+    }
+    const fresh = on >= 0 && on !== this.onBump;
+    this.onBump = on;
+    if (!fresh) return on >= 0;
+    st.vx *= BUMP.keep;
+    st.vz *= BUMP.keep;
+    st.yawRate += BUMP.kick * (across >= 0 ? 1 : -1);
+    return true;
   }
 
   /** Tree trunks and the edge of the world. */

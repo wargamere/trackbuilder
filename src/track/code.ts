@@ -1,6 +1,7 @@
 import { DEFAULT_OPTIONS, OPTION_CHOICES, THEME_IDS, TRACK, type TrackOptions } from '../config/track.ts';
 import { fromBase64Url, toBase64Url } from '../core/base64.ts';
 import type { Dot } from '../core/math.ts';
+import { cleanExtras, PLACED_KINDS, ROT_STEPS, type Placed, type TrackExtras } from './extras.ts';
 
 /**
  * TRACK CODES — a short text form of a track that players copy and paste.
@@ -29,6 +30,10 @@ import type { Dot } from '../core/math.ts';
  * Extras (version 5): a varint count, then that many blocks of a varint tag,
  * a varint length and that many bytes. Blocks with a tag this version doesn't
  * know are skipped, so later versions can add things older ones ignore.
+ *   tag 1, placed scenery: a varint count, then per thing its kind (byte),
+ *          x and y (int16, 0.5 m steps) and rotation (byte, 1/64 turns);
+ *   tag 2, painted run-off: a varint count of numbers, then the paint grid's
+ *          run-length code as varints (see track/extras.ts).
  */
 export const CODE_PREFIX = 'IC1.';
 const VERSION = 5;
@@ -37,7 +42,7 @@ const MAX_NAME_BYTES = 64;
 const MAX_DOTS = 2000;
 
 export type DecodeResult =
-  | { ok: true; name: string; dots: Dot[]; options: TrackOptions }
+  | { ok: true; name: string; dots: Dot[]; options: TrackOptions; extras?: TrackExtras }
   | { ok: false; error: 'format' | 'checksum' };
 
 function pushVarint(out: number[], v: number): void {
@@ -104,7 +109,7 @@ function optionsFrom(v: number): TrackOptions {
   return o;
 }
 
-export function encodeTrack(name: string, dots: readonly Dot[], options: Partial<TrackOptions> = {}): string {
+export function encodeTrack(name: string, dots: readonly Dot[], options: Partial<TrackOptions> = {}, extras?: TrackExtras): string {
   const q = TRACK.quantize;
   const out: number[] = [VERSION];
   let nameBytes = new TextEncoder().encode(name);
@@ -135,9 +140,95 @@ export function encodeTrack(name: string, dots: readonly Dot[], options: Partial
     ph = hgt;
   });
   if (banks) for (const d of dots) pushVarint(out, d.b === undefined ? 0 : Math.max(0, Math.round(d.b)) + 1);
-  pushVarint(out, 0); // extras: none yet
+  const blocks = extraBlocks(cleanExtras(extras));
+  pushVarint(out, blocks.length);
+  for (const [tag, body] of blocks) {
+    pushVarint(out, tag);
+    pushVarint(out, body.length);
+    out.push(...body);
+  }
   out.push(checksum(out, out.length));
   return CODE_PREFIX + toBase64Url(Uint8Array.from(out));
+}
+
+const int16Bytes = (v: number): number[] => {
+  const u = Math.max(-0x8000, Math.min(0x7fff, Math.round(v))) & 0xffff;
+  return [u & 0xff, u >> 8];
+};
+
+/** The extras as tagged blocks. */
+function extraBlocks(e: TrackExtras | undefined): [number, number[]][] {
+  const out: [number, number[]][] = [];
+  const q = TRACK.quantize;
+  if (e?.placed?.length) {
+    const body: number[] = [];
+    pushVarint(body, e.placed.length);
+    for (const p of e.placed) {
+      body.push(Math.max(0, PLACED_KINDS.indexOf(p.kind)), ...int16Bytes(p.x / q), ...int16Bytes(p.y / q));
+      body.push(((Math.round((p.rot / (Math.PI * 2)) * ROT_STEPS) % ROT_STEPS) + ROT_STEPS) % ROT_STEPS);
+    }
+    out.push([1, body]);
+  }
+  if (e?.paint?.length) {
+    const body: number[] = [];
+    pushVarint(body, e.paint.length);
+    for (const v of e.paint) pushVarint(body, v);
+    out.push([2, body]);
+  }
+  return out;
+}
+
+/** Reads the extras' tagged blocks; null if one is malformed. Unknown tags are skipped. */
+function readExtras(blocks: { tag: number; bytes: Uint8Array }[]): TrackExtras | null {
+  const e: TrackExtras = {};
+  const q = TRACK.quantize;
+  for (const { tag, bytes } of blocks) {
+    let i = 0;
+    const byte = () => (i < bytes.length ? bytes[i++] : -1);
+    const varint = (): number => {
+      let v = 0;
+      let shift = 0;
+      for (;;) {
+        const b = byte();
+        if (b < 0 || shift > 28) return -1;
+        v |= (b & 0x7f) << shift;
+        if (!(b & 0x80)) return v >>> 0;
+        shift += 7;
+      }
+    };
+    const int16 = () => {
+      const lo = byte();
+      const hi = byte();
+      if (lo < 0 || hi < 0) return null;
+      const v = lo | (hi << 8);
+      return v >= 0x8000 ? v - 0x10000 : v;
+    };
+    if (tag === 1) {
+      const count = varint();
+      if (count < 0 || count > 500) return null;
+      const placed: Placed[] = [];
+      for (let k = 0; k < count; k++) {
+        const kind = PLACED_KINDS[byte()];
+        const x = int16();
+        const y = int16();
+        const rot = byte();
+        if (!kind || x === null || y === null || rot < 0) return null;
+        placed.push({ kind, x: x * q, y: y * q, rot: ((rot % ROT_STEPS) * Math.PI * 2) / ROT_STEPS });
+      }
+      e.placed = placed;
+    } else if (tag === 2) {
+      const count = varint();
+      if (count < 0 || count > 100000) return null;
+      const paint: number[] = [];
+      for (let k = 0; k < count; k++) {
+        const v = varint();
+        if (v < 0) return null;
+        paint.push(v);
+      }
+      e.paint = paint;
+    }
+  }
+  return e.placed || e.paint ? e : {};
 }
 
 /** Pulls a code out of whatever was pasted: the bare code, or a link with #track=… */
@@ -227,17 +318,22 @@ function decodeBody(code: string): DecodeResult {
       if (v > 0) d.b = v - 1;
     }
   }
+  let extras: TrackExtras | undefined;
   if (version >= 5) {
-    // Extras: none are known yet, so every block is skipped.
-    const blocks = varint();
-    if (blocks < 0 || blocks > 64) return { ok: false, error: 'format' };
-    for (let b = 0; b < blocks; b++) {
+    const count = varint();
+    if (count < 0 || count > 64) return { ok: false, error: 'format' };
+    const blocks: { tag: number; bytes: Uint8Array }[] = [];
+    for (let b = 0; b < count; b++) {
       const tag = varint();
       const len = varint();
       if (tag < 0 || len < 0 || i + len > end) return { ok: false, error: 'format' };
+      blocks.push({ tag, bytes: bytes.slice(i, i + len) });
       i += len;
     }
+    const e = readExtras(blocks);
+    if (!e) return { ok: false, error: 'format' };
+    if (e.placed || e.paint) extras = e;
   }
   if (i !== end) return { ok: false, error: 'format' };
-  return { ok: true, name, dots, options };
+  return extras ? { ok: true, name, dots, options, extras } : { ok: true, name, dots, options };
 }

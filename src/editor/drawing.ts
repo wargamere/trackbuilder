@@ -34,6 +34,7 @@ import {
   drawMarker,
   drawPaper,
   drawPenString,
+  drawPlaced,
   drawProblem,
   drawReplaced,
   drawStartLine,
@@ -46,6 +47,25 @@ import {
 } from './render2d.ts';
 import { quantizeControl, relaxTightCorners, quantizeBank, reverseDots, rotateDots, snapDot } from './smoothing.ts';
 import { generateTrack, type GenStyle } from './generate.ts';
+import {
+  axes,
+  bumpFor,
+  bumpNear,
+  chicaneCorners,
+  cleanExtras,
+  paintCell,
+  paintCorner,
+  paintDab,
+  paintGrid,
+  PLACED_SPEC,
+  placedClear,
+  quantizeRot,
+  roadDistance,
+  withPaint,
+  type Placed,
+  type PlacedKind,
+  type TrackExtras,
+} from '../track/extras.ts';
 import { nearestSample, planSection, spliceSection } from './splice.ts';
 import { crossingKind, crossingsOf, type TrackIssue } from './validation.ts';
 import { Viewport, ZOOM } from './viewport.ts';
@@ -59,7 +79,17 @@ interface Snapshot {
   failed: Failed | null;
   name: string;
   options: TrackOptions;
+  extras: TrackExtras;
 }
+
+/** A copy of extras that can be changed without touching the original. */
+const copyExtras = (e: TrackExtras | undefined): TrackExtras => ({
+  ...(e?.placed ? { placed: e.placed.map((p) => ({ ...p })) } : {}),
+  ...(e?.paint ? { paint: [...e.paint] } : {}),
+});
+
+/** A hand tool on the map: painting run-off (paint value, brush radius in m) or placing scenery. */
+type Tool = { kind: 'paint'; value: number } | { kind: 'place'; what: PlacedKind };
 
 /** Moving one dot (and, with soft editing, its neighbours) on the map or in height. */
 interface DotDrag {
@@ -82,6 +112,7 @@ type Drag =
   | DotDrag
   | { kind: 'flag'; target: number; before: Snapshot }
   | { kind: 'pan'; x: number; y: number }
+  | { kind: 'paint'; before: Snapshot; last: Vec2 }
   | { kind: 'pinch'; d: number; x: number; y: number };
 
 const MAX_HISTORY = 80;
@@ -133,6 +164,16 @@ export class EditorScreen implements Screen {
   private closed = false;
   private failed: Failed | null = null;
   private name: string = STR.editor.customName;
+  /** Placed scenery, bump kerbs and painted run-off. */
+  private extras: TrackExtras = {};
+  /** The hand tool in use on the map (null: the usual editing). */
+  private tool: Tool | null = null;
+  /** Run-off brush radius (m). */
+  private brush = 6;
+  /** Where the pointer is over the map while a tool is in use (for the brush outline). */
+  private toolAt: Vec2 | null = null;
+  /** The numbered corner last picked (‹ › or its row), or -1. */
+  private pickedCorner = -1;
   private options: TrackOptions = trackOptions({});
   private base: TrackDef | null = null;
   private history: Snapshot[] = [];
@@ -243,6 +284,13 @@ export class EditorScreen implements Screen {
         setClimb: (m) => this.setClimb(m),
         setCornerSmoothing: (r) => this.setCornerSmoothing(r),
         bankAll: (deg) => this.bankAll(deg),
+        placeTool: (what) => this.setTool(what ? { kind: 'place', what } : null),
+        paintTool: (value) => this.setTool(value === null ? null : { kind: 'paint', value }),
+        brushSize: (m) => { this.brush = m; },
+        cornerRunoff: (which, value) => this.cornerRunoff(which === 'picked' ? this.pickedCorner : which, value),
+        cornerBump: (on) => this.cornerBump(this.pickedCorner, on),
+        chicaneBumps: () => this.chicaneBumps(),
+        clearExtras: (what) => this.clearExtras(what),
       },
       Array.from({ length: SAMPLE_COUNT }, (_, i) => getSampleTrack(i).def.name),
       settings().sidebarSection,
@@ -262,6 +310,9 @@ export class EditorScreen implements Screen {
       this.failed = null;
       this.name = t.def.name;
       this.options = { ...t.options };
+      this.extras = copyExtras(t.def.extras);
+      this.tool = null;
+      this.pickedCorner = -1;
       this.draftDue = 0;
       this.draftSaved = false;
       this.history = [];
@@ -343,7 +394,13 @@ export class EditorScreen implements Screen {
       failed: this.failed,
       name: this.name,
       options: { ...this.options },
+      extras: copyExtras(this.extras),
     };
+  }
+
+  /** The id of the track as it is now (the same shape, options and extras always give the same id). */
+  private id(): string {
+    return contentId(this.dots, this.options, cleanExtras(this.extras));
   }
 
   private restore(s: Snapshot): void {
@@ -352,6 +409,7 @@ export class EditorScreen implements Screen {
     this.failed = s.failed;
     this.name = s.name;
     this.options = { ...s.options };
+    this.extras = copyExtras(s.extras);
     this.selected = this.hover = -1;
     this.dirty = true;
     this.scheduleDraft();
@@ -392,7 +450,7 @@ export class EditorScreen implements Screen {
 
   private flushDraft(): void {
     if (!this.draftDue || !this.dots.length) return;
-    writeDraft({ dots: this.dots, closed: this.closed, name: this.name, options: this.options });
+    writeDraft({ dots: this.dots, closed: this.closed, name: this.name, options: this.options, extras: cleanExtras(this.extras) });
     this.draftDue = 0;
     this.draftSaved = true;
   }
@@ -401,7 +459,7 @@ export class EditorScreen implements Screen {
     const draft = this.recoverableDraft;
     if (!draft) return;
     const before = this.snapshot();
-    this.restore({ ...draft, failed: null });
+    this.restore({ ...draft, extras: draft.extras ?? {}, failed: null });
     this.base = null;
     this.commit(before, { text: STR.studio.draftRestored, kind: 'ok' });
     this.recoverableDraft = null;
@@ -415,10 +473,12 @@ export class EditorScreen implements Screen {
     const before = this.snapshot();
     this.dots = def.control.map((p) => ({ ...p }));
     this.options = trackOptions(def);
+    this.extras = copyExtras(def.extras);
     this.name = def.name;
     this.closed = true;
     this.failed = null;
     this.selected = this.hover = -1;
+    this.pickedCorner = -1;
     this.base = null;
     this.setMode('dots');
     this.commit(before, { text: fmt(STR.studio.loaded, { name: def.name }), kind: 'ok' });
@@ -505,6 +565,8 @@ export class EditorScreen implements Screen {
     this.closed = false;
     this.failed = null;
     this.name = STR.editor.customName;
+    this.extras = {};
+    this.tool = null;
     this.selected = -1;
     this.commit(before, { text: STR.editor.cleared, kind: 'info' });
     this.setMode('draw');
@@ -613,7 +675,8 @@ export class EditorScreen implements Screen {
 
   /** The track definition as it is being edited. */
   private currentDef(id: string): TrackDef {
-    return { id, name: this.name, control: this.dots.map((p) => ({ ...p })), options: { ...this.options } };
+    const extras = cleanExtras(this.extras);
+    return { id, name: this.name, control: this.dots.map((p) => ({ ...p })), options: { ...this.options }, ...(extras ? { extras } : {}) };
   }
 
   /** Opens the share dialog for the track as it is now (only when it's raceable). */
@@ -621,7 +684,7 @@ export class EditorScreen implements Screen {
     this.rebuild();
     if (!this.built?.ok || !this.closed) return;
     this.ui.closeOverlay();
-    this.share.open(this.currentDef(contentId(this.dots, this.options)), this.game.ui);
+    this.share.open(this.currentDef(this.id()), this.game.ui);
   }
 
   /**
@@ -633,8 +696,8 @@ export class EditorScreen implements Screen {
     if (!this.built?.ok || !this.closed) return;
     const def = this.currentDef('');
     const b = this.base;
-    const same = !!b && contentId(b.control, b.options) === contentId(def.control, def.options);
-    def.id = same && b ? b.id : contentId(def.control, def.options);
+    const same = !!b && contentId(b.control, b.options, b.extras) === contentId(def.control, def.options, def.extras);
+    def.id = same && b ? b.id : contentId(def.control, def.options, def.extras);
     if (same) {
       def.builtIn = b?.builtIn;
       def.place = b?.place;
@@ -731,6 +794,7 @@ export class EditorScreen implements Screen {
     const t = this.built?.track;
     const k = t?.kerbs[i];
     if (!t || !k) return;
+    this.pickedCorner = i;
     this.vp.centerOn(t.center.points[k.apex], 3);
     this.ui.closeOverlay();
   }
@@ -747,7 +811,7 @@ export class EditorScreen implements Screen {
       this.note = { text: STR.editor.needLoop, kind: 'warn' };
       return;
     }
-    this.game.library.save(this.currentDef(contentId(this.dots, this.options)));
+    this.game.library.save(this.currentDef(this.id()));
     this.note = { text: STR.sidebar.saved, kind: 'ok' };
   }
 
@@ -759,7 +823,7 @@ export class EditorScreen implements Screen {
       return;
     }
     if (!this.game.view3d) return;
-    const track = buildTrack(this.currentDef(contentId(this.dots, this.options)));
+    const track = buildTrack(this.currentDef(this.id()));
     this.game.preview = {
       track,
       race: () => {
@@ -811,7 +875,7 @@ export class EditorScreen implements Screen {
     this.crossings = 0;
     this.bridges = 0;
     if (this.closed && this.dots.length >= 3) {
-      this.built = trackFromControl({ id: 'editing', name: this.name, control: this.dots, options: this.options });
+      this.built = trackFromControl({ id: 'editing', name: this.name, control: this.dots, options: this.options, extras: this.extras });
       const t = this.built.track;
       if (t) {
         for (const x of crossingsOf(t.center)) {
@@ -985,6 +1049,20 @@ export class EditorScreen implements Screen {
       return;
     }
 
+    // Placing scenery or painting run-off.
+    if (this.tool && this.closed && (e.pointerType !== 'mouse' || e.button === 0)) {
+      e.preventDefault();
+      const w = this.worldAt(x, y);
+      if (this.tool.kind === 'place') {
+        this.placeAt(w);
+        return;
+      }
+      this.capture(e);
+      this.drag = { kind: 'paint', before: this.snapshot(), last: w };
+      this.paintStroke(w, w);
+      return;
+    }
+
     this.rebuild();
     const prof = this.profile && this.closed && this.built?.track && inRect(this.profile, x, y) ? this.profile : null;
     const hit = prof ? profileDotAt(prof, this.dots, this.dotPos, this.trackLength(), x, y) : this.dotAt(x, y);
@@ -1085,9 +1163,17 @@ export class EditorScreen implements Screen {
       Object.assign(d, { d: dd, x: mx, y: my });
       return;
     }
+    if (this.tool) this.toolAt = this.worldAt(x, y);
     if (e.pointerId !== this.pointerId) {
       // Hover feedback for mouse users.
       if (this.pointerId === -1 && !this.drag && e.pointerType === 'mouse') this.updateHover(x, y);
+      return;
+    }
+    if (d?.kind === 'paint') {
+      e.preventDefault();
+      const w = this.worldAt(x, y);
+      this.paintStroke(d.last, w);
+      d.last = w;
       return;
     }
     e.preventDefault();
@@ -1143,6 +1229,10 @@ export class EditorScreen implements Screen {
 
   private updateHover(x: number, y: number): void {
     const canvas = this.game.surface.canvas;
+    if (this.tool) {
+      canvas.style.cursor = this.tool.kind === 'place' && this.placedAt(this.worldAt(x, y)) >= 0 ? 'not-allowed' : 'crosshair';
+      return;
+    }
     if (this.spaceDown || this.panActive) {
       canvas.style.cursor = 'grab';
       return;
@@ -1188,6 +1278,10 @@ export class EditorScreen implements Screen {
     this.drag = null;
     if (d?.kind === 'pan') {
       this.game.surface.canvas.style.cursor = '';
+      return;
+    }
+    if (d?.kind === 'paint') {
+      this.commit(d.before, { text: STR.editorScenery.painted, kind: 'ok' });
       return;
     }
     if (this.stroke) {
@@ -1460,6 +1554,170 @@ export class EditorScreen implements Screen {
     this.dirty = true;
   }
 
+  // -------------------------------------------------- scenery, run-off, bumps
+
+  /** Starts or stops a hand tool on the map (null: back to the usual editing). */
+  private setTool(t: Tool | null): void {
+    if (this.drag) return;
+    this.tool = t;
+    this.toolAt = null;
+    if (t) this.panActive = false;
+    this.note = t ? { text: t.kind === 'paint' ? STR.editorScenery.paintHint : fmt(STR.editorScenery.placeHint, { what: STR.editorScenery.kinds[t.what].toLowerCase() }), kind: 'info' } : null;
+  }
+
+  /** The placed thing under world point `w` (index), or -1. */
+  private placedAt(w: Vec2): number {
+    const list = this.extras.placed ?? [];
+    const pad = 6 / this.view.scale;
+    for (let i = list.length - 1; i >= 0; i--) {
+      const p = list[i];
+      const s = PLACED_SPEC[p.kind];
+      const { ax, ay, nx, ny } = axes(p);
+      const u = (w.x - p.x) * ax + (w.y - p.y) * ay;
+      const v = (w.x - p.x) * nx + (w.y - p.y) * ny;
+      if (Math.abs(u) <= s.w / 2 + pad && Math.abs(v) <= s.d / 2 + pad) return i;
+    }
+    return -1;
+  }
+
+  /**
+   * Place tool: taps beside the track put the chosen thing there, facing the
+   * road (brake boards and bump kerbs run along it), moved out just far enough
+   * to clear the road (or the barriers); a tap on one takes it away again.
+   */
+  private placeAt(w: Vec2): void {
+    const tool = this.tool;
+    this.rebuild();
+    const t = this.built?.track;
+    if (tool?.kind !== 'place' || !t || !this.closed) return;
+    const list = this.extras.placed ?? [];
+    const hit = this.placedAt(w);
+    if (hit >= 0) {
+      const before = this.snapshot();
+      const gone = list[hit];
+      this.extras = { ...this.extras, placed: list.filter((_, i) => i !== hit) };
+      this.commit(before, { text: fmt(STR.editorScenery.removed, { what: STR.editorScenery.kinds[gone.kind] }), kind: 'info' });
+      return;
+    }
+    const kind = tool.what;
+    const near = roadDistance(t, w.x, w.y);
+    const q = t.center.points[near.i];
+    const tg = t.center.tangents[near.i];
+    let ox = w.x - q.x;
+    let oy = w.y - q.y;
+    const len = Math.hypot(ox, oy);
+    if (len < 1e-3) {
+      ox = -tg.y;
+      oy = tg.x;
+    } else {
+      ox /= len;
+      oy /= len;
+    }
+    // Along the road, or facing it (its front towards the road).
+    const along = kind === 'brakeboards' || kind === 'bump';
+    const rot = quantizeRot(along ? Math.atan2(tg.y, tg.x) : Math.atan2(-oy, -ox) - Math.PI / 2);
+    const q5 = TRACK.quantize;
+    const at = (d: number): Placed => ({ kind, x: Math.round((q.x + ox * d) / q5) * q5, y: Math.round((q.y + oy * d) / q5) * q5, rot });
+    let d = Math.max(near.d, kind === 'bump' ? t.center.width / 2 + 1 : 0);
+    if (kind === 'bump') d = Math.min(d, t.center.wallOffset - 0.5);
+    let p = at(d);
+    for (let k = 0; k < 120 && !placedClear(t, p); k++) p = at((d += 0.5));
+    if (!placedClear(t, p) || Math.abs(p.x) > WORLD.width / 2 + 40 || Math.abs(p.y) > WORLD.height / 2 + 40) {
+      this.note = { text: STR.editorScenery.noRoom, kind: 'warn' };
+      return;
+    }
+    const before = this.snapshot();
+    this.extras = { ...this.extras, placed: [...list, p] };
+    this.commit(before, { text: fmt(STR.editorScenery.placed, { what: STR.editorScenery.kinds[kind] }), kind: 'ok' });
+  }
+
+  /** Paint tool: a stroke of run-off from `a` to `b` (dabs every half brush). */
+  private paintStroke(a: Vec2, b: Vec2): void {
+    if (this.tool?.kind !== 'paint') return;
+    const g = paintGrid(this.extras.paint).slice();
+    const steps = Math.max(1, Math.ceil(dist(a, b) / Math.max(1, this.brush / 2)));
+    for (let k = 0; k <= steps; k++) paintDab(g, a.x + ((b.x - a.x) * k) / steps, a.y + ((b.y - a.y) * k) / steps, this.brush, this.tool.value);
+    this.extras = withPaint(this.extras, g);
+    this.dirty = true;
+  }
+
+  /** Run-off at numbered corner `which` (or every corner): paint value 0 = as the track, else grass, gravel, tarmac. */
+  private cornerRunoff(which: number | 'all', value: number): void {
+    this.rebuild();
+    const t = this.built?.track;
+    if (!t || !this.closed) return;
+    const corners = which === 'all' ? t.kerbs.map((_, i) => i) : [which];
+    if (!corners.length || (which !== 'all' && !t.kerbs[which])) return;
+    const before = this.snapshot();
+    const g = paintGrid(this.extras.paint).slice();
+    for (const i of corners) paintCorner(g, t, i, value);
+    this.extras = withPaint(this.extras, g);
+    this.commit(before, { text: STR.editorScenery.runoffSet, kind: 'ok' });
+  }
+
+  /** What run-off numbered corner `i` has: its painted value at the outside of the apex (0: as the track). */
+  private cornerRunoffValue(i: number): number {
+    const t = this.built?.track;
+    const k = t?.kerbs[i];
+    if (!t || !k || !this.extras.paint?.length) return 0;
+    const c = t.center;
+    const side = k.sign > 0 ? 1 : -1;
+    const l = { x: -c.tangents[k.apex].y, y: c.tangents[k.apex].x };
+    const lat = (c.width / 2 + c.wallOffset) / 2;
+    const cell = paintCell(c.points[k.apex].x + l.x * lat * side, c.points[k.apex].y + l.y * lat * side);
+    return cell >= 0 ? paintGrid(this.extras.paint)[cell] : 0;
+  }
+
+  /** Bump kerb on the inside of numbered corner `i`: on or off. */
+  private cornerBump(i: number, on: boolean): void {
+    this.rebuild();
+    const t = this.built?.track;
+    if (!t) return;
+    const spot = bumpFor(t, i);
+    if (!spot) {
+      this.note = { text: STR.editorScenery.bumpNoRoom, kind: 'warn' };
+      return;
+    }
+    const list = this.extras.placed ?? [];
+    const at = bumpNear(list, spot);
+    if (on === at >= 0) return;
+    const before = this.snapshot();
+    this.extras = { ...this.extras, placed: on ? [...list, spot] : list.filter((_, k) => k !== at) };
+    this.commit(before, { text: on ? STR.editorScenery.bumpOn : STR.editorScenery.bumpOff, kind: 'ok' });
+  }
+
+  /** Bump kerbs on the inside of every corner that's part of a chicane. */
+  private chicaneBumps(): void {
+    this.rebuild();
+    const t = this.built?.track;
+    if (!t) return;
+    const list = [...(this.extras.placed ?? [])];
+    let added = 0;
+    for (const i of chicaneCorners(t)) {
+      const spot = bumpFor(t, i);
+      if (!spot || bumpNear(list, spot) >= 0) continue;
+      list.push(spot);
+      added++;
+    }
+    if (!added) {
+      this.note = { text: STR.editorScenery.noChicanes, kind: 'info' };
+      return;
+    }
+    const before = this.snapshot();
+    this.extras = { ...this.extras, placed: list };
+    this.commit(before, { text: fmt(STR.editorScenery.chicaneBumps, { n: added }), kind: 'ok' });
+  }
+
+  /** Takes away all bump kerbs, all placed scenery (not bumps), or all painted run-off. */
+  private clearExtras(what: 'bumps' | 'placed' | 'paint'): void {
+    const list = this.extras.placed ?? [];
+    const keep = what === 'bumps' ? list.filter((p) => p.kind !== 'bump') : what === 'placed' ? list.filter((p) => p.kind === 'bump') : list;
+    if (what === 'paint' ? !this.extras.paint?.length : keep.length === list.length) return;
+    const before = this.snapshot();
+    this.extras = what === 'paint' ? { ...this.extras, paint: undefined } : { ...this.extras, placed: keep };
+    this.commit(before, { text: STR.editorScenery.cleared[what], kind: 'info' });
+  }
+
   private releasePointer(): void {
     const c = this.game.surface.canvas;
     if (this.pointerId !== -1 && c.hasPointerCapture(this.pointerId)) c.releasePointerCapture(this.pointerId);
@@ -1470,6 +1728,7 @@ export class EditorScreen implements Screen {
   private abandonDrag(): void {
     const d = this.drag;
     if ((d?.kind === 'dot' || d?.kind === 'height') && d.moved) this.restore(d.before);
+    if (d?.kind === 'paint') this.restore(d.before);
     if (d?.kind === 'pan') this.game.surface.canvas.style.cursor = '';
     this.stroke = null;
     this.pen.finish();
@@ -1608,6 +1867,10 @@ export class EditorScreen implements Screen {
       Enter: () => (this.closed ? this.race() : this.closeLoop()),
       NumpadEnter: () => (this.closed ? this.race() : this.closeLoop()),
       Escape: () => {
+        if (this.tool) {
+          this.setTool(null);
+          return;
+        }
         if (this.ui.overlayOpen) this.ui.closeOverlay();
         else if (this.selected >= 0) this.selected = -1;
         else this.game.go('menu');
@@ -1651,10 +1914,16 @@ export class EditorScreen implements Screen {
       stats: this.closed && t ? trackStats(t) : null,
       corners: this.closed && t ? this.cornerInfo() : [],
       pitsNoRoom: !!t && this.closed && this.options.pits && !pitLayout(t),
-      saved: this.closed && !!t && this.game.library.has(contentId(this.dots, this.options)),
+      saved: this.closed && !!t && this.game.library.has(this.id()),
       climb: this.dots.length ? Math.max(...this.dots.map((d) => d.h ?? 0)) - Math.min(...this.dots.map((d) => d.h ?? 0)) : 0,
       bankAll: this.bankAllState(),
       tracing: !!this.trace,
+      tool: this.tool ? (this.tool.kind === 'paint' ? { paint: this.tool.value } : { place: this.tool.what }) : null,
+      brush: this.brush,
+      picked: this.closed && t && this.pickedCorner >= 0 && this.pickedCorner < t.kerbs.length ? { n: this.pickedCorner, runoff: this.cornerRunoffValue(this.pickedCorner), bump: this.pickedBump(t) } : null,
+      placedCount: (this.extras.placed ?? []).filter((p) => p.kind !== 'bump').length,
+      bumpCount: (this.extras.placed ?? []).filter((p) => p.kind === 'bump').length,
+      painted: !!this.extras.paint?.length,
     });
 
     if (this.stroke && !this.section) {
@@ -1682,6 +1951,26 @@ export class EditorScreen implements Screen {
       ui.setMessage(fmt(STR.editor.ready, { len: (t.center.length / 1000).toFixed(2), corners: t.kerbs.length, crossings }), 'ok');
     } else if (this.dots.length) ui.setMessage(fmt(STR.editor.openPath, { n: this.dots.length }), 'info');
     else ui.setMessage(this.mode === 'draw' ? STR.editor.hintDraw : STR.editor.hintDots, 'info');
+  }
+
+  /** The brush outline (painting) or a crosshair ring (placing) under the pointer. */
+  private drawToolCursor(ctx: CanvasRenderingContext2D, v: { ox: number; oy: number; scale: number }, w: Vec2): void {
+    const x = v.ox + w.x * v.scale;
+    const y = v.oy + w.y * v.scale;
+    ctx.save();
+    ctx.lineWidth = 2;
+    ctx.setLineDash([5, 4]);
+    ctx.strokeStyle = '#1b3a8a';
+    ctx.beginPath();
+    ctx.arc(x, y, this.tool?.kind === 'paint' ? Math.max(4, this.brush * v.scale) : 10, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  /** True if the picked corner has a bump kerb. */
+  private pickedBump(t: NonNullable<BuildResult['track']>): boolean {
+    const spot = bumpFor(t, this.pickedCorner);
+    return !!spot && bumpNear(this.extras.placed ?? [], spot) >= 0;
   }
 
   /** Every dot's bank if they're all set the same (degrees), 'mixed', or null (all on the track's level). */
@@ -1783,6 +2072,8 @@ export class EditorScreen implements Screen {
     const dotR = Math.min(this.mode === 'draw' ? 3.5 : 5, Math.max(2.5, this.dotSpacingPx() * 0.22));
     if (this.closed && t) {
       drawTrack(ctx, v, t, { heights, walls: this.options.walls });
+      if (this.extras.placed?.length && !heights) drawPlaced(ctx, v, t, this.extras.placed);
+      if (this.tool && this.toolAt) this.drawToolCursor(ctx, v, this.toolAt);
       if (settings().cornerLabels && !heights) drawCornerLabels(ctx, v, t);
       if (this.built && !this.built.ok && this.built.at) drawProblem(ctx, v, this.built.at, time);
       const d = this.drag;

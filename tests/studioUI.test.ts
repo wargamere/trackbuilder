@@ -279,6 +279,48 @@ test('Track edges and Scenery & world: barrier styles and distance, ground, land
   assert.equal(built().options.theme, 'meadow');
 });
 
+test('Place scenery, corner run-off, bump kerbs and painting, each one undo step', () => {
+  pickTrack('Real circuits', 'Monza');
+  const tap = (x: number, y: number, id = 7) => {
+    canvas.dispatchEvent(new win.PointerEvent('pointerdown', { clientX: x, clientY: y, pointerId: id, pointerType: 'mouse', button: 0 }));
+    canvas.dispatchEvent(new win.PointerEvent('pointerup', { clientX: x, clientY: y, pointerId: id, pointerType: 'mouse', button: 0 }));
+    frame();
+  };
+  // A grandstand somewhere on the paper beside the track (wherever a tap finds room).
+  click('Grandstand');
+  let placed = false;
+  for (const [x, y] of [[700, 300], [900, 650], [500, 600], [1200, 300], [800, 450]]) {
+    tap(x, y);
+    if (/placed/.test(message())) {
+      placed = true;
+      break;
+    }
+  }
+  assert.ok(placed, `placed: ${message()}`);
+  click('Done');
+  assert.equal(built().def.extras?.placed?.filter((p) => p.kind === 'grandstand').length, 1);
+  // Corner 1: gravel; every chicane: bump kerbs.
+  click('Next corner');
+  const picked = ui.querySelector('.picked-corner')!;
+  assert.equal((picked as unknown as TestElement).hidden, false);
+  const gravel = [...picked.querySelectorAll<TestButton>('button')].find((b) => b.textContent?.includes('Gravel'))!;
+  gravel.click();
+  frame();
+  assert.ok(built().def.extras?.paint?.length, 'the corner\'s run-off is painted');
+  click('On every chicane');
+  const bumps = built().def.extras?.placed?.filter((p) => p.kind === 'bump').length ?? 0;
+  assert.ok(bumps >= 2, `${bumps} bump kerbs`);
+  click('Undo (Z)');
+  assert.equal(built().def.extras?.placed?.filter((p) => p.kind === 'bump').length ?? 0, 0, 'undo takes the bumps back');
+  click('Redo (Y)');
+  click('Remove bump kerbs');
+  assert.equal(built().def.extras?.placed?.filter((p) => p.kind === 'bump').length ?? 0, 0);
+  click('Clear paint');
+  assert.equal(built().def.extras?.paint, undefined);
+  click('Clear scenery');
+  assert.equal(built().def.extras, undefined, 'nothing left');
+});
+
 test('small screens expose sidebar sections by name with expansion state', () => {
   Object.assign(game.surface, { w: 600, h: 380 });
   editor.resize(); frame();

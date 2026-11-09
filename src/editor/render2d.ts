@@ -2,7 +2,8 @@ import { TRACK, WORLD } from '../config/track.ts';
 import { wrap, type Dot, type Vec2 } from '../core/math.ts';
 import { kerbAt, kerbLayout } from '../track/kerbs.ts';
 import { pitLayout } from '../track/pits.ts';
-import { leftOf, sampleAt } from '../track/spline.ts';
+import { edgeOffsets, leftOf, sampleAt } from '../track/spline.ts';
+import { PLACED_SPEC, placedOn, runoffLayout, type Placed, type PlacedKind } from '../track/extras.ts';
 import type { Track } from '../track/track.ts';
 import { crossingKind, crossingsOf } from './validation.ts';
 
@@ -219,6 +220,117 @@ function drawWallLines(ctx: CanvasRenderingContext2D, v: View, track: Track): vo
   }
 }
 
+/** Map colours of the run-off kinds (by OPTION_CHOICES.runoff index; grass is the paper). */
+const RUNOFF_FILL = [null, '#d9c79f', '#8d939d'] as const;
+
+/** Gravel or tarmac run-off out to the barrier line, side by side and stretch by stretch (it can be painted). */
+function drawRunoff(ctx: CanvasRenderingContext2D, v: View, track: Track): void {
+  const c = track.center;
+  const n = c.points.length;
+  const lay = runoffLayout(track);
+  const { left, right } = edgeOffsets(c);
+  const outer = c.wallOffset + 0.4;
+  const at = (i: number, lat: number): [number, number] => {
+    const l = leftOf(c.tangents[i]);
+    return [v.ox + (c.points[i].x + l.x * lat) * v.scale, v.oy + (c.points[i].y + l.y * lat) * v.scale];
+  };
+  for (const side of [1, -1] as const) {
+    const kinds = side === 1 ? lay.left : lay.right;
+    // Runs of the same kind, each one polygon: along the road edge, back along the outer edge.
+    let i = 0;
+    while (i < n) {
+      const kind = kinds[i];
+      let j = i;
+      while (j < n && kinds[j] === kind) j++;
+      const fill = RUNOFF_FILL[kind];
+      if (fill) {
+        ctx.fillStyle = fill;
+        ctx.beginPath();
+        for (let k = i; k <= Math.min(j, n); k++) {
+          const s = k % n;
+          const e = (side === 1 ? left[s] : right[s]) - 0.2;
+          const [x, y] = at(s, e * side);
+          if (k === i) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        }
+        for (let k = Math.min(j, n); k >= i; k--) {
+          const s = k % n;
+          const kc = c.curvature[s];
+          const inside = (kc > 0 && side === -1) || (kc < 0 && side === 1);
+          const e = side === 1 ? left[s] : right[s];
+          const o = inside ? Math.max(e, Math.min(outer, 0.9 / Math.max(1e-6, Math.abs(kc)))) : outer;
+          const [x, y] = at(s, o * side);
+          ctx.lineTo(x, y);
+        }
+        ctx.closePath();
+        ctx.fill();
+      }
+      i = j;
+    }
+  }
+}
+
+/** Map colours and short labels of placed things. */
+const PLACED_LOOK: Record<PlacedKind, { fill: string; edge: string; icon: string }> = {
+  grandstand: { fill: '#2f6fd8', edge: '#1b3a8a', icon: '🏟' },
+  garages: { fill: '#e9ebef', edge: '#5b6067', icon: '🔧' },
+  tower: { fill: '#45627f', edge: '#1d2b3a', icon: '🗼' },
+  building: { fill: '#9aa0a8', edge: '#4b5058', icon: '🏢' },
+  trees: { fill: '#3e7d48', edge: '#24502b', icon: '🌲' },
+  billboard: { fill: '#f2b705', edge: '#8a6a00', icon: '▭' },
+  brakeboards: { fill: '#ffffff', edge: '#1d1f23', icon: '3·2·1' },
+  bump: { fill: '#f2c200', edge: '#7a6200', icon: '' },
+};
+
+/** Scenery placed by hand and bump kerbs, as outlines on the map; ones the road now runs over are shown struck out. */
+export function drawPlaced(ctx: CanvasRenderingContext2D, v: View, track: Track, list: readonly Placed[]): void {
+  const ok = new Set(placedOn(track).map((q) => `${q.kind}@${q.x},${q.y}`));
+  for (const p of list) {
+    const s = PLACED_SPEC[p.kind];
+    const look = PLACED_LOOK[p.kind];
+    const good = ok.has(`${p.kind}@${p.x},${p.y}`);
+    ctx.save();
+    ctx.translate(v.ox + p.x * v.scale, v.oy + p.y * v.scale);
+    ctx.rotate(p.rot);
+    const w = Math.max(3, s.w * v.scale);
+    const d = Math.max(p.kind === 'bump' ? 2 : 3, s.d * v.scale);
+    ctx.globalAlpha = good ? 1 : 0.45;
+    ctx.fillStyle = look.fill;
+    ctx.strokeStyle = good ? look.edge : PAPER.error;
+    ctx.lineWidth = 1.5;
+    if (p.kind === 'trees') {
+      ctx.beginPath();
+      ctx.arc(0, 0, w / 2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    } else {
+      ctx.fillRect(-w / 2, -d / 2, w, d);
+      ctx.strokeRect(-w / 2, -d / 2, w, d);
+      // The front (the side facing the road).
+      if (p.kind !== 'bump' && d > 4) {
+        ctx.fillStyle = look.edge;
+        ctx.fillRect(-w / 2, d / 2 - Math.max(1.5, d * 0.15), w, Math.max(1.5, d * 0.15));
+      }
+    }
+    if (!good) {
+      ctx.strokeStyle = PAPER.error;
+      ctx.beginPath();
+      ctx.moveTo(-w / 2, -d / 2);
+      ctx.lineTo(w / 2, d / 2);
+      ctx.stroke();
+    }
+    ctx.restore();
+    if (look.icon && v.scale * s.w > 26) {
+      ctx.font = `${Math.round(Math.min(18, 6 + v.scale * 2.2))}px system-ui, sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = '#1b1d22';
+      ctx.fillText(look.icon, v.ox + p.x * v.scale, v.oy + p.y * v.scale - (s.d * v.scale) / 2 - 9);
+    }
+  }
+  ctx.globalAlpha = 1;
+}
+
 /** Road ribbon with edge lines, kerbs, direction arrows and the start/finish line; bridges on top. */
 export function drawTrack(ctx: CanvasRenderingContext2D, v: View, track: Track, style?: Partial<RoadStyle>): void {
   const surface = track.options.road;
@@ -231,12 +343,7 @@ export function drawTrack(ctx: CanvasRenderingContext2D, v: View, track: Track, 
   ctx.lineCap = 'round';
 
   drawPits(ctx, v, track);
-  if (track.options.runoff !== 'grass') {
-    // Gravel or tarmac run-off out to the barrier line.
-    ctx.strokeStyle = track.options.runoff === 'gravel' ? '#d9c79f' : '#8d939d';
-    ctx.lineWidth = (c.wallOffset + 0.4) * 2 * v.scale;
-    strokeRun(ctx, v, c.points, 0, n);
-  }
+  drawRunoff(ctx, v, track);
   if (s.walls) drawWallLines(ctx, v, track);
   // Kerbs first, so the road covers their inner half.
   if (track.options.kerbs !== 'none') drawKerbs(ctx, v, track);
