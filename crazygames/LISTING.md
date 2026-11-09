@@ -26,7 +26,8 @@ Each command builds the game, checks it against CrazyGames' limits and zips it w
 > **Features**
 > - A draw-and-race track editor: freehand or dots, hills, banking, bridges or tunnels, run-off, barriers, scenery and weather-proof roads (tarmac, dirt or snow)
 > - Race up to 11 AI cars that take racing lines, slipstream and battle wheel to wheel
-> - Races of 1 to 50 laps, with tyre wear and pit stops
+> - Races of 1 to 50 laps, with tyre wear and pit stops through a real pit lane (mind the 60 km/h limit)
+> - Damage, yellow flags and a safety car that bunches the field up
 > - Rain, changing weather and night races
 > - Car setup: wing, gears and brake balance
 > - A live timing tower, a ghost of your best lap, and medals for every track
