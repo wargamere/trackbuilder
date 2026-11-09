@@ -1,11 +1,15 @@
 // Prints the size of a build folder and checks the CrazyGames packaging rules:
-// total size <= 20 MB, index.html at the root, and only relative asset paths.
+// index.html at the root, only relative asset paths, at most 1500 files, and a
+// total of at most 20 MB (CrazyGames allows a 50 MB initial download, 250 MB in
+// all, but 20 MB is what its mobile homepage asks for, and the whole build is
+// the initial download here).
 // Usage: node scripts/size.mjs dist/crazygames
 import { readdirSync, readFileSync, statSync, existsSync } from 'node:fs';
 import { join, relative } from 'node:path';
 
 const dir = process.argv[2] ?? 'dist/web';
 const LIMIT = 20 * 1024 * 1024;
+const MAX_FILES = 1500;
 
 function walk(d) {
   return readdirSync(d).flatMap((name) => {
@@ -42,5 +46,9 @@ if (total > LIMIT) {
   console.error('✗ build exceeds the 20 MB budget');
   ok = false;
 }
-if (ok) console.log('✓ relative paths only, within size budget\n');
+if (files.length > MAX_FILES) {
+  console.error(`✗ ${files.length} files: CrazyGames allows at most ${MAX_FILES}`);
+  ok = false;
+}
+if (ok) console.log(`✓ relative paths only, within size budget, ${files.length} of at most ${MAX_FILES} files\n`);
 process.exit(ok ? 0 : 1);

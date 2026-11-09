@@ -185,6 +185,13 @@ function wipeOldLibraryOnce(library: TrackLibrary, records: RecordBook): void {
   saveJSON(FLAG, true);
 }
 
+/** Keys saved before the store tracked them, so the cloud save carries them too. */
+function legacySaveKeys(): string[] {
+  const records = loadJSON<unknown>('records.index', []);
+  const ids = Array.isArray(records) ? records.filter((x): x is string => typeof x === 'string') : [];
+  return ['settings', 'library', 'library.manualOnly', 'records.index', 'editor.draft.v1', ...ids.map((id) => `records.${id}`)];
+}
+
 /** Web build: a share link (#track=…) boots straight into that track. */
 function bootTrack(): Track {
   const code = CAPS.links ? readHashCode() : null;
@@ -205,6 +212,8 @@ async function boot(): Promise<void> {
   installCommonFixes();
   await platform.init();
   platform.loadingStart();
+  // A newer save from the cloud (another device, a cleared browser) before anything reads storage.
+  await platform.startCloud(legacySaveKeys());
 
   audio.installUnlock();
   audio.setPlatformMuted(platform.platformMuted());

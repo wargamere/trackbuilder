@@ -1,4 +1,4 @@
-# Ink Circuit (working title)
+# Track Builder 3D
 
 Draw a racetrack, freehand or dot by dot, then race it in 3D against your own ghost. Built for CrazyGames (HTML5), and also playable as a standalone web build.
 
@@ -524,6 +524,14 @@ The race setup's **Conditions** row (🌦, key C) opens a panel with three switc
   - M toggles sound (also in the pause menu).
 - **Web build only:** on a phone held upright, a "turn your phone sideways" screen covers the game and pauses the race.
 
+### Cloud saves (Supabase)
+
+Progress is also kept in Supabase so it survives a cleared browser and follows the player (`src/platform/cloud.ts`, `supabase/`):
+- **CrazyGames:** by the player's CrazyGames account (logged-in players). The `cg-save` function checks their CrazyGames token.
+- **Web:** an anonymous sign-in per browser.
+
+A newer cloud save is taken at start-up, before the game reads anything (waiting at most 4 s), and changes go up 5 s later and when the page is hidden. Without a project set up or a network, nothing changes for the player. Set-up steps: [`supabase/README.md`](supabase/README.md).
+
 ### CrazyGames SDK (v3)
 
 The code follows https://docs.crazygames.com/sdk/intro/. It lives in `src/platform/crazygames.ts` (SDK wrapper) and `src/platform/services.ts` (what the game calls). Every call is a no-op if the SDK is blocked, fails to start, or reports the environment as `disabled`, so the game still runs.
@@ -548,7 +556,7 @@ The code follows https://docs.crazygames.com/sdk/intro/. It lives in `src/platfo
 
 Tested against the real SDK in its `local` mode (localhost): the SDK's own log showed loading start/stop, gameplay start/stop, happytime, rewarded and midgame ads, a username, and data reads in the expected order.
 
-**Submitting:** run `npm run build:cg` (or `build:cg:ads` for Full Launch), zip the *contents* of `dist/crazygames` (so `index.html` is at the root), upload it in the CrazyGames Developer Portal, and choose "Yes, using the Data Module" for Progress Save.
+**Submitting:** `npm run package:cg` (Basic Launch) or `npm run package:cg:ads` (Full Launch) builds, checks the CrazyGames limits and writes `dist/track-builder-3d-crazygames-basic.zip` / `-full.zip`, with `index.html` at the root and the third-party notices beside it. Upload that in the CrazyGames Developer Portal, and choose "Yes, using the Data Module" for Progress Save. The store listing, covers and checklist are in [`crazygames/`](crazygames/).
 
 ## Status
 

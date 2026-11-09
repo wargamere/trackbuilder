@@ -17,7 +17,17 @@ export interface KeyValueStore {
   removeItem(key: string): void;
 }
 
+// (The game's old name: kept so everyone's saves carry over.)
 const PREFIX = 'inkcircuit.';
+/** Keys the cloud save carries: every key the game has written (the sync.* bookkeeping excepted). */
+const SYNC_KEYS = 'sync.keys';
+const isSyncKey = (key: string) => key.startsWith('sync.');
+
+/** Called after the game writes or removes a key (the cloud save marks itself out of date). */
+let writeListener: ((key: string) => void) | null = null;
+export function onStorageWrite(fn: ((key: string) => void) | null): void {
+  writeListener = fn;
+}
 
 class MemoryStore implements KeyValueStore {
   private readonly map = new Map<string, string>();
@@ -50,9 +60,41 @@ function browserStore(): KeyValueStore | null {
 class SafeStore implements KeyValueStore {
   private readonly memory = new MemoryStore();
   private readonly primary: () => KeyValueStore | null;
+  private keySet: Set<string> | null = null;
 
   constructor(primary: () => KeyValueStore | null) {
     this.primary = primary;
+  }
+
+  /** Every key the game has written (for the cloud save). */
+  keys(): string[] {
+    return [...this.tracked()];
+  }
+
+  /** Adds keys written before keys were tracked (only those that exist). */
+  seedKeys(keys: readonly string[]): void {
+    for (const k of keys) if (!isSyncKey(k) && this.getItem(k) !== null) this.track(k, true);
+  }
+
+  private tracked(): Set<string> {
+    if (!this.keySet) {
+      let list: unknown = [];
+      try {
+        list = JSON.parse(this.getItem(SYNC_KEYS) ?? '[]');
+      } catch {
+        /* a damaged list starts again */
+      }
+      this.keySet = new Set(Array.isArray(list) ? list.filter((k): k is string => typeof k === 'string') : []);
+    }
+    return this.keySet;
+  }
+
+  private track(key: string, present: boolean): void {
+    const set = this.tracked();
+    if (set.has(key) === present) return;
+    if (present) set.add(key);
+    else set.delete(key);
+    this.write(SYNC_KEYS, JSON.stringify([...set]));
   }
 
   getItem(key: string): string | null {
@@ -67,6 +109,13 @@ class SafeStore implements KeyValueStore {
   }
 
   setItem(key: string, value: string): void {
+    this.write(key, value);
+    if (isSyncKey(key)) return;
+    this.track(key, true);
+    writeListener?.(key);
+  }
+
+  private write(key: string, value: string): void {
     const k = PREFIX + key;
     try {
       const p = this.primary();
@@ -89,6 +138,9 @@ class SafeStore implements KeyValueStore {
     } catch {
       /* ignore */
     }
+    if (isSyncKey(key)) return;
+    this.track(key, false);
+    writeListener?.(key);
   }
 }
 
@@ -136,7 +188,7 @@ class CrazyGamesStore implements KeyValueStore {
 const crazyStore = new CrazyGamesStore();
 
 /** The game's store for this platform. */
-export const storage: KeyValueStore = new SafeStore(PLATFORM === 'crazygames' ? () => crazyStore : () => local);
+export const storage: KeyValueStore & { keys(): string[]; seedKeys(keys: readonly string[]): void } = new SafeStore(PLATFORM === 'crazygames' ? () => crazyStore : () => local);
 
 /** JSON helpers; a corrupt value reads as `fallback`. */
 export function loadJSON<T>(key: string, fallback: T): T {

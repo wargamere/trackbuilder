@@ -4,7 +4,7 @@
  */
 export const STR = {
   /** Working title — change it here and it updates everywhere. */
-  gameName: 'Ink Circuit',
+  gameName: 'Track Builder 3D',
   tagline: 'Dream it. Build it. Race it.',
 
   buttons: {

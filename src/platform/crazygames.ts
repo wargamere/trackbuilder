@@ -42,6 +42,9 @@ interface Sdk {
     isUserAccountAvailable?: boolean;
     systemInfo?: { device?: { type?: 'desktop' | 'tablet' | 'mobile' } };
     getUser(): Promise<SdkUser | null>;
+    /** A signed token (1 h) for the logged-in player, for our own server to check; throws for guests. */
+    getUserToken?(): Promise<string>;
+    addAuthListener?(fn: (user: SdkUser | null) => void): void;
   };
 }
 
@@ -137,4 +140,19 @@ export const cg = {
   },
 
   deviceType: (): 'desktop' | 'tablet' | 'mobile' | null => safe((s) => s.user.systemInfo?.device?.type ?? null, null),
+
+  /** The logged-in player's signed token (see the SDK's user module), or null for guests / no SDK. */
+  async userToken(): Promise<string | null> {
+    if (!sdk || !sdk.user.isUserAccountAvailable || typeof sdk.user.getUserToken !== 'function') return null;
+    try {
+      return await sdk.user.getUserToken();
+    } catch {
+      return null;
+    }
+  },
+
+  /** Called when the player logs in or out on CrazyGames. */
+  onAuthChange(fn: () => void): void {
+    safe((s) => s.user.addAuthListener?.(() => fn()), undefined);
+  },
 };

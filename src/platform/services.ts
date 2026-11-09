@@ -1,5 +1,7 @@
+import { browserSessionStore, cloudConfig, CloudSync, crazyGamesBackend, webBackend } from './cloud.ts';
 import { cg, crazyGamesReady, initCrazyGames } from './crazygames.ts';
 import { PLATFORM } from './platform.ts';
+import { onStorageWrite, storage } from './storage.ts';
 
 /**
  * Platform services the game calls without knowing which build it is in.
@@ -45,6 +47,9 @@ export interface AdHooks {
 
 let hooks: AdHooks = { onAdStart: () => {}, onAdEnd: () => {} };
 
+/** The cloud save, once started (see cloud.ts). */
+let cloud: CloudSync | null = null;
+
 export const platform = {
   /** Must finish before anything reads storage. Never rejects. */
   async init(): Promise<void> {
@@ -52,6 +57,53 @@ export const platform = {
     const ok = await initCrazyGames();
     log(ok ? 'init' : 'init:unavailable');
     if (typeof document !== 'undefined') document.addEventListener('visibilitychange', syncGameplay);
+  },
+
+  /**
+   * Cloud saves (Supabase), when the build has a project set up: on
+   * CrazyGames for a logged-in player (by their account; it starts when they
+   * log in), on the web for every browser. `legacyKeys` are keys saved before
+   * keys were tracked. Resolves once a newer cloud save (if any) is in place:
+   * call it before the game reads storage. Never rejects.
+   */
+  async startCloud(legacyKeys: readonly string[]): Promise<void> {
+    const cfg = cloudConfig();
+    if (!cfg) return;
+    storage.seedKeys(legacyKeys);
+    const begin = async (): Promise<boolean> => {
+      if (PLATFORM === 'crazygames') {
+        if (!crazyGamesReady() || !(await cg.userToken())) return false; // guests: the CrazyGames data module only
+        cloud = new CloudSync(crazyGamesBackend(cfg, () => cg.userToken()), storage);
+      } else cloud = new CloudSync(webBackend(cfg, browserSessionStore()), storage);
+      log('cloud:start');
+      const took = await cloud.restore();
+      log(`cloud:${cloud.status}`);
+      return took;
+    };
+    onStorageWrite(() => cloud?.changed());
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', () => {
+        if (document.hidden) void cloud?.flush();
+      });
+      window.addEventListener('pagehide', () => void cloud?.flush());
+    }
+    try {
+      await begin();
+    } catch {
+      /* the game carries on with what's on this device */
+    }
+    // Logging in on CrazyGames mid-game: their account's save from then on (CrazyGames reloads the
+    // game for the new account's data, so a cloud save taken now is read when it starts again).
+    if (PLATFORM === 'crazygames') {
+      cg.onAuthChange(() => {
+        if (!cloud) void begin().catch(() => {});
+      });
+    }
+  },
+
+  /** What the cloud save last did (dev builds show it). */
+  get cloudStatus(): string {
+    return cloud?.status ?? 'off';
   },
 
   get sdkReady(): boolean {

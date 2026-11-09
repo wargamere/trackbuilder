@@ -72,6 +72,13 @@ const storedAuthor = (s: StoredRecord | null): number | null | undefined =>
 
 /** Records for this many tracks are kept; the least recently raced are dropped. */
 const MAX_TRACKS = 40;
+/**
+ * Ghosts kept in all (characters of their codes): beyond this the least
+ * recently raced tracks lose their ghost (their best times stay). Everything
+ * the game saves has to fit the CrazyGames data module's 1 MB, and ghosts are
+ * most of it (about 11 KB for a 45 s lap).
+ */
+export const GHOST_BUDGET = 450_000;
 const INDEX_KEY = 'records.index';
 const key = (id: string) => `records.${id}`;
 
@@ -127,6 +134,23 @@ export class RecordBook {
       }
     }
     saveJSON(INDEX_KEY, index);
+    this.trimGhosts(index, id);
+  }
+
+  /** Drops ghosts from the least recently raced tracks (never `keep`'s) until they fit GHOST_BUDGET. */
+  private trimGhosts(index: string[], keep: string): void {
+    const sizes = index.map((x) => loadJSON<StoredRecord | null>(key(x), null)?.ghost?.length ?? 0);
+    let total = sizes.reduce((a, b) => a + b, 0);
+    for (let k = 0; k < index.length && total > GHOST_BUDGET; k++) {
+      const x = index[k];
+      if (x === keep || !sizes[k]) continue;
+      const s = loadJSON<StoredRecord | null>(key(x), null);
+      if (!s) continue;
+      saveJSON(key(x), { ...s, ghost: null });
+      const cached = this.cache.get(x);
+      if (cached) cached.ghost = null;
+      total -= sizes[k];
+    }
   }
 
   /** Forgets everything about a track (when it is deleted from the library). */

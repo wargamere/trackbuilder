@@ -1,5 +1,5 @@
 {
-  "name": "ink-circuit",
+  "name": "track-builder-3d",
   "private": true,
   "version": "0.1.0",
   "type": "module",
@@ -12,6 +12,8 @@
     "build:web": "npm run typecheck && vite build --mode web && node scripts/size.mjs dist/web",
     "build:cg": "npm run typecheck && vite build --mode crazygames && node scripts/size.mjs dist/crazygames",
     "build:cg:ads": "npm run typecheck && ADS=1 vite build --mode crazygames && node scripts/size.mjs dist/crazygames",
+    "package:cg": "npm run build:cg && node scripts/zipBuild.mjs dist/crazygames dist/track-builder-3d-crazygames-basic.zip",
+    "package:cg:ads": "npm run build:cg:ads && node scripts/zipBuild.mjs dist/crazygames dist/track-builder-3d-crazygames-full.zip",
     "build": "npm run build:web && npm run build:cg",
     "preview:web": "vite preview --outDir dist/web",
     "preview:cg": "vite preview --outDir dist/crazygames",
