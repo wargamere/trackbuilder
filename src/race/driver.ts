@@ -26,6 +26,8 @@ export interface DriveOptions {
   late?: boolean;
   /** A path of its own across the road (m left of the centre, at s) instead of the lane: covering the inside of a bend, or the way into the pit box. */
   route?: ((s: number) => number) | null;
+  /** The route may leave the road (the way through the pit lane): it isn't kept within the room beside the line. */
+  offRoad?: boolean;
   /** The tyres' grip as a share of what the plan was made for (worn tyres: slower through the bends; softer or rain tyres: quicker). */
   grip?: number;
   /** The brakes' bite as a share of what the plan was made for (a road getting wet: less, so it brakes earlier). */
@@ -312,10 +314,10 @@ export class RacingDriver {
   drive(st: CarState, lane = 0, out?: DriveInput, opts: DriveOptions = {}): DriveInput {
     const H = HANDLING;
     const o = out ?? { throttle: 0, brake: 0, steer: 0, handbrake: false };
-    const { pace = 1, cap = Infinity, tow = 0, keep = null, late = false, route = null, grip = 1, brake: bite = 1 } = opts;
+    const { pace = 1, cap = Infinity, tow = 0, keep = null, late = false, route = null, offRoad = false, grip = 1, brake: bite = 1 } = opts;
     const v = Math.max(0, st.speed);
     const kept = keep;
-    const base = route ? (x: number) => this.clampLat(x, route(x)) : (x: number) => this.lateralAt(x, lane);
+    const base = route ? (offRoad ? route : (x: number) => this.clampLat(x, route(x))) : (x: number) => this.lateralAt(x, lane);
     const path = kept ? (x: number) => this.clampLat(x, clamp(base(x), kept.lo, kept.hi)) : base;
 
     // Steering: aim for a point on the line a little way ahead (further at speed): the arc
@@ -330,7 +332,7 @@ export class RacingDriver {
     const sk = st.s + v * DRIVER.curvaturePreview;
     // (Bent round a car beside us: wherever the stretch we keep to cuts the path.)
     const bent = route !== null || (kept !== null && Math.abs(path(st.s + look) - this.lateralAt(st.s + look, lane)) > 0.05);
-    const kAhead = bent || Math.abs(lane) > DRIVER.offLine ? this.pathCurvature(sk, path) : this.at(this.line.curvature, sk);
+    const kAhead = bent || Math.abs(lane) > DRIVER.offLine ? this.pathCurvature(sk, path, !offRoad) : this.at(this.line.curvature, sk);
     const k = (2 * Math.sin(alpha)) / dist + DRIVER.curvatureFeed * kAhead;
     const lock = H.maxSteerAngle / (1 + Math.abs(st.speed) / H.steerFalloff);
     o.steer = clamp(Math.atan(k * H.wheelBase) / lock, -1, 1);
@@ -347,7 +349,7 @@ export class RacingDriver {
     if (route) {
       // A path of its own (smooth, and meant): its own limit (read ahead, as the line's is, so it
       // brakes in time), keeping just a little grip in hand.
-      limit = Math.min(this.pathLimit(sp, path, true, brake, DRIVER.routeGrip), this.pathLimit(st.s, path, true, brake, DRIVER.routeGrip)) * DRIVER.routeSpeed;
+      limit = Math.min(this.pathLimit(sp, path, !offRoad, brake, DRIVER.routeGrip), this.pathLimit(st.s, path, !offRoad, brake, DRIVER.routeGrip)) * DRIVER.routeSpeed;
     } else {
       if (Math.abs(lane) > DRIVER.offLine) limit = Math.min(this.laneLimitAt(sp, lane, late), this.laneLimitAt(st.s + 2, lane, late));
       // (Further over than the widest lane with a plan of its own: the path's own limit.)

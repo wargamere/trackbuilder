@@ -463,7 +463,7 @@ In a race with AI cars a timing tower runs down the left of the screen (`ui/timi
 - Each car's position, colour and name, and its gap to you: "−1.8" if it's ahead, "+0.6" behind, "+1 LAP" when a lap or more apart.
 - Gaps are worked out the way race timing does it: how long ago the car ahead passed the point where the car behind is now. Every car's time is recorded at each 10 m of race distance.
 - With tyre wear: the kind of tyres each car is on, how many laps old they are (red once they've gone off), its stops so far, and PIT while it's in the pits.
-- Under it, with tyre wear: where you'd rejoin if you stopped now, e.g. "Pit now: rejoin P5, behind Ada". The cars behind you by less than a stop costs (the 3 s service plus about 3.5 s braking in and getting going) would get by.
+- Under it, with tyre wear: where you'd rejoin if you stopped now, e.g. "Pit now: rejoin P5, behind Ada". The cars behind you by less than a stop costs would get by. The cost is the 3 s service, about 3.5 s braking in and getting going, and the pit lane at its speed limit (`pitLoss` in `race/strategy.ts`). It's checked against real AI stops within 2 s.
 - T (rebindable) switches it full → compact (the leaders and the cars around you) → hidden. Tapping it switches full and compact, and the choice is remembered.
 
 ### Conditions: rain, night, tyre wear and pit stops
@@ -493,10 +493,36 @@ The race setup's **Conditions** row (🌦, key C) opens a panel with three switc
   - *How long they last depends on the track* (`race/strategy.ts`). Mediums last 6 laps on the easiest track and 4 on the hardest, by how hard a lap works the tyres. That's the speed turned through in the bends plus the speed shed under braking, on the racing line flat out. Monza gets 6 laps, Sakhir (Bahrain) about 4.7, Shanghai 4.3. The Conditions panel shows each kind's life on the track you're racing.
   - *Wear* is counted in laps driven; sliding counts extra. Over their life the tyres fade by 7 %. Then they go off: over the next quarter of their life their grip falls to 60 %, and stays there. A lap on tyres that have gone off is 12–21 % slower: heavily slower, not blown up.
   - *The HUD* shows the kind (S / M / H / W in its colour) with a bar and the share of their life left. It turns yellow in the last 20 % ("Tyres going off soon: pit in the next lap or two") and red once they've gone off ("Tyres have gone off! Pit now").
-  - *The pit box* is a yellow PIT box painted at the edge of the start straight, in front of a garage when the track has pits, and always clear of the start line and the grid. Stop in it and the crew holds the car for 3 s while it fits a new set. While it works, choose the kind with 1–4 or a tap; each button shows how many laps that kind lasts here. If you don't choose, you get the same kind again. A stop costs about 6 s in all, braking in and getting going again. The box is on the track itself, so the cars coming past go round you.
+  - *The pit box* is yours in the pit lane, in front of a garage (see *The pit lane* below). On a track without pits it's a yellow PIT box painted at the edge of the start straight, clear of the start line and the grid, shared by every car and on the track itself.
+    - Stop in it and the crew holds the car for 3 s while it fits a new set.
+    - While it works, choose the kind with 1–4 or a tap; each button shows how many laps that kind lasts here. If you don't choose, you get the same kind again.
   - *The AI* is quicker on softer tyres and in wets in the rain: through the bends, not into them, as the brakes are no better. As its tyres fade it slows wherever a bend, or braking for one, sets its speed, by the square root of the grip left. On tyres that have gone off it takes extra care, as they slide. It stays within the track limits even then (a test checks that).
   - *AI strategy:* it starts on the quickest kind that lasts the race. If none does, it starts on its own choice (medium, hard or soft by grid slot, so the field is mixed). In the rain it's wets. It stops when its tyres would go off before the box comes round again, give or take a bit per car, so they don't all stop on the same lap. It doesn't stop with less than a lap to go, or when its tyres will last to the finish. At a stop it picks the same way for the laps left. It pulls over to the box from 180 m out, brakes to stop in it, and rejoins the line over 90 m.
   - *Qualifying* is always on new tyres, without wear.
+
+### The pit lane
+
+On every track with pits (`track/pitLane.ts`, `PIT_LANE` in `config/race.ts`).
+
+- **The way through.**
+  - A ramp leaves the track 45 m before the garages.
+  - A white concrete pit wall with a red top runs beside the garages. The lane behind it has a fast lane by the wall and a yellow box in front of each garage.
+  - Another ramp takes you back onto the track 45 m after them.
+  - Where a bend comes too soon after the building, the ramp starts in front of the end garages instead, and their boxes aren't used. Every built-in track with pits gets a lane: 4 boxes at Las Vegas, 7 at Spa, 10 almost everywhere else.
+  - The track's own barrier makes way for the lane on that side. The pit wall, the ramps' barrier and the garages keep cars in the lane and the track's traffic out of it (`CarPhysics.collideWalls`).
+  - The lane and its ramps are tarmac and count as track (no track limits there), on dirt and snow tracks too.
+- **The speed limit: 60 km/h** between the lines at each end of the pit wall.
+  - The limiter comes on at the line: the HUD shows *PIT LIMITER · 60 km/h*, the throttle is cut above the limit and the brakes help.
+  - Cross the line faster than the limit (+2 km/h) and it's a **5 s penalty**, added to your race time and shown in the results. In practice it's just a warning.
+- **The boxes.** You get the one nearest the middle; the AI cars take the others in turn, sharing round when there are more cars than garages.
+  - Stop with your car's middle within 2.5 m of the box's middle and the crew gets to work.
+  - The box is highlighted (yellow, with PIT) when there's something to stop for: tyre wear or damage on.
+- **What a stop costs:** 8½–11½ s on the built-in tracks, about a fifth of a lap, as in real racing.
+- **The AI:**
+  - It moves over to the road's edge before the entry and brakes to be at the limit 6 m before the line.
+  - It follows the fast lane, swings into its box and stops, then rejoins the line over the exit ramp.
+  - Once in the lane it never turns back. Held up by a car in its box, it waits behind it. Pushed past its box, it drives on out and stops next lap.
+  - A test calls 11 cars in on the same lap on a track with 4 boxes: everyone stops once and finishes, nobody goes over the limit or across the pit wall.
 
 ### Damage, flags and the safety car
 
@@ -608,6 +634,7 @@ Tested against the real SDK in its `local` mode (localhost): the SDK's own log s
 - [x] Editor: tap-to-place scenery, run-off per corner and painted with a brush, bump kerbs (per corner and on every chicane)
 - [x] Editor: bridges or tunnels where the track crosses itself, and lifting every level crossing
 - [x] Damage (wing and bodywork, mended in the pit box), yellow flags and the safety car
+- [x] A real pit lane: ramps off and back on, a pit wall, a box for each car, a 60 km/h limiter and a penalty for speeding into it
 
 ## Validation for the track editor
 

@@ -2,6 +2,7 @@ import { angleDelta, type CarState, type DriveInput } from '../car/physics.ts';
 import { HANDLING } from '../config/handling.ts';
 import { ASSISTS } from '../config/race.ts';
 import type { Assists } from '../core/settings.ts';
+import { onLane, pitLane } from '../track/pitLane.ts';
 import type { Track } from '../track/track.ts';
 import { wetPace } from './ai.ts';
 import { roadPace } from './racingLine.ts';
@@ -41,10 +42,13 @@ const scratch: DriveInput = { throttle: 0, brake: 0, steer: 0, handbrake: false 
  * never steers more than ASSISTS.steerShare of the lock, so corners are still
  * yours; the more you steer the less it does, and at full lock (any key press)
  * it does nothing.
- * Off below a walking pace, and when reversing.
+ * Off below a walking pace, when reversing, and in the pit lane (the line is
+ * on the other side of the pit wall; the limiter does the braking there).
  */
 export function applyAssists(track: Track, st: CarState, inp: DriveInput, a: Assists, wet = false): DriveInput {
   if ((!a.brake && !a.steer) || st.speed < ASSISTS.minSpeed) return inp;
+  const lane = pitLane(track);
+  if (lane && onLane(lane, st.s, st.lateral)) return inp;
   const d = assistDriver(track, wet);
   const ai = d.drive(st, 0, scratch);
   if (a.brake && ai.brake > inp.brake) {

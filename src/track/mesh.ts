@@ -6,6 +6,8 @@ import { QuadBuilder } from '../render/geom.ts';
 import { runoffLayout } from './extras.ts';
 import { kerbAt, kerbLayout } from './kerbs.ts';
 import { pitLayout } from './pits.ts';
+import { outerAt, paveY, pitLane, pitWallAt } from './pitLane.ts';
+import { PIT_LANE as PL } from '../config/race.ts';
 import { tunnelsOf } from './tunnels.ts';
 import { edgeOffsets, leftOf, sampleAt, surfaceY, type Centerline } from './spline.ts';
 import { terrainHeight, type TrackSurface } from './surface.ts';
@@ -409,14 +411,18 @@ export function buildPitGeometry(track: Track, surf: TrackSurface): BufferGeomet
     const z = q.y + l.y * lat * side;
     return [x, terrainHeight(surf.terrain, x, z) + y, z];
   };
-  // Pit lane and its white edge lines.
   const [l0, l1] = pits.lane;
   const [b0, b1] = pits.building;
   const step = 2.5;
-  for (let s = pits.from - 8; s < pits.to + 8; s += step) {
-    const e = s + step;
-    p.quad(at(s, l0, 0.06), at(e, l0, 0.06), at(e, l1 + 0.5, 0.06), at(s, l1 + 0.5, 0.06), PIT_LANE);
-    p.quad(at(s, l0 + 0.4, 0.08), at(e, l0 + 0.4, 0.08), at(e, l0 + 0.7, 0.08), at(s, l0 + 0.7, 0.08), PIT_LINE);
+  const lane = pitLane(track);
+  if (lane) buildPitLane(track, p, lane, pits.from, pits.to);
+  else {
+    // Pit lane (scenery only: no room for its ramps) and its white edge lines.
+    for (let s = pits.from - 8; s < pits.to + 8; s += step) {
+      const e = s + step;
+      p.quad(at(s, l0, 0.06), at(e, l0, 0.06), at(e, l1 + 0.5, 0.06), at(s, l1 + 0.5, 0.06), PIT_LANE);
+      p.quad(at(s, l0 + 0.4, 0.08), at(e, l0 + 0.4, 0.08), at(e, l0 + 0.7, 0.08), at(s, l0 + 0.7, 0.08), PIT_LINE);
+    }
   }
   // The building: front with garages, back, roof and end walls.
   const doorW = 4.4;
@@ -452,4 +458,76 @@ export function buildPitGeometry(track: Track, surf: TrackSurface): BufferGeomet
   p.quad(at(g1, b0, -0.6), at(s1, b0, -0.6), at(s1, b0, H), at(g1, b0, H), PIT_WALL);
   for (const s of [s0, s1]) p.quad(at(s, b0, -0.6), at(s, b1, -0.6), at(s, b1, H), at(s, b0, H), PIT_BACK);
   return p.build();
+}
+
+const PIT_BOX_LINE = 0xf2b705;
+
+/**
+ * The pit lane itself: its paving (the ramps off and back onto the track and
+ * the lane past the garages), the pit wall between it and the track, a
+ * barrier along the ramps' outer edge, the speed-limit lines across it, the
+ * line between the fast lane and the boxes, and each box's outline.
+ */
+function buildPitLane(track: Track, p: Panels, lane: NonNullable<ReturnType<typeof pitLane>>, from: number, to: number): void {
+  const c = track.center;
+  const side = lane.side;
+  /** A point at track position s, `m` m out on the pit side, `y` above the paving. */
+  const at = (s: number, m: number, y: number): number[] => {
+    const { p: q, t } = sampleAt(c, s);
+    const l = leftOf(t);
+    return [q.x + l.x * m * side, paveY(track, lane, s, m) + y, q.y + l.y * m * side];
+  };
+  const strip = (s0: number, s1: number, m0: (s: number) => number, m1: (s: number) => number, y: number, hex: number, step = 2) => {
+    for (let s = s0; s < s1 - 0.01; s += step) {
+      const e = Math.min(s1, s + step);
+      p.quad(at(s, m0(s), y), at(e, m0(e), y), at(e, m1(e), y), at(s, m1(s), y), hex);
+    }
+  };
+  const outer = (s: number) => outerAt(lane, s) ?? lane.wall;
+  // The paving: from the road's edge on the ramps, from the pit wall beside it.
+  const lo = (s: number) => (pitWallAt(lane, s) ? lane.inner : lane.edge + 0.05);
+  strip(lane.entry, lane.wallFrom, lo, outer, 0, PIT_LANE);
+  strip(lane.wallFrom, lane.wallTo, () => lane.inner, outer, 0, PIT_LANE);
+  strip(lane.wallTo, lane.exit, lo, outer, 0, PIT_LANE);
+  // White lines: along the outer edge, along the pit wall, and between the fast lane and the boxes.
+  strip(lane.entry + 4, lane.exit - 4, (s) => outer(s) - 0.45, (s) => outer(s) - 0.3, 0.02, PIT_LINE);
+  strip(lane.wallFrom, lane.wallTo, () => lane.inner + 0.25, () => lane.inner + 0.4, 0.02, PIT_LINE);
+  const split = lane.box - PL.boxWidth / 2 - 0.1;
+  strip(from, to, () => split - 0.08, () => split + 0.08, 0.02, PIT_LINE);
+  // The speed limit: a broad white line across the lane at each end of the pit wall.
+  for (const s of [lane.wallFrom, lane.wallTo]) strip(s - 0.4, s + 0.4, () => lane.inner, outer, 0.025, PIT_LINE, 0.8);
+  // Each box's yellow outline.
+  const bw = PL.boxWidth / 2;
+  for (const s of lane.boxes) {
+    const b0 = s - PL.boxLength / 2;
+    const b1 = s + PL.boxLength / 2;
+    strip(b0, b1, () => lane.box - bw, () => lane.box - bw + 0.15, 0.03, PIT_BOX_LINE, 1);
+    strip(b0, b1, () => lane.box + bw - 0.15, () => lane.box + bw, 0.03, PIT_BOX_LINE, 1);
+    for (const e of [b0, b1 - 0.15]) strip(e, e + 0.15, () => lane.box - bw, () => lane.box + bw, 0.03, PIT_BOX_LINE, 0.15);
+  }
+  // The pit wall: concrete, white with a red top, its ends closed.
+  const H = 1.05;
+  const wall = (s0: number, s1: number, m: (s: number) => number, thick: number) => {
+    for (let s = s0; s < s1 - 0.01; s += 2) {
+      const e = Math.min(s1, s + 2);
+      const [a, b] = [m(s), m(e)];
+      p.quad(at(s, a, -0.8), at(e, b, -0.8), at(e, b, H), at(s, a, H), WALL_WHITE);
+      p.quad(at(s, a + thick, -0.8), at(e, b + thick, -0.8), at(e, b + thick, H), at(s, a + thick, H), CONCRETE_DARK);
+      p.quad(at(s, a, H), at(e, b, H), at(e, b + thick, H), at(s, a + thick, H), WALL_RED);
+    }
+    for (const [s, x] of [[s0, m(s0)], [s1, m(s1)]] as const) p.quad(at(s, x, -0.8), at(s, x + thick, -0.8), at(s, x + thick, H), at(s, x, H), CONCRETE_DARK);
+  };
+  wall(lane.wallFrom, lane.wallTo, () => lane.wall, PL.wallThick);
+  // A barrier along the ramps' outer edge (beside the garages, the building is the edge).
+  const ramp = (s: number) => s < from - 0.5 || s > to + 0.5 || outer(s) < lane.outer - 0.05;
+  let run: number | null = null;
+  for (let s = lane.entry; s <= lane.exit + 0.01; s += 2) {
+    const on = ramp(s) && s < lane.exit;
+    if (on && run === null) run = s;
+    if (!on && run !== null) {
+      wall(run, s, outer, 0.45);
+      run = null;
+    }
+  }
+  if (run !== null) wall(run, lane.exit, outer, 0.45);
 }

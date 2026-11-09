@@ -1,15 +1,17 @@
 import type { CarPhysics, CarState } from '../car/physics.ts';
-import { CONDITIONS, DAMAGE, type Compound } from '../config/race.ts';
+import { CONDITIONS, DAMAGE, PIT_LANE, type Compound } from '../config/race.ts';
 import { wrap } from '../core/math.ts';
 import { pitLayout } from '../track/pits.ts';
+import { boxFor, pitLane } from '../track/pitLane.ts';
 import { edgeOffsets } from '../track/spline.ts';
 import type { Track } from '../track/track.ts';
 
 /**
- * The pit box: a marked bay at the road's edge on the start straight (in
- * front of the middle garage when the track has pits). Stop in it and the
- * crew fits new tyres. It's on the track itself, so a car in it is in the
- * way of the cars coming past, as in a real pit lane only quicker.
+ * A pit box: stop in it and the crew fits new tyres. With a pit lane, each
+ * car's box is in the lane in front of a garage; on a track without one, a
+ * marked bay at the road's edge on the start straight (in front of the middle
+ * garage when the track has pits), shared by every car and in the way of the
+ * cars coming past.
  */
 export interface PitBox {
   /** Track position of its middle (m from the start line, 0..length). */
@@ -24,8 +26,15 @@ export interface PitBox {
 
 const boxes = new WeakMap<Track, PitBox>();
 
-/** The track's pit box (worked out once per track). */
-export function pitBox(track: Track): PitBox {
+/** Car `car`'s pit box (0 = you): its own in the pit lane, or the track's one box on the road. */
+export function pitBox(track: Track, car = 0): PitBox {
+  const lane = pitLane(track);
+  if (lane) return { s: boxFor(lane, car), length: PIT_LANE.boxLength, lateral: lane.side * lane.box, width: PIT_LANE.boxWidth, side: lane.side };
+  return roadBox(track);
+}
+
+/** The box on the road, for a track without a pit lane (worked out once per track). */
+function roadBox(track: Track): PitBox {
   const known = boxes.get(track);
   if (known) return known;
   const C = CONDITIONS;
@@ -62,9 +71,9 @@ export function along(from: number, to: number, L: number): number {
   return d;
 }
 
-/** The car is in the box: its middle within the marked bay (a little leeway across). */
+/** The car is in the box: its middle within the marked bay (a little leeway across, and along a short one). */
 export function inBox(box: PitBox, L: number, st: CarState): boolean {
-  return Math.abs(along(box.s, st.s, L)) <= box.length / 2 - 1.5 && Math.abs(st.lateral - box.lateral) <= box.width / 2 + 0.3;
+  return Math.abs(along(box.s, st.s, L)) <= Math.max(2.5, box.length / 2 - 1.5) && Math.abs(st.lateral - box.lateral) <= box.width / 2 + 0.3;
 }
 
 export type PitEvent = 'start' | 'done' | null;
@@ -87,8 +96,9 @@ export class PitCrew {
   /** Ready for a stop: the car has been outside the box since the last one. */
   private armed = false;
 
-  constructor(track: Track) {
-    this.box = pitBox(track);
+  /** `car`: whose crew (0 = yours; see pitBox). */
+  constructor(track: Track, car = 0) {
+    this.box = pitBox(track, car);
     this.length = track.center.length;
   }
 

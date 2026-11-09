@@ -1,6 +1,7 @@
 import { BufferGeometry, CanvasTexture, DoubleSide, Float32BufferAttribute, Mesh, MeshBasicMaterial } from 'three';
 import { wrap } from '../core/math.ts';
 import type { PitBox } from '../race/pitStop.ts';
+import { paveY, pitLane } from '../track/pitLane.ts';
 import { leftOf, sampleAt, surfaceY } from '../track/spline.ts';
 import type { Track } from '../track/track.ts';
 
@@ -43,11 +44,14 @@ function roadY(track: Track, s: number, lat: number): number {
 }
 
 /**
- * The pit box painted on the road: a yellow outline and "PIT", following the
- * road's rise and bank. One draw call, drawn just over the road.
+ * Your pit box: a yellow outline and "PIT", on the pit lane's paving (or the
+ * road's, following its rise and bank, where there's no pit lane). One draw
+ * call, drawn just over the surface.
  */
 export function buildPitBoxMesh(track: Track, box: PitBox): Mesh {
   const c = track.center;
+  const lane = pitLane(track);
+  const y = (s: number, lat: number) => (lane ? paveY(track, lane, s, lat * lane.side) + 0.02 : roadY(track, s, lat) + 0.035);
   const steps = 10;
   const pos: number[] = [];
   const uv: number[] = [];
@@ -59,7 +63,7 @@ export function buildPitBoxMesh(track: Track, box: PitBox): Mesh {
     // u runs from the box's left-hand edge (as you drive in) to its right.
     for (const side of [1, -1]) {
       const lat = box.lateral + (side * box.width) / 2;
-      pos.push(p.x + l.x * lat, roadY(track, s, lat) + 0.035, p.y + l.y * lat);
+      pos.push(p.x + l.x * lat, y(s, lat), p.y + l.y * lat);
       uv.push((1 - side) / 2, k / steps);
     }
   }

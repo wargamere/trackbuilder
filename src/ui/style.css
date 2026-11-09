@@ -3336,6 +3336,11 @@ html:not([data-screen="race"]) .rotate-prompt { display: none; }
   color: #1d1f23;
 }
 
+.hud-flag.pit {
+  background: #2f6fd8;
+  color: #fff;
+}
+
 .hud-flag.sc {
   background: #1d1f23;
   color: #f2c200;

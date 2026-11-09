@@ -1,7 +1,8 @@
 import { compoundLife } from '../car/tyres.ts';
 import { HANDLING } from '../config/handling.ts';
-import { AI, CONDITIONS, DEFAULT_SETUP, SETUP, TYRES, type CarSetup, type Compound, type WingLevel } from '../config/race.ts';
+import { AI, CONDITIONS, DEFAULT_SETUP, PIT_LANE, SETUP, TYRES, type CarSetup, type Compound, type WingLevel } from '../config/race.ts';
 import { clamp } from '../core/math.ts';
+import { pitLane } from '../track/pitLane.ts';
 import type { Track } from '../track/track.ts';
 import { planLapTime, racingLine, roadPace, speedProfile, type Pace } from './racingLine.ts';
 
@@ -36,9 +37,15 @@ export function trackTyreLife(track: Track): number {
   return T.lifeEasy + (T.lifeHard - T.lifeEasy) * hard;
 }
 
-/** About how much time a pit stop costs on `track` (s): the service, and slowing for it and getting going again. */
-export function pitLoss(_track: Track): number {
-  return CONDITIONS.service + CONDITIONS.pitLossExtra;
+/**
+ * About how much time a pit stop costs on `track` (s): the service, slowing
+ * for it and getting going again, and (with a pit lane) the stretch at the
+ * speed limit instead of flat out.
+ */
+export function pitLoss(track: Track): number {
+  const lane = pitLane(track);
+  const slow = lane ? (lane.wallTo - lane.wallFrom) * (1 / PIT_LANE.limit - 1 / (HANDLING.maxSpeed * 0.85)) : 0;
+  return CONDITIONS.service + CONDITIONS.pitLossExtra + slow;
 }
 
 /** The kind of tyres an AI prefers for a stint that won't reach the finish (by grid slot: a mix in the field). */

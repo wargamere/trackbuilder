@@ -1,8 +1,9 @@
 import { CarPhysics, NO_INPUT, type CarState, type DriveInput } from '../car/physics.ts';
 import { standardBrake, standardGrip } from '../car/tyres.ts';
 import { HANDLING } from '../config/handling.ts';
-import { AI, CONDITIONS, DAMAGE, FLAGS, SETUP, TRAFFIC, WEATHER, type Compound } from '../config/race.ts';
+import { AI, CONDITIONS, DAMAGE, FLAGS, PIT_LANE, SETUP, TRAFFIC, WEATHER, type Compound } from '../config/race.ts';
 import { clamp, wrap } from '../core/math.ts';
+import { outerAt, type PitLane } from '../track/pitLane.ts';
 import { edgeOffsets } from '../track/spline.ts';
 import type { Track } from '../track/track.ts';
 import { RacingDriver } from './driver.ts';
@@ -34,6 +35,13 @@ export function aiPace(difficulty: number, track?: Track): Pace {
 /** The same pace on a wet track: the same share of the grip and the brakes there are (see CONDITIONS). */
 export function wetPace(p: Pace): Pace {
   return { ...p, grip: p.grip * CONDITIONS.rainGrip, brake: p.brake * CONDITIONS.rainBrake };
+}
+
+/** The way into or out of the pit box: a path across the road (m left of the centre at s), the most it may go, and whether the path leaves the road (the pit lane). */
+interface PitPlan {
+  route: (s: number) => number;
+  cap: number;
+  offRoad?: boolean;
 }
 
 /** Holding the car still (in the pit box): no throttle, and the handbrake rather than the brake, which would reverse. */
@@ -174,11 +182,17 @@ export class AiDriver {
   /** The road its speed plan was made for: dry (0) or soaked (1). As the road gets wetter or drier it drives by the grip and brakes there are against that. */
   private readonly planWetness: number;
 
+  /** Called in to stop this lap whatever its tyres, for these (cleared once it has stopped). */
+  boxCall: Compound | null = null;
   /** Race control: the most it may go (the safety car), and yellow flags where it is. */
   raceCap = Infinity;
   yellow = false;
 
-  constructor(track: Track, opts: { name: string; paint: number; difficulty: number; laps: number; slot: number; wet?: boolean; tyreWear?: boolean; damage?: boolean }) {
+  /**
+   * `slot`: its place on the grid; `box`: whose pit box it uses (see pitBox:
+   * 0 is yours; by default slot + 1).
+   */
+  constructor(track: Track, opts: { name: string; paint: number; difficulty: number; laps: number; slot: number; box?: number; wet?: boolean; tyreWear?: boolean; damage?: boolean }) {
     const wet = !!opts.wet;
     this.name = opts.name;
     this.paint = opts.paint;
@@ -217,7 +231,7 @@ export class AiDriver {
     this.planner.choice = { offset: this.lane };
     this.session = new RaceSession(track.center.length, null, opts.laps, track.center.width);
     // (A pit crew for new tyres, or for repairs.)
-    this.crew = opts.tyreWear || opts.damage ? new PitCrew(track) : null;
+    this.crew = opts.tyreWear || opts.damage ? new PitCrew(track, opts.box ?? opts.slot + 1) : null;
     this.crew?.reset(this.car.state);
   }
 
@@ -233,9 +247,10 @@ export class AiDriver {
    * back out onto the line. Null when it isn't stopping; 'hold' while the
    * crew works on the car.
    */
-  private pitPlan(st: CarState, finished: boolean, dt: number): { route: (s: number) => number; cap: number } | 'hold' | null {
+  private pitPlan(st: CarState, finished: boolean, dt: number): PitPlan | 'hold' | null {
     const crew = this.crew;
     if (!crew) return null;
+    if (this.car.pitLane) return this.lanePlan(st, finished, dt, crew, this.car.pitLane);
     const C = CONDITIONS;
     const box = crew.box;
     const L = this.length;
@@ -244,27 +259,8 @@ export class AiDriver {
     const line = (x: number) => this.driver.lateralAt(x);
     const smooth = (u: number) => u * u * (3 - 2 * u);
     if (this.pit === 'none') {
-      const s = this.session;
-      const car = this.car;
-      if (finished || s.lapStart === null) return null;
-      const left = (s.lapsToRun * L - s.raceDistance(st.s)) / L;
-      // The weather: wets once the road is wet enough, slicks once it's dried enough (each car
-      // makes its own call: some early, some late).
-      const k = this.slot % WEATHER.aiToWets.length;
-      const onWets = car.compound === 'wet';
-      const wantWets = car.wear && (onWets ? car.wetness > WEATHER.aiToSlicks[k] : car.wetness > WEATHER.aiToWets[k]);
-      // Badly damaged: in for repairs (unless the race is all but over).
-      const repairs = car.damageOn && car.damage >= DAMAGE.aiPitAt;
-      if (repairs) {
-        if (left < C.pitMinLaps) return null;
-      } else if (!car.wear) return null;
-      else if (wantWets === onWets) {
-        // Wear: in now if they'd go off before the box comes round again (give or take its own
-        // margin), unless the race is all but over, or they'll last to the finish.
-        const onTyres = car.tyreLapsLeft;
-        if (onTyres >= 1 + this.pitEarly) return null;
-        if (left < C.pitMinLaps || left <= onTyres + C.pitEndSlack) return null;
-      } else if (left < C.pitMinLaps) return null;
+      const fit = this.stopWanted(st, finished);
+      if (!fit) return null;
       // Far enough ahead to brake for it gently, not so far it would pull over too soon.
       const v = Math.max(0, st.speed);
       const need = Math.max(C.pitApproach, (v * v) / (2 * C.pitDecel) + 40);
@@ -273,12 +269,15 @@ export class AiDriver {
       this.pit = 'in';
       this.pitFrom = d;
       this.pitWait = 0;
-      this.nextTyres = car.wear ? pickCompound(left, car.mediumLife, wantWets ? 1 : 0, this.preference) : car.compound;
+      this.nextTyres = fit;
     }
     if (this.pit === 'in' || this.pit === 'stop') {
       const ev = crew.step(this.car, dt, this.nextTyres);
       if (ev === 'start') this.pit = 'stop';
-      else if (ev === 'done') this.pit = 'out';
+      else if (ev === 'done') {
+        this.pit = 'out';
+        this.boxCall = null;
+      }
     }
     if (this.pit === 'stop') return 'hold';
     if (this.pit === 'in') {
@@ -311,6 +310,125 @@ export class AiDriver {
     }
     const exit = (x: number) => box.lateral + (line(x) - box.lateral) * smooth(clamp(along(end, x, L) / C.pitExit, 0, 1));
     return { route: exit, cap: Infinity };
+  }
+
+  /**
+   * Whether to stop this lap, and if so the tyres to fit: tyres about to go
+   * off (unless the race is all but over or they'll last it), the weather
+   * changing (wets or slicks), or bad damage.
+   */
+  private stopWanted(st: CarState, finished: boolean): Compound | null {
+    const C = CONDITIONS;
+    const s = this.session;
+    const car = this.car;
+    const L = this.length;
+    if (finished || s.lapStart === null) return null;
+    if (this.boxCall) return this.boxCall;
+    const left = (s.lapsToRun * L - s.raceDistance(st.s)) / L;
+    // The weather: wets once the road is wet enough, slicks once it's dried enough (each car
+    // makes its own call: some early, some late).
+    const k = this.slot % WEATHER.aiToWets.length;
+    const onWets = car.compound === 'wet';
+    const wantWets = car.wear && (onWets ? car.wetness > WEATHER.aiToSlicks[k] : car.wetness > WEATHER.aiToWets[k]);
+    // Badly damaged: in for repairs (unless the race is all but over).
+    const repairs = car.damageOn && car.damage >= DAMAGE.aiPitAt;
+    if (repairs) {
+      if (left < C.pitMinLaps) return null;
+    } else if (!car.wear) return null;
+    else if (wantWets === onWets) {
+      // Wear: in now if they'd go off before the box comes round again (give or take its own
+      // margin), unless the race is all but over, or they'll last to the finish.
+      const onTyres = car.tyreLapsLeft;
+      if (onTyres >= 1 + this.pitEarly) return null;
+      if (left < C.pitMinLaps || left <= onTyres + C.pitEndSlack) return null;
+    } else if (left < C.pitMinLaps) return null;
+    return car.wear ? pickCompound(left, car.mediumLife, wantWets ? 1 : 0, this.preference) : car.compound;
+  }
+
+  /**
+   * A stop through the pit lane: over to the road's edge before it, braking
+   * to be down to the limit at the line; along the fast lane, into its box and
+   * stopped in it; then out to the fast lane, held to the limit to the end of
+   * the pit wall, and back onto the line over the exit ramp. Once in the lane
+   * it never gives up (it can't get back to the track until the exit): held
+   * up by a car stopped in its box, it waits behind it; pushed past its box,
+   * it drives on out and tries again next lap.
+   */
+  private lanePlan(st: CarState, finished: boolean, dt: number, crew: PitCrew, lane: PitLane): PitPlan | 'hold' | null {
+    const C = CONDITIONS;
+    const P = PIT_LANE;
+    const L = this.length;
+    const side = lane.side;
+    // Distances from the entry (negative before it), and where things are along the lane.
+    const rel = (x: number) => wrap(x - lane.entry + L / 2, L) - L / 2;
+    const span = lane.exit - lane.entry;
+    const wallFrom = lane.wallFrom - lane.entry;
+    const wallTo = lane.wallTo - lane.entry;
+    const boxAt = crew.box.s - lane.entry;
+    const smooth = (u: number) => {
+      const v = clamp(u, 0, 1);
+      return v * v * (3 - 2 * v);
+    };
+    const line = (x: number) => this.driver.lateralAt(x);
+    const half = HANDLING.halfWidth;
+    const edge = lane.edge - half - 0.3;
+    // (Never closer than this to the lane's outer edge, however the path goes.)
+    const within = (x: number, m: number) => Math.min(m, (outerAt(lane, x) ?? lane.wall) - half - 0.6);
+    const r = rel(st.s);
+    if (this.pit === 'none') {
+      const fit = this.stopWanted(st, finished);
+      if (!fit) return null;
+      // Far enough ahead of the entry to move over and brake to the limit by the line.
+      const v = Math.max(0, st.speed);
+      const brake = (v * v - P.limit * P.limit) / (2 * C.pitDecel);
+      const need = Math.max(90, brake - (wallFrom - P.brakeMargin) + 70);
+      const d = -r;
+      if (d < need || d > need + 60) return null;
+      this.pit = 'in';
+      this.pitFrom = d;
+      this.pitWait = 0;
+      this.nextTyres = fit;
+    }
+    if (this.pit === 'in' || this.pit === 'stop') {
+      const ev = crew.step(this.car, dt, this.nextTyres);
+      if (ev === 'start') this.pit = 'stop';
+      else if (ev === 'done') {
+        this.pit = 'out';
+        this.boxCall = null;
+      }
+    }
+    if (this.pit === 'stop') return 'hold';
+    // Down to the limit by the line (a little before it), and in the lane held to it.
+    const limitCap = r < wallFrom ? Math.sqrt(P.limit * P.limit + 2 * C.pitDecel * Math.max(0, wallFrom - P.brakeMargin - r)) : P.limit;
+    if (this.pit === 'in') {
+      // Pushed past its box without stopping: on out, and again next lap.
+      if (r > boxAt + 2 && r < span + 40) this.pit = 'out';
+      else {
+        const approach = clamp(this.pitFrom - 20, 40, 160);
+        const toStop = boxAt - r - 0.5;
+        const into = (x: number) => {
+          const q = rel(x);
+          if (q < 0) return line(x) + (edge * side - line(x)) * smooth((q + approach) / approach);
+          let m = edge + (lane.fast - edge) * smooth(q / (wallFrom - 3));
+          m += (lane.box - lane.fast) * smooth((q - (boxAt - 20)) / 14);
+          return within(x, m) * side;
+        };
+        return { route: into, cap: Math.min(limitCap, toStop > 0 ? Math.sqrt(2 * C.pitDecel * toStop) : 0), offRoad: true };
+      }
+    }
+    // Out of the box to the fast lane, along it to the end of the pit wall, then back onto the line.
+    if (r > span + 15 || r < -20) {
+      this.pit = 'none';
+      return null;
+    }
+    const back = wallTo + 3;
+    const out = (x: number) => {
+      const q = rel(x);
+      let m = lane.box + (lane.fast - lane.box) * smooth((q - boxAt - 1) / 14);
+      m += (line(x) * side - lane.fast) * smooth((q - back) / (span + 15 - back));
+      return (q <= span ? within(x, m) : m) * side;
+    };
+    return { route: out, cap: r < wallTo ? P.limit : Infinity, offRoad: true };
   }
 
   /** Input for the next tick. `cars` are all the cars in the race (this one included). */
@@ -368,7 +486,8 @@ export class AiDriver {
     // TrafficPlanner.pushing).
     if (this.planner.pushing) this.car.draft = Math.max(this.car.draft, TRAFFIC.pushTow);
     // With a car beside us, its room: we bend our path round it rather than turn in on it.
-    const keep = this.planner.keepOut(st, cars);
+    // (Not on the way through the pit lane: its path is its own.)
+    const keep = pit?.offRoad ? null : this.planner.keepOut(st, cars);
     // Covering the inside against you: a path of its own (and the lane follows where it is, to
     // carry on from there after). Fighting you for a place into a bend: later on the brakes.
     const route = pit?.route ?? this.planner.coverPath();
@@ -376,7 +495,7 @@ export class AiDriver {
       this.lane = st.lateral - this.driver.lateralAt(st.s);
       this.laneVel = 0;
     }
-    const inp = this.driver.drive(st, this.lane, this.inp, { pace, cap, tow: this.car.draft, keep, late: this.planner.fighting, route, grip: (this.car.gripScale * this.car.damageGrip) / standardGrip(this.planWetness), brake: this.car.brakeScale / standardBrake(this.planWetness) });
+    const inp = this.driver.drive(st, this.lane, this.inp, { pace, cap, tow: this.car.draft, keep, late: this.planner.fighting, route, offRoad: !!pit?.offRoad, grip: (this.car.gripScale * this.car.damageGrip) / standardGrip(this.planWetness), brake: this.car.brakeScale / standardBrake(this.planWetness) });
     // Sliding (knocked, or ran wide): easing off the throttle until it gathers itself. No braking,
     // which would only surprise the car behind. (Being off its path is already taken care of:
     // the speed then comes from the path it's really on.)

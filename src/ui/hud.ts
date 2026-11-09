@@ -346,7 +346,7 @@ export class Hud {
   }
 
   /** The flag banner: yellow flags, or the safety car; null hides it. */
-  setFlag(kind: 'yellow' | 'sc' | null, text = ''): void {
+  setFlag(kind: 'yellow' | 'sc' | 'pit' | null, text = ''): void {
     const show = kind !== null;
     if (this.flag.hidden === show) this.flag.hidden = !show;
     if (!show) return;

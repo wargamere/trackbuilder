@@ -267,7 +267,7 @@ export const STR = {
     times: { track: 'Track', day: 'Day', sunset: 'Sunset', night: 'Night' },
     timeHint: 'The track’s own is {time}. At night it’s floodlights and headlights.',
     tyres: 'Tyre wear & pit stops',
-    tyresHint: 'Tyres fade lap by lap, then go off and you’re much slower. Stop in the yellow pit box on the start straight for a new set ({s} s): press 1–4 or tap to choose which. The AI cars stop too.',
+    tyresHint: 'Tyres fade lap by lap, then go off and you’re much slower. Turn into the pit lane by the start straight and stop in your yellow box for a new set ({s} s): press 1–4 or tap to choose which. The AI cars stop too.',
     startTyres: 'Starting tyres',
     /** "On this track (dry): soft ≈ 3 laps · medium ≈ 4.7 · hard ≈ 7.5 · wet ≈ 1.9". */
     lifeLine: 'How long they last here ({weather}): {list} laps',
@@ -755,6 +755,10 @@ export const STR = {
     damage: 'Damage {n}%',
     repairing: 'Repairs…',
     repaired: 'Repaired: go, go, go!',
+    pitLimiter: 'PIT LIMITER · {n} km/h',
+    pitSpeeding: 'Too fast into the pit lane: +{n} s penalty',
+    pitTooFast: 'Too fast into the pit lane (slow to {n} km/h before the line)',
+    penalty: '+{n} s penalty',
   },
 
   paint: {

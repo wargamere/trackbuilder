@@ -3,6 +3,7 @@ import { DAMAGE, DEFAULT_SETUP, SETUP, TYRES, type CarSetup, type Compound } fro
 import { clamp } from '../core/math.ts';
 import { locatorFor, type TrackLocator } from '../track/locator.ts';
 import { pitLayout } from '../track/pits.ts';
+import { inPitLane, onLane, outerAt, pitLane, pitWallAt, type PitLane } from '../track/pitLane.ts';
 import { placeTrees } from '../track/placement.ts';
 import { axes, placedObstacles, placedOn, runoffLayout, type Placed, type RunoffLayout } from '../track/extras.ts';
 import { leftOf, sampleAt } from '../track/spline.ts';
@@ -69,6 +70,8 @@ export class CarState {
   roll = 0;
   /** Speed into the barrier on the last tick it was hit (0 = no hit), for sound and camera shake. */
   wallHit = 0;
+  /** In the pit lane proper: past the pit wall, on the garages' side (see track/pitLane.ts). */
+  inPits = false;
   /** Gear (1..6), engine revs (share of the rev limit) and seconds left of a gear change. */
   gear = 1;
   rpm = 0;
@@ -200,6 +203,8 @@ export class CarPhysics {
   /** Bump kerbs, and the one the car is on (-1: none). */
   private readonly bumps: Placed[];
   private onBump = -1;
+  /** The track's pit lane, if it has one. */
+  readonly pitLane: PitLane | null;
   /** The road as a surface: tarmac, or dirt or snow (slower to pull away on, rougher). */
   private readonly roadSurface: { speedFactor: number; accelFactor: number; drag: number; gripFactor: number; rough: number };
 
@@ -209,6 +214,7 @@ export class CarPhysics {
     this.roadSurface = { ...HANDLING.road, accelFactor: kind.accel, rough: kind.rough };
     this.locator = locatorFor(track);
     this.surf = surfaceFor(track);
+    this.pitLane = pitLane(track);
     this.obstacles = new ObstacleGrid([...placeTrees(track).map((t) => ({ x: t.x, z: t.z, r: t.radius })), ...pitObstacles(track), ...placedObstacles(track)]);
     this.runoffs = runoffLayout(track);
     this.bumps = placedOn(track).filter((p) => p.kind === 'bump');
@@ -334,7 +340,10 @@ export class CarPhysics {
     const runoffR = H[RUNOFFS[this.runoffs.right[pos.index]] ?? this.track.options.runoff];
     const onTheRoad = (w: number) => w <= edgeL && w >= edgeR;
     const road = this.roadSurface;
-    const surfaceAt = (w: number) => (onTheRoad(w) ? road : Math.abs(w) <= runoffEdge ? (w > 0 ? runoffL : runoffR) : H.grass);
+    // The pit lane and its ramps are tarmac, whatever the road is.
+    const lane = this.pitLane && outerAt(this.pitLane, pos.s) !== null ? this.pitLane : null;
+    const onPitLane = (w: number) => lane !== null && onLane(lane, pos.s, w);
+    const surfaceAt = (w: number) => (onTheRoad(w) ? road : onPitLane(w) ? H.road : Math.abs(w) <= runoffEdge ? (w > 0 ? runoffL : runoffR) : H.grass);
     const a = surfaceAt(pos.lateral + H.halfTrack);
     const b = surfaceAt(pos.lateral - H.halfTrack);
     // Dirt or snow: less grip in corners and less bite from the brakes, on the share of the car on it.
@@ -344,7 +353,7 @@ export class CarPhysics {
     const roadBite = 1 + (kind.brake - 1) * share;
     // Track limits: both wheel tracks beyond the same edge, with a little grace.
     const grace = 0.25;
-    st.offTrack = pos.lateral - H.halfTrack > edgeL + grace || pos.lateral + H.halfTrack < edgeR - grace;
+    st.offTrack = (pos.lateral - H.halfTrack > edgeL + grace || pos.lateral + H.halfTrack < edgeR - grace) && !onPitLane(pos.lateral);
     /** Rough-ground amount (for sound and camera shake), 0 on tarmac. */
     const grass = (a.rough + b.rough) / 2;
     // The rain and worn tyres take some of it away: how hard the car can corner (not how
@@ -469,22 +478,47 @@ export class CarPhysics {
 
   /**
    * Barriers: if the car's side passes the barrier line where there is one,
-   * push it back, bounce a little off it and scrub some speed.
+   * push it back, bounce a little off it and scrub some speed. Beside the pit
+   * lane, on its side, the lane's outer edge and the pit wall instead (the car
+   * kept on whichever side of the wall its middle is).
    */
   private collideWalls(): void {
-    const H = HANDLING;
     const st = this.state;
     st.wallHit = 0;
     const pos = this.locator.locate({ x: st.x, y: st.z }, st.trackIndex, 6);
+    const lane = this.pitLane;
     const side = pos.lateral >= 0 ? 1 : -1;
-    const flags = side > 0 ? this.surf.wallL : this.surf.wallR;
-    const limit = this.track.center.wallOffset - H.halfWidth;
-    const excess = Math.abs(pos.lateral) - limit;
-    // Only within a sensible band: a car that is already far outside (through a gap) isn't pulled back.
-    if (excess <= 0 || excess > 2.5 || !flags[pos.index]) return;
-    const l = leftOf(this.track.center.tangents[pos.index]);
-    const nx = l.x * side; // outward normal
-    const nz = l.y * side;
+    const W = this.track.center.wallOffset;
+    let lateral = pos.lateral;
+    const outer = lane ? outerAt(lane, pos.s) : null;
+    if (lane && outer !== null && side === lane.side) {
+      const m = lateral * side;
+      if (pitWallAt(lane, pos.s) && m > lane.wall - 2.5 && m < lane.inner + 2.5) {
+        lateral = m < (lane.wall + lane.inner) / 2 ? this.pushOff(pos.index, lateral, W * side, side) : this.pushOff(pos.index, lateral, lane.inner * side, side > 0 ? -1 : 1);
+      }
+      lateral = this.pushOff(pos.index, lateral, outer * side, side);
+    } else if ((side > 0 ? this.surf.wallL : this.surf.wallR)[pos.index]) {
+      lateral = this.pushOff(pos.index, lateral, W * side, side);
+    }
+    // (Only a push moves it across: otherwise the step's own reading stands.)
+    if (lateral !== pos.lateral) st.lateral = lateral;
+    st.inPits = lane !== null && inPitLane(lane, pos.s, lateral);
+  }
+
+  /**
+   * A wall along the track `wall` m left of the centre line: keeps the car on
+   * its right (`dir` = 1) or its left (-1). Only within a sensible band: a car
+   * already far beyond it (through a gap) isn't pulled back. Returns the car's
+   * lateral after.
+   */
+  private pushOff(index: number, lateral: number, wall: number, dir: 1 | -1): number {
+    const H = HANDLING;
+    const st = this.state;
+    const excess = dir * (lateral - wall) + H.halfWidth;
+    if (excess <= 0 || excess > 2.5) return lateral;
+    const l = leftOf(this.track.center.tangents[index]);
+    const nx = l.x * dir; // into the wall
+    const nz = l.y * dir;
     st.x -= nx * excess;
     st.z -= nz * excess;
     const vn = st.vx * nx + st.vz * nz;
@@ -495,9 +529,9 @@ export class CarPhysics {
       st.vx *= scrub;
       st.vz *= scrub;
       st.yawRate *= 0.6;
-      st.wallHit = vn;
+      st.wallHit = Math.max(st.wallHit, vn);
     }
-    st.lateral = pos.lateral - side * excess;
+    return lateral - dir * excess;
   }
 
   /**

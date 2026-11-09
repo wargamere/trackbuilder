@@ -21,6 +21,8 @@ export interface Standing {
   /** Race time from GO (s); an estimate if it was still racing when you finished. */
   time: number;
   estimated: boolean;
+  /** Time added for breaking the rules (s; already in `time`). */
+  penalty?: number;
 }
 
 /** What the results screen shows about a finished run. */

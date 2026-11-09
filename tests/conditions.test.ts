@@ -13,10 +13,13 @@ import { inBox, PitCrew, pitBox } from '../src/race/pitStop.ts';
 import { pickCompound, trackTyreLife } from '../src/race/strategy.ts';
 import type { Progress } from '../src/race/session.ts';
 import { edgeOffsets } from '../src/track/spline.ts';
-import type { Track } from '../src/track/track.ts';
+import { buildTrack, type Track } from '../src/track/track.ts';
 import { conditionsSummary, timeFor, type Conditions } from '../src/ui/conditionsPanel.ts';
 
 const DT = 1 / HANDLING.tickRate;
+
+/** The same track without pits (so without a pit lane: one box on the road). */
+const noPits = (t: Track) => buildTrack({ ...t.def, id: `${t.def.id}+nopits`, options: { ...t.def.options, pits: false } });
 
 test('tyres fade steadily, then go off: heavily slower, never blown up', () => {
   const T = TYRES;
@@ -166,9 +169,9 @@ test('the AI on tyres that have gone off is heavily slower and stays on the road
   }
 });
 
-test('the pit box: at the road’s edge on the start straight, clear of the start line and the grid', () => {
+test('the pit box with no pit lane: at the road’s edge on the start straight, clear of the start line and the grid', () => {
   for (let k = 0; k < 3; k++) {
-    const t = getSampleTrack(k);
+    const t = noPits(getSampleTrack(k));
     const box = pitBox(t);
     const c = t.center;
     assert.ok(box.s > box.length / 2 + 5 && box.s < c.length / 2, `${t.def.name}: past the line (${box.s.toFixed(1)} m)`);
@@ -178,6 +181,7 @@ test('the pit box: at the road’s edge on the start straight, clear of the star
     const outer = Math.abs(box.lateral) + box.width / 2;
     assert.ok(outer <= edge && outer > edge - 1, `${t.def.name}: against the edge (${outer.toFixed(2)} of ${edge.toFixed(2)} m)`);
     assert.equal(Math.sign(box.lateral), box.side);
+    assert.deepEqual(pitBox(t, 5), box, 'every car shares it');
     // A car parked in the middle of it is in it; one on the centre line isn't.
     const car = new CarPhysics(t);
     car.placeAt(box.s, box.lateral);
@@ -188,7 +192,7 @@ test('the pit box: at the road’s edge on the start straight, clear of the star
 });
 
 test('a pit stop: stop in the box and the crew fits the tyres asked for in the service time; driving through or starting in it does nothing', () => {
-  const t = getSampleTrack(0);
+  const t = noPits(getSampleTrack(0));
   const box = pitBox(t);
   const L = t.center.length;
   const car = new CarPhysics(t);

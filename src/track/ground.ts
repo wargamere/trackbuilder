@@ -1,3 +1,4 @@
+import { onLane, paveY, pitLane } from './pitLane.ts';
 import { surfaceY } from './spline.ts';
 import { terrainHeight, type TrackSurface } from './surface.ts';
 import type { Track } from './track.ts';
@@ -34,6 +35,14 @@ export function groundPose(track: Track, surf: TrackSurface, x: number, z: numbe
     out.y = surfaceY(c, i, pos.lateral) * (1 - f) + surfaceY(c, j, pos.lateral) * f;
     out.pitch = Math.atan((c.grade[i] * (1 - f) + c.grade[j] * f) * along);
     out.roll = (c.bank[i] * (1 - f) + c.bank[j] * f) * along;
+  } else if (onPitLane(track, pos)) {
+    // The pit lane's paving: level across, along the road's slope.
+    const lane = pitLane(track)!;
+    out.y = paveY(track, lane, pos.s, pos.lateral * lane.side);
+    const i = Math.max(0, pos.index);
+    const t = c.tangents[i];
+    out.pitch = Math.atan(c.grade[i] * (cos * t.x + sin * t.y));
+    out.roll = 0;
   } else {
     const tr = surf.terrain;
     out.y = terrainHeight(tr, x, z);
@@ -43,4 +52,9 @@ export function groundPose(track: Track, surf: TrackSurface, x: number, z: numbe
     out.roll = Math.atan(left / 2);
   }
   return out;
+}
+
+function onPitLane(track: Track, pos: TrackPos): boolean {
+  const lane = pitLane(track);
+  return lane !== null && onLane(lane, pos.s, pos.lateral);
 }

@@ -2,6 +2,7 @@ import { TRACK, WORLD } from '../config/track.ts';
 import { wrap, type Dot, type Vec2 } from '../core/math.ts';
 import { kerbAt, kerbLayout } from '../track/kerbs.ts';
 import { pitLayout } from '../track/pits.ts';
+import { outerAt, pitLane, pitWallAt } from '../track/pitLane.ts';
 import { edgeOffsets, leftOf, sampleAt } from '../track/spline.ts';
 import { PLACED_SPEC, placedOn, runoffLayout, type Placed, type PlacedKind } from '../track/extras.ts';
 import { tunnelsOf } from '../track/tunnels.ts';
@@ -641,7 +642,7 @@ export function drawHeightTags(ctx: CanvasRenderingContext2D, v: View, dots: rea
   }
 }
 
-/** The pit lane and garages beside the start straight, with a "PIT" label. */
+/** The pit lane (with its ramps off and back onto the track) and garages beside the start straight, with a "PIT" label. */
 function drawPits(ctx: CanvasRenderingContext2D, v: View, track: Track): void {
   const pits = pitLayout(track);
   if (!pits) return;
@@ -651,22 +652,29 @@ function drawPits(ctx: CanvasRenderingContext2D, v: View, track: Track): void {
     const l = leftOf(t);
     return toScreen(v, { x: p.x + l.x * lat * pits.side, y: p.y + l.y * lat * pits.side });
   };
-  const band = (l0: number, l1: number, fill: string) => {
+  const band = (l0: number | ((s: number) => number), l1: number | ((s: number) => number), fill: string, from = pits.from, to = pits.to) => {
+    const lo = typeof l0 === 'number' ? () => l0 : l0;
+    const hi = typeof l1 === 'number' ? () => l1 : l1;
     ctx.beginPath();
-    for (let s = pits.from; s <= pits.to + 0.01; s += 2.5) {
-      const q = at(s, l0);
-      if (s === pits.from) ctx.moveTo(q.x, q.y);
+    for (let s = from; s <= to + 0.01; s += 2.5) {
+      const q = at(s, lo(s));
+      if (s === from) ctx.moveTo(q.x, q.y);
       else ctx.lineTo(q.x, q.y);
     }
-    for (let s = pits.to; s >= pits.from - 0.01; s -= 2.5) {
-      const q = at(s, l1);
+    for (let s = to; s >= from - 0.01; s -= 2.5) {
+      const q = at(s, hi(s));
       ctx.lineTo(q.x, q.y);
     }
     ctx.closePath();
     ctx.fillStyle = fill;
     ctx.fill();
   };
-  band(pits.lane[0], pits.lane[1], 'rgba(74, 79, 88, 0.85)');
+  const lane = pitLane(track);
+  if (lane) {
+    // From the road's edge on the ramps, from the pit wall beside it; the pit wall itself in white.
+    band((s) => (pitWallAt(lane, s) ? lane.inner : lane.edge), (s) => outerAt(lane, s) ?? lane.wall, 'rgba(74, 79, 88, 0.85)', lane.entry, lane.exit);
+    band(lane.wall, lane.inner, 'rgba(240, 240, 236, 0.95)', lane.wallFrom, lane.wallTo);
+  } else band(pits.lane[0], pits.lane[1], 'rgba(74, 79, 88, 0.85)');
   band(pits.building[0], pits.building[1], 'rgba(242, 183, 5, 0.85)');
   // Garages as dots along the front of the building.
   ctx.fillStyle = '#7a5a00';

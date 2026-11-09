@@ -10,7 +10,7 @@ import { currentPaintHex, recordFinishedRun } from '../car/paint.ts';
 import { CarPhysics, CarState, lerpState, NO_INPUT, type DriveInput } from '../car/physics.ts';
 import { HANDLING } from '../config/handling.ts';
 import { AI_PAINTS, PAINTS } from '../config/paint.ts';
-import { AI, CONDITIONS, DAMAGE, RACE, SLIPSTREAM, TYRES, type Compound } from '../config/race.ts';
+import { AI, CONDITIONS, DAMAGE, PIT_LANE, RACE, SLIPSTREAM, TYRES, type Compound } from '../config/race.ts';
 import { compoundLife } from '../car/tyres.ts';
 import { STR, fmt } from '../config/strings.ts';
 import { FixedStep } from '../core/fixedStep.ts';
@@ -80,6 +80,8 @@ interface Entry {
   end: number | null;
   /** How far round the race it is (see RaceSession.raceDistance). */
   dist: number;
+  /** Time penalties (s; in `end` once it has finished). */
+  penalty: number;
 }
 
 const hexColour = (hex: number) => `#${hex.toString(16).padStart(6, '0')}`;
@@ -181,6 +183,9 @@ export class RaceScreen implements Screen {
   private hits: number[] = [];
   /** The damage warnings already given this run. */
   private damageWarned = 0;
+  /** Time penalties this run (s: too fast into the pit lane), and whether you were in the pit lane last tick. */
+  private penalty = 0;
+  private wasInPits = false;
   /** The safety car's model (drawn ahead of the leader while it's out). */
   private readonly scModel: CarModel | null;
   /** Dev builds only, with ?autopilot in the URL: the player's car drives itself (for recording trailers). */
@@ -406,6 +411,8 @@ export class RaceScreen implements Screen {
     car.damageOn = damage;
     car.repair();
     this.damageWarned = 0;
+    this.penalty = 0;
+    this.wasInPits = false;
     car.setup = settings().carSetup;
     car.mediumLife = trackTyreLife(this.game.track);
     car.newTyres(wear ? this.game.setup.tyres : 'medium');
@@ -543,7 +550,7 @@ export class RaceScreen implements Screen {
     const t = this.game.track;
     const field = this.field(order.length - 1);
     field.forEach((f, k) => {
-      const ai = new AiDriver(t, { ...f, laps: this.game.setup.laps, slot: order.indexOf(k), wet: this.wet, tyreWear: this.game.setup.tyreWear, damage: this.game.setup.damage });
+      const ai = new AiDriver(t, { ...f, laps: this.game.setup.laps, slot: order.indexOf(k), box: k + 1, wet: this.wet, tyreWear: this.game.setup.tyreWear, damage: this.game.setup.damage });
       const model = this.aiModels[k];
       model.setPaint(f.paint);
       model.root.visible = true;
@@ -673,10 +680,23 @@ export class RaceScreen implements Screen {
       const cap = control.cap(0, this.controlCars);
       if (car.state.speed > cap) inp = { ...inp, throttle: 0, brake: Math.max(inp.brake, car.state.speed > cap + 3 ? 0.4 : 0) };
     }
+    // The pit lane: the limiter holds you to its speed limit between the lines.
+    const P = PIT_LANE;
+    if (car.state.inPits && car.state.speed > P.limit) inp = { ...inp, throttle: 0, brake: Math.max(inp.brake, car.state.speed > P.limit + 2 ? 0.5 : 0) };
     // In the pit box the crew holds the car while it works.
     if (this.crew?.busy) inp = HOLD;
     const prev = this.progress();
     car.step(inp);
+    // Into the pit lane faster than the limit: a time penalty in a race (a warning in practice).
+    if (car.state.inPits && !this.wasInPits && session.phase === 'racing' && car.state.speed > P.limit + P.tolerance) {
+      const kmh = Math.round(P.limit * 3.6);
+      if (this.game.setup.mode === 'race') {
+        this.penalty += P.penalty;
+        this.hud.flash(fmt(STR.race.pitSpeeding, { n: P.penalty }), 'bad', 3);
+        audio.beep(330, 0.3);
+      } else this.hud.flash(fmt(STR.race.pitTooFast, { n: kmh }), 'info', 2.5);
+    }
+    this.wasInPits = car.state.inPits;
     this.hit = Math.max(this.hit, car.state.wallHit);
     const hits = this.hits;
     hits.length = 1 + this.opponents.length;
@@ -747,8 +767,9 @@ export class RaceScreen implements Screen {
       racing: s.phase === 'racing' && s.lapStart !== null && !pitting,
       hit,
     });
-    cars.push(entry(this.car!.state, session, !!this.crew?.busy, this.hits[0] ?? 0));
-    this.opponents.forEach((o, k) => cars.push(entry(o.ai.car.state, o.ai.session, o.ai.pitting || o.ai.session.phase === 'finished', this.hits[k + 1] ?? 0)));
+    // (A car in the pit lane isn't stuck on the track, however slow it goes.)
+    cars.push(entry(this.car!.state, session, !!this.crew?.busy || this.car!.state.inPits, this.hits[0] ?? 0));
+    this.opponents.forEach((o, k) => cars.push(entry(o.ai.car.state, o.ai.session, o.ai.pitting || o.ai.car.state.inPits || o.ai.session.phase === 'finished', this.hits[k + 1] ?? 0)));
     const ev = this.controlEvents;
     ev.length = 0;
     control.step(dt, cars, ev);
@@ -940,7 +961,7 @@ export class RaceScreen implements Screen {
       trackName: t.def.name,
       laps: [...s.laps],
       lapValid: [...s.lapValid],
-      total: s.totalTime() ?? 0,
+      total: (s.totalTime() ?? 0) + this.penalty,
       bestLap: bestOfRun,
       recordLap: rec.best?.time ?? bestOfRun,
       newRecord: s.newBest,
@@ -969,8 +990,10 @@ export class RaceScreen implements Screen {
       paint: currentPaintHex(),
       session: this.session!,
       start: this.playerStart,
-      end: this.session!.runEnd,
+      // (Penalties count at the finish.)
+      end: this.session!.runEnd === null ? null : this.session!.runEnd + this.penalty,
       dist: this.session!.raceDistance(this.car!.state.s),
+      penalty: this.penalty,
     };
     const ai = this.opponents.map((o, k): Entry => ({
       idx: k + 1,
@@ -981,6 +1004,7 @@ export class RaceScreen implements Screen {
       start: o.ai.start,
       end: o.ai.session.runEnd,
       dist: o.ai.session.raceDistance(o.ai.car.state.s),
+      penalty: 0,
     }));
     return [you, ...ai].sort((a, b) => (a.end !== null && b.end !== null ? a.end - b.end : a.end !== null ? -1 : b.end !== null ? 1 : b.dist - a.dist));
   }
@@ -1006,7 +1030,7 @@ export class RaceScreen implements Screen {
       }
       time = Math.max(time, last + 0.01);
       last = time;
-      return { name: e.name, you: e.you, paint: e.paint, time, estimated: e.end === null };
+      return { name: e.name, you: e.you, paint: e.paint, time, estimated: e.end === null, penalty: e.penalty || undefined };
     });
     return { standings, position: standings.findIndex((x) => x.you) + 1 };
   }
@@ -1138,14 +1162,15 @@ export class RaceScreen implements Screen {
     if (s.lastLap !== null) parts.push(`${STR.race.last} ${formatTime(s.lastLap)}`);
     if (s.best) parts.push(`${STR.race.best} ${formatTime(s.best.time)}`);
     this.hud.setLastBest(parts.join(' · '));
-    // Flags: the safety car, or yellow flags here or just ahead.
+    // Flags: the safety car, the pit limiter, or yellow flags here or just ahead.
     const control = this.control;
     const car = this.car;
-    if (control && car && s.phase === 'racing') {
+    if (car && s.phase === 'racing') {
       const R = STR.race;
-      if (control.sc === 'out') this.hud.setFlag('sc', R.safetyCar);
-      else if (control.sc === 'in') this.hud.setFlag('sc', R.safetyCarInBanner);
-      else if (control.yellowAt(car.state.s) || control.yellowAhead(car.state.s, 250) !== null) this.hud.setFlag('yellow', R.yellowFlag);
+      if (control?.sc === 'out') this.hud.setFlag('sc', R.safetyCar);
+      else if (control?.sc === 'in') this.hud.setFlag('sc', R.safetyCarInBanner);
+      else if (car.state.inPits) this.hud.setFlag('pit', fmt(R.pitLimiter, { n: Math.round(PIT_LANE.limit * 3.6) }));
+      else if (control && (control.yellowAt(car.state.s) || control.yellowAhead(car.state.s, 250) !== null)) this.hud.setFlag('yellow', R.yellowFlag);
       else this.hud.setFlag(null);
     } else this.hud.setFlag(null);
     this.hud.setDamage(car?.damageOn ? car.damage : null);

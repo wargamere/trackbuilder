@@ -2,6 +2,7 @@ import { TRACK, WORLD } from '../config/track.ts';
 import { wrap } from '../core/math.ts';
 import { kerbAt, kerbLayout, type KerbLayout } from './kerbs.ts';
 import { pitLayout, type PitLayout } from './pits.ts';
+import { laneU, outerAt, pitLane, type PitLane } from './pitLane.ts';
 import { edgeOffsets, leftOf, sampleAt, surfaceY, type Centerline } from './spline.ts';
 import type { Track } from './track.ts';
 import { overTunnel } from './tunnels.ts';
@@ -313,15 +314,20 @@ function pressUnderRoad(t: Terrain, c: Centerline, kerbs: KerbLayout): void {
   }
 }
 
-/** A level pad under the pit lane and garages, at the height of the road edge beside it. */
-function padForPits(t: Terrain, c: Centerline, pits: PitLayout): void {
+/** A level pad under the pit lane, its ramps and the garages, at the height of the road edge beside it. */
+function padForPits(t: Terrain, c: Centerline, pits: PitLayout, lane: PitLane | null): void {
   const n = c.points.length;
-  for (let s = pits.from - 10; s <= pits.to + 10; s += 2.5) {
+  const s0 = Math.min(pits.from - 10, lane ? lane.entry - 5 : Infinity);
+  const s1 = Math.max(pits.to + 10, lane ? lane.exit + 5 : -Infinity);
+  for (let s = s0; s <= s1; s += 2.5) {
     const { p, t: tan } = sampleAt(c, s);
     const i = ((Math.round(s / c.spacing) % n) + n) % n;
     const y = surfaceY(c, i, c.wallOffset * pits.side) - 0.1;
     const l = leftOf(tan);
-    for (let lat = c.wallOffset + 0.5; lat <= pits.building[1] + 5; lat += 2.5) {
+    // Beside the building, out to its back; along the ramps beyond it, out past the ramp.
+    const by = s >= pits.from - 10 && s <= pits.to + 10;
+    const reach = by ? pits.building[1] + 5 : lane ? (outerAt(lane, s) ?? c.wallOffset) + 4 : 0;
+    for (let lat = c.wallOffset + 0.5; lat <= reach; lat += 2.5) {
       const x = p.x + l.x * lat * pits.side;
       const z = p.y + l.y * lat * pits.side;
       const gi = Math.round((x - t.x0) / t.step);
@@ -369,7 +375,8 @@ export function surfaceFor(track: Track): TrackSurface {
   const grid = new SampleGrid(c, 20);
   const terrain = buildTerrain(c, grid);
   const pits = pitLayout(track);
-  if (pits) padForPits(terrain, c, pits);
+  const lane = pitLane(track);
+  if (pits) padForPits(terrain, c, pits, lane);
   pressUnderRoad(terrain, c, kerbLayout(track));
 
   // Raised decks: road well above the ground below it.
@@ -424,6 +431,11 @@ export function surfaceFor(track: Track): TrackSurface {
     for (let i = 0; i < n; i++) if (!src[i]) for (let o = -4; o <= 4; o++) w[wrap(i + o, n)] = 0;
     // ...but never leave a deck without rails.
     for (let i = 0; i < n; i++) if (deck[i] && src[i]) w[i] = 1;
+  }
+  // Beside the pit lane its own walls stand instead (the pit wall, and the lane's outer edge).
+  if (lane) {
+    const w = lane.side > 0 ? wallL : wallR;
+    for (let i = 0; i < n; i++) if (laneU(lane, i * c.spacing) >= 0) w[i] = 0;
   }
 
   // Pillars under decks, about every 12 m, but never standing on a road passing underneath.
