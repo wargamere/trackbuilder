@@ -16,7 +16,7 @@ import { transformDots, type Transform } from './transform.ts';
 import { medalTimes } from '../race/medals.ts';
 import { ShareDialog } from '../ui/shareDialog.ts';
 import { PreviewCar } from './previewCar.ts';
-import { repairTrack, type Fix } from './repair.ts';
+import { liftCrossings, repairTrack, type Fix } from './repair.ts';
 import { clampHeight, fitCrossings, pathPositions, rollingHeights, smoothHeights, softWeights, withHeights } from './heights.ts';
 import { LazyPen } from './pen.ts';
 import { builtInTracks, dotsFromStroke, getSampleTrack, SAMPLE_COUNT, trackFromCode, trackFromControl, type BuildResult } from './pipeline.ts';
@@ -291,6 +291,7 @@ export class EditorScreen implements Screen {
         cornerBump: (on) => this.cornerBump(this.pickedCorner, on),
         chicaneBumps: () => this.chicaneBumps(),
         clearExtras: (what) => this.clearExtras(what),
+        liftCrossings: () => this.liftCrossings(),
       },
       Array.from({ length: SAMPLE_COUNT }, (_, i) => getSampleTrack(i).def.name),
       settings().sidebarSection,
@@ -1706,6 +1707,19 @@ export class EditorScreen implements Screen {
     const before = this.snapshot();
     this.extras = { ...this.extras, placed: list };
     this.commit(before, { text: fmt(STR.editorScenery.chicaneBumps, { n: added }), kind: 'ok' });
+  }
+
+  /** Every level crossing becomes a road over a road (bridges or tunnels, as the track's option says). */
+  private liftCrossings(): void {
+    if (!this.closed || this.dots.length < 3) return;
+    const lifted = liftCrossings(this.dots, this.options);
+    if (!lifted) {
+      this.note = { text: STR.sidebar.noLevelCrossings, kind: 'info' };
+      return;
+    }
+    const before = this.snapshot();
+    this.dots = lifted;
+    this.commit(before, { text: STR.sidebar.lifted, kind: 'ok' });
   }
 
   /** Takes away all bump kerbs, all placed scenery (not bumps), or all painted run-off. */

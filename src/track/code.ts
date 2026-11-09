@@ -24,7 +24,8 @@ import { cleanExtras, PLACED_KINDS, ROT_STEPS, type Placed, type TrackExtras } f
  * Options bits: banking 0-1, barriers on 2, theme 3-4, then each field of
  * OPTION_CHOICES up to trees in order (index 0 = the default), then (version
  * 5) the theme's third bit, the barrier style's second bit, the road surface
- * (2 bits) and the barrier distance (5 bits, whole metres). Older codes, whose
+ * (2 bits), the barrier distance (5 bits, whole metres) and bridges or
+ * tunnels (1 bit). Older codes, whose
  * higher bits are all zero, get the defaults for everything newer.
  *
  * Extras (version 5): a varint count, then that many blocks of a varint tag,
@@ -64,7 +65,7 @@ function checksum(bytes: ArrayLike<number>, n: number): number {
 }
 
 /** The fields stored in order after the theme, and their bits (the barrier style's second bit comes later). */
-type Field = Exclude<keyof typeof OPTION_CHOICES, 'road'>;
+type Field = Exclude<keyof typeof OPTION_CHOICES, 'road' | 'crossing'>;
 const FIELD_BITS: Record<Field, number> = { width: 2, kerbs: 2, runoff: 2, barrier: 1, pits: 1, time: 2, laps: 2, trees: 2 };
 const FIELDS = Object.keys(FIELD_BITS) as Field[];
 /** Where the version 5 bits start. */
@@ -86,6 +87,7 @@ function optionsBits(o: TrackOptions): number {
   v |= ((indexIn(OPTION_CHOICES.barrier, o.barrier) >> 1) & 1) << (V5_SHIFT + 1);
   v |= indexIn(OPTION_CHOICES.road, o.road) << (V5_SHIFT + 2);
   v |= gap << (V5_SHIFT + 4);
+  v |= indexIn(OPTION_CHOICES.crossing, o.crossing) << (V5_SHIFT + 4 + GAP_BITS);
   return v >>> 0;
 }
 
@@ -106,6 +108,7 @@ function optionsFrom(v: number): TrackOptions {
   o.barrier = pickFrom(OPTION_CHOICES.barrier, indexIn(OPTION_CHOICES.barrier, o.barrier) | (((v >>> (V5_SHIFT + 1)) & 1) << 1));
   o.road = pickFrom(OPTION_CHOICES.road, (v >>> (V5_SHIFT + 2)) & 3);
   o.barrierGap = Math.min(TRACK.maxBarrierGap, (v >>> (V5_SHIFT + 4)) & ((1 << GAP_BITS) - 1));
+  o.crossing = pickFrom(OPTION_CHOICES.crossing, (v >>> (V5_SHIFT + 4 + GAP_BITS)) & 1);
   return o;
 }
 

@@ -87,6 +87,8 @@ export interface EditorActions {
   cornerBump(on: boolean): void;
   chicaneBumps(): void;
   clearExtras(what: 'bumps' | 'placed' | 'paint'): void;
+  /** Turns every level crossing into a road over a road. */
+  liftCrossings(): void;
 }
 
 /** Placeable scenery, in the order the palette shows it. */
@@ -233,6 +235,7 @@ export class EditorUI {
     runoff: Choice<string>;
     barrier: Choice<string>;
     barrierGap: Slider;
+    crossing: Choice<string>;
     road: Choice<string>;
     theme: Choice<string>;
     time: Choice<string>;
@@ -392,6 +395,10 @@ export class EditorUI {
     barrier.el.classList.add('grid3');
     const barrierGap = slider(0, TRACK.maxBarrierGap, 1, (m) => actions.previewOptions({ barrierGap: m }), actions.commitLive, (m) =>
       fmt(S.barrierGapValue, { m: (TRACK.kerbWidth + TRACK.wallGap + m).toFixed(1) }),
+    );
+    const crossing = segmented<string>(
+      (['bridge', 'tunnel'] as const).map((v) => [v, S.crossings[v]] as [string, string]),
+      (v) => opt({ crossing: v as TrackOptions['crossing'] }),
     );
     const road = segmented<string>(
       (['tarmac', 'dirt', 'snow'] as const).map((v) => [v, S.roads[v]] as [string, string]),
@@ -565,6 +572,7 @@ export class EditorUI {
       runoff,
       barrier,
       barrierGap,
+      crossing,
       road,
       theme,
       time,
@@ -696,6 +704,8 @@ export class EditorUI {
           field(S.barrier, barrier.el),
           field(S.barrierGap, barrierGap.el),
           h('p', { class: 'help', text: S.barrierGapHelp }),
+          field(S.crossing, crossing.el, button(S.liftCrossings, () => actions.liftCrossings(), { icon: '⤴', class: 'compact' })),
+          h('p', { class: 'help', text: S.crossingHelp }),
           h('p', { class: 'help', text: S.edgesHelp }),
         ],
       ],
@@ -1051,6 +1061,7 @@ export class EditorUI {
     c.runoff.set(o.runoff);
     c.barrier.set(o.walls ? o.barrier : 'none');
     c.barrierGap.set(o.barrierGap);
+    c.crossing.set(o.crossing);
     c.road.set(o.road);
     c.theme.set(o.theme);
     c.time.set(o.time);

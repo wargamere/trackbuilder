@@ -4,6 +4,7 @@ import { kerbAt, kerbLayout, type KerbLayout } from './kerbs.ts';
 import { pitLayout, type PitLayout } from './pits.ts';
 import { edgeOffsets, leftOf, sampleAt, surfaceY, type Centerline } from './spline.ts';
 import type { Track } from './track.ts';
+import { overTunnel } from './tunnels.ts';
 
 /**
  * Everything about the ground a track sits on, shared by physics and rendering
@@ -442,7 +443,7 @@ export function surfaceFor(track: Track): TrackSurface {
   for (let i = 0; i < n; i += every) {
     const p = c.points[i];
     const ground = terrainHeight(terrain, p.x, p.y);
-    if (deck[i] && c.height[i] - ground > 2.5 && !onRoadBelow(i)) pillars.push({ x: p.x, z: p.y, y0: ground - 0.5, y1: c.height[i] - 0.6 });
+    if (deck[i] && c.height[i] - ground > 2.5 && !onRoadBelow(i) && !overTunnel(track, i)) pillars.push({ x: p.x, z: p.y, y0: ground - 0.5, y1: c.height[i] - 0.6 });
   }
 
   const surf: TrackSurface = { terrain, deck: deckW, wallL, wallR, pillars };

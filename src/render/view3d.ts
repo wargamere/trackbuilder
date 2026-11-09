@@ -27,7 +27,7 @@ import {
 import { THEMES, type Theme } from '../config/themes.ts';
 import type { RoadSurface, ThemeId, TimeOfDay } from '../config/track.ts';
 import { valueNoise } from '../core/random.ts';
-import { buildKerbGeometry, buildPitGeometry, buildRoadGeometry, buildRunoffGeometry, buildWallGeometry } from '../track/mesh.ts';
+import { buildKerbGeometry, buildPitGeometry, buildRoadGeometry, buildRunoffGeometry, buildTunnelGeometry, buildWallGeometry } from '../track/mesh.ts';
 import { buildScenery } from '../track/scenery.ts';
 import { surfaceFor, TERRAIN_RECT, type Terrain } from '../track/surface.ts';
 import type { Track } from '../track/track.ts';
@@ -498,6 +498,7 @@ export class View3D {
     add(buildKerbGeometry(track), this.mats.kerb);
     add(buildWallGeometry(track, surf), this.mats.wall);
     add(buildPitGeometry(track, surf), this.mats.wall);
+    add(buildTunnelGeometry(track), this.mats.wall);
 
     let pillars: InstancedMesh | null = null;
     if (surf.pillars.length) {

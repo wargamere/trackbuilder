@@ -4,6 +4,7 @@ import { kerbAt, kerbLayout } from '../track/kerbs.ts';
 import { pitLayout } from '../track/pits.ts';
 import { edgeOffsets, leftOf, sampleAt } from '../track/spline.ts';
 import { PLACED_SPEC, placedOn, runoffLayout, type Placed, type PlacedKind } from '../track/extras.ts';
+import { tunnelsOf } from '../track/tunnels.ts';
 import type { Track } from '../track/track.ts';
 import { crossingKind, crossingsOf } from './validation.ts';
 
@@ -351,8 +352,14 @@ export function drawTrack(ctx: CanvasRenderingContext2D, v: View, track: Track, 
   if (s.arrows) drawArrows(ctx, v, track);
   drawStartLine(ctx, v, c.points[0], c.tangents[0], c.width);
 
-  // Bridges: a soft shadow, then the upper road again over the one below.
+  // Tunnels: the lower road darkened under its roof.
   ctx.lineCap = 'butt';
+  for (const tn of tunnelsOf(track)) {
+    ctx.strokeStyle = 'rgba(20, 24, 32, 0.5)';
+    ctx.lineWidth = (c.wallOffset + 1) * 2 * v.scale;
+    strokeRun(ctx, v, c.points, tn.from, tn.count);
+  }
+  // Bridges: a soft shadow, then the upper road again over the one below.
   for (const o of overpasses(track)) {
     ctx.strokeStyle = 'rgba(0, 0, 0, 0.28)';
     ctx.lineWidth = w * 1.45;

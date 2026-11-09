@@ -144,7 +144,7 @@ A track is a closed loop of **dots** with a smooth spline through them (`TrackDe
 | 2 Size & shape | **Track length** slider, road width slider (8–20 m, with 10 / 12 / 15 m shortcuts), **terrain climb** slider (flat to 40 m) and flat / rolling / hilly presets, smooth heights, **corner smoothing** slider, smaller / bigger / rotate / mirror the whole track |
 | 3 Corners | Banking level for the whole track (off / normal / steep), **banking for every corner at once** (shows Mixed when they differ), ‹ › to step from corner to corner, Flatten all, Back to the level; the picked corner's **run-off** (Auto / Gravel / Tarmac / Grass) and **bump kerb**; run-off for every corner; bump kerbs **on every chicane** (and remove them); **paint run-off** with a brush (gravel / tarmac / grass / erase, brush size, undo / redo stroke, clear); and a bank slider (0–30°) for every numbered corner, with Auto to go back to the level; tap a corner's number to zoom to it |
 | 4 Start & pits | Laps per race (1 / 3 / 5), pit building on/off, move the start/finish line 10 m back or on, reverse direction |
-| 5 Track edges | Kerbs (raised / flat / painted / none), run-off (grass / gravel / tarmac), barriers (none / concrete / tyres / TecPro / Armco), **barrier distance** (2.8 m to 32.8 m from the road) |
+| 5 Track edges | Kerbs (raised / flat / painted / none), run-off (grass / gravel / tarmac), barriers (none / concrete / tyres / TecPro / Armco), **barrier distance** (2.8 m to 32.8 m from the road), where the track crosses itself: **bridges or tunnels**, and **Lift level crossings** |
 | 6 Scenery & world | **Ground** (tarmac / dirt / snow), landscape (Countryside / Alpine / Desert / Snow / Forest / City), day / sunset / night, few / normal / lots of trees, **place scenery** by tapping the map (grandstand, pit garages, tower, building, trees, billboard, brake boards) |
 | 7 Display | Graphics full / fast, km/h or mph, minimap in the race, corner numbers on the map, the preview car (player settings, not part of the track) |
 
@@ -192,6 +192,11 @@ A track is a closed loop of **dots** with a smooth spline through them (`TrackDe
   - A yellow sausage just past the inside kerb at a corner's apex (not where the corner's too tight for one), for the picked corner or on every chicane.
   - Running over one costs about 7 % of your speed and kicks the car sideways. The AI's line never touches them: its lap times on Monza, Baku and Imola are the same with or without.
 - **Saving and sharing:** all of it is saved with the track, in drafts and in track codes (v5 extras: placed things as kind, position and a 1/64-turn rotation; the paint grid run-length coded), and is part of the track's id.
+
+**Bridges or tunnels** (`track/tunnels.ts`). Where the track crosses itself at two heights, the upper road can be on a bridge (a deck on pillars) or the lower road can go through a tunnel.
+- A tunnel is as long as the road above and its shoulders are wide: walls outside the lower road's barriers, a roof slab, a portal face at each end, and no pillars.
+- The ground already rises with the upper road on its own shoulders, so it sits on an embankment over the tunnel.
+- Level crossroads stay level until **Lift level crossings**, which raises the later road 7.5 m over the earlier one at every one of them, as Fix it does for a crossing that can't be level.
 
 **Fast starts and accessible editing.** Starter cards show the real layout before loading it. Surprise me uses the tested generated-track catalog, with mirrored and reversed variants, and creates an editable copy. Every layout change is undoable. Reshape is the initial tool for an existing track; a new blank page switches to Freehand.
 
@@ -569,6 +574,7 @@ Tested against the real SDK in its `local` mode (localhost): the SDK's own log s
 - [x] Editor: pick any track to edit, six track generators, trace an image, track length / terrain climb / corner smoothing sliders, banking for every corner at once
 - [x] Editor: TecPro and Armco barriers, barrier distance, painted kerbs, dirt and snow roads, Alpine / Forest / City landscapes (track codes v5)
 - [x] Editor: tap-to-place scenery, run-off per corner and painted with a brush, bump kerbs (per corner and on every chicane)
+- [x] Editor: bridges or tunnels where the track crosses itself, and lifting every level crossing
 
 ## Validation for the track editor
 

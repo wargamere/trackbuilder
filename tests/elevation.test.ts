@@ -66,6 +66,7 @@ test('track codes keep heights and every option; old v1 and v2 codes still load'
     barrier: 'armco',
     barrierGap: 17,
     road: 'dirt',
+    crossing: 'tunnel',
     pits: false,
     time: 'sunset',
     laps: 5,
@@ -395,4 +396,45 @@ test('a barrier stops the car leaving the road; a glancing hit keeps most of the
   const square = hit(60);
   assert.ok(square.maxLat <= walled.center.wallOffset);
   assert.ok(square.speed < glance.speed, 'a square hit costs more speed');
+});
+
+test('Lift level crossings makes a road over a road; as a tunnel it has walls, a roof and no pillars', async () => {
+  const { liftCrossings } = await import('../src/editor/repair.ts');
+  const { tunnelsOf } = await import('../src/track/tunnels.ts');
+  const { buildTunnelGeometry } = await import('../src/track/mesh.ts');
+  const flat = trackFromStroke(figureEight(), 'eight');
+  assert.ok(flat.ok);
+  const t0 = flat.track;
+  assert.equal(findCrossings(t0.center).filter((x) => crossingKind(x.dh) === 'flat').length, 1, 'a level crossroads');
+  const lifted = liftCrossings(t0.def.control, t0.options);
+  assert.ok(lifted, 'something to lift');
+  const bridge = trackFromControl({ id: 'eight-lift', name: 'eight', control: lifted, options: { ...t0.options, crossing: 'bridge' } });
+  assert.ok(bridge.ok, 'still a valid track');
+  const xs = findCrossings(bridge.track.center);
+  assert.ok(xs.length === 1 && crossingKind(xs[0].dh) === 'bridge', `now a road over a road (${xs[0]?.dh.toFixed(1)} m)`);
+  assert.equal(liftCrossings(lifted, t0.options), null, 'nothing left to lift');
+  assert.equal(tunnelsOf(bridge.track).length, 0);
+  assert.equal(buildTunnelGeometry(bridge.track), null);
+
+  const tunnel = trackFromControl({ id: 'eight-tunnel', name: 'eight', control: lifted, options: { ...t0.options, crossing: 'tunnel' } });
+  assert.ok(tunnel.ok);
+  const tn = tunnelsOf(tunnel.track);
+  assert.equal(tn.length, 1);
+  assert.ok(tn[0].count * tunnel.track.center.spacing > tunnel.track.center.wallOffset * 2, `as long as the road above is wide: ${(tn[0].count * 2.5).toFixed(0)} m`);
+  assert.ok(buildTunnelGeometry(tunnel.track), 'walls, roof and portals');
+  // No pillars standing by the crossing (the road above is on an embankment, the road below in the tunnel).
+  const c = tunnel.track.center;
+  const at = c.points[tn[0].upper];
+  const near = (ps: { x: number; z: number }[]) => ps.filter((p) => Math.hypot(p.x - at.x, p.z - at.y) < 25).length;
+  assert.equal(near(surfaceFor(tunnel.track).pillars), 0);
+  // A car still drives through the tunnel, under the road above.
+  const car = new CarPhysics(tunnel.track);
+  const lower = tn[0].from;
+  car.placeAt(lower * c.spacing - 20);
+  let minY = Infinity;
+  for (let k = 0; k < HANDLING.tickRate * 3; k++) {
+    car.step({ throttle: 0.6, brake: 0, steer: botInput(car.state, tunnel.track).steer, handbrake: false });
+    if (Math.hypot(car.state.x - at.x, car.state.z - at.y) < 4) minY = Math.min(minY, car.state.y);
+  }
+  assert.ok(minY < tn[0].roof - 3, `under the roof: car at ${minY.toFixed(1)} m, roof ${tn[0].roof.toFixed(1)} m`);
 });

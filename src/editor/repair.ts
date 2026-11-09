@@ -143,7 +143,7 @@ function spreadRoads(dots: readonly Dot[], minSep: number): Dot[] | null {
  * that aren't fine as they are: too shallow or too near the start line for a
  * level crossing, or at an awkward height in between.
  */
-function bridgeCrossings(dots: readonly Dot[], issue: TrackIssue, options: TrackOptions): Dot[] {
+function bridgeCrossings(dots: readonly Dot[], issue: TrackIssue | null, options: TrackOptions, every = false): Dot[] {
   const res = trackFromControl({ id: 'repair', name: '', control: [...dots], options });
   const c = res.track?.center;
   if (!c) return [...dots];
@@ -153,7 +153,7 @@ function bridgeCrossings(dots: readonly Dot[], issue: TrackIssue, options: Track
   const out = dots.map((d) => d.h ?? 0);
   for (const x of crossingsOf(c)) {
     const kind = crossingKind(x.dh);
-    const bad = kind === 'bad' || (kind === 'flat' && (x.angle < TRACK.minCrossingAngle || issue === 'crossing-start'));
+    const bad = kind === 'bad' || (kind === 'flat' && (every || x.angle < TRACK.minCrossingAngle || issue === 'crossing-start'));
     if (!bad) continue;
     const early = Math.min(x.i, x.j);
     const late = Math.max(x.i, x.j);
@@ -171,6 +171,22 @@ function bridgeCrossings(dots: readonly Dot[], issue: TrackIssue, options: Track
     if (d.b !== undefined) r.b = d.b;
     return r;
   });
+}
+
+/**
+ * Every level crossing becomes a road over a road (a bridge, or a tunnel for
+ * the road underneath): the later road is lifted 7.5 m over the earlier one,
+ * as Fix it does. Null if there's no level crossing to lift.
+ */
+export function liftCrossings(dots: readonly Dot[], options: TrackOptions): Dot[] | null {
+  const flat = (d: readonly Dot[]) => {
+    const c = trackFromControl({ id: 'lift', name: '', control: [...d], options }).track?.center;
+    return c ? crossingsOf(c).filter((x) => crossingKind(x.dh) === 'flat').length : 0;
+  };
+  if (!flat(dots)) return null;
+  let d = [...dots];
+  for (let round = 0; round < 3 && flat(d); round++) d = bridgeCrossings(d, null, options, true);
+  return d;
 }
 
 /**

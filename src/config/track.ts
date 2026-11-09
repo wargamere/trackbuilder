@@ -72,6 +72,8 @@ export type RunoffId = 'grass' | 'gravel' | 'tarmac';
 export type BarrierStyle = 'concrete' | 'tyres' | 'tecpro' | 'armco';
 /** What the road itself is made of: it sets the grip and the brakes (HANDLING.roads). */
 export type RoadSurface = 'tarmac' | 'dirt' | 'snow';
+/** Where the track crosses itself at two heights: the upper road on a bridge, or the lower one in a tunnel. */
+export type CrossingStyle = 'bridge' | 'tunnel';
 export type TimeOfDay = 'day' | 'sunset' | 'night';
 export type LapCount = 1 | 3 | 5;
 export type TreeDensity = 'normal' | 'sparse' | 'dense';
@@ -93,6 +95,8 @@ export interface TrackOptions {
   barrierGap: number;
   /** The road's surface. */
   road: RoadSurface;
+  /** How a road over a road looks. */
+  crossing: CrossingStyle;
   /** Pit building and garages beside the start straight. */
   pits: boolean;
   time: TimeOfDay;
@@ -111,6 +115,7 @@ export const DEFAULT_OPTIONS: TrackOptions = {
   barrier: 'concrete',
   barrierGap: 0,
   road: 'tarmac',
+  crossing: 'bridge',
   pits: true,
   time: 'day',
   laps: 3,
@@ -128,6 +133,7 @@ export const OPTION_CHOICES = {
   laps: [3, 1, 5],
   trees: ['normal', 'sparse', 'dense'],
   road: ['tarmac', 'dirt', 'snow'],
+  crossing: ['bridge', 'tunnel'],
 } as const;
 
 /** The scenery themes, in the order the track code stores them. */

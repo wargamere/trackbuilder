@@ -6,6 +6,7 @@ import { QuadBuilder } from '../render/geom.ts';
 import { runoffLayout } from './extras.ts';
 import { kerbAt, kerbLayout } from './kerbs.ts';
 import { pitLayout } from './pits.ts';
+import { tunnelsOf } from './tunnels.ts';
 import { edgeOffsets, leftOf, sampleAt, surfaceY, type Centerline } from './spline.ts';
 import { terrainHeight, type TrackSurface } from './surface.ts';
 import type { Track } from './track.ts';
@@ -271,6 +272,55 @@ export function buildWallGeometry(track: Track, surf: TrackSurface): BufferGeome
     }
     // Underside of the slab.
     p.quad(at(i, off + 0.45, -1.1), at(j, off + 0.45, -1.1), at(j, -(off + 0.45), -1.1), at(i, -(off + 0.45), -1.1), CONCRETE_DARK);
+  }
+  return p.empty ? null : p.build();
+}
+
+const TUNNEL_WALL = 0xb9bec7;
+const TUNNEL_INSIDE = 0x6f747c;
+const TUNNEL_ROOF = 0x8f949c;
+const TUNNEL_FACE = 0xd5d8de;
+
+/**
+ * Tunnels where the track crosses itself (TrackOptions.crossing): along the
+ * lower road under the road above, a wall each side outside its barriers, a
+ * roof slab between them and a portal face at each end, up to the road above.
+ */
+export function buildTunnelGeometry(track: Track): BufferGeometry | null {
+  const tunnels = tunnelsOf(track);
+  if (!tunnels.length) return null;
+  const c = track.center;
+  const n = c.points.length;
+  const p = new Panels();
+  const off = c.wallOffset + 0.5;
+  const at = (i: number, lateral: number, y: number) => {
+    const q = c.points[i];
+    const l = leftOf(c.tangents[i]);
+    return [q.x + l.x * lateral, y, q.y + l.y * lateral];
+  };
+  for (const t of tunnels) {
+    const top = t.roof + 1.25 + 1; // the parapet of the road above
+    for (let k = 0; k < t.count; k++) {
+      const i = (t.from + k) % n;
+      const j = (i + 1) % n;
+      for (const side of [1, -1]) {
+        const lat = off * side;
+        const floorI = surfaceY(c, i, lat) - 0.6;
+        const floorJ = surfaceY(c, j, lat) - 0.6;
+        // Inner face (seen from the road, darker) and outer face up to the parapet.
+        p.quad(at(i, lat, floorI), at(j, lat, floorJ), at(j, lat, t.roof), at(i, lat, t.roof), TUNNEL_INSIDE);
+        p.quad(at(i, lat + 0.5 * side, floorI), at(j, lat + 0.5 * side, floorJ), at(j, lat + 0.5 * side, top), at(i, lat + 0.5 * side, top), TUNNEL_WALL);
+        p.quad(at(i, lat, t.roof), at(j, lat, t.roof), at(j, lat + 0.5 * side, top), at(i, lat + 0.5 * side, top), TUNNEL_WALL);
+      }
+      // The roof: its underside, and its top (a little below the road above, so the deck covers it there).
+      p.quad(at(i, off, t.roof), at(j, off, t.roof), at(j, -off, t.roof), at(i, -off, t.roof), TUNNEL_ROOF);
+      p.quad(at(i, off + 0.5, t.roof + 0.9), at(j, off + 0.5, t.roof + 0.9), at(j, -off - 0.5, t.roof + 0.9), at(i, -off - 0.5, t.roof + 0.9), TUNNEL_WALL);
+    }
+    // Portals: the face above each opening, from just under the roof to the parapet.
+    for (const i of [t.from, (t.from + t.count) % n]) {
+      p.quad(at(i, off + 0.5, t.roof - 0.5), at(i, -off - 0.5, t.roof - 0.5), at(i, -off - 0.5, top), at(i, off + 0.5, top), TUNNEL_FACE);
+      p.quad(at(i, off + 0.5, t.roof - 0.5), at(i, -off - 0.5, t.roof - 0.5), at(i, -off - 0.5, t.roof), at(i, off + 0.5, t.roof), WALL_RED);
+    }
   }
   return p.empty ? null : p.build();
 }
