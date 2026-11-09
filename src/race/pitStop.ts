@@ -1,5 +1,5 @@
 import type { CarPhysics, CarState } from '../car/physics.ts';
-import { CONDITIONS, type Compound } from '../config/race.ts';
+import { CONDITIONS, DAMAGE, type Compound } from '../config/race.ts';
 import { wrap } from '../core/math.ts';
 import { pitLayout } from '../track/pits.ts';
 import { edgeOffsets } from '../track/spline.ts';
@@ -71,7 +71,8 @@ export type PitEvent = 'start' | 'done' | null;
 
 /**
  * One car's pit stops. Stop in the box (slower than CONDITIONS.stopSpeed)
- * and the crew holds the car while it fits new tyres (CONDITIONS.service s),
+ * and the crew holds the car while it fits new tyres (CONDITIONS.service s,
+ * with tyre wear on) and mends any damage (DAMAGE.repairTime s more per unit),
  * of the kind asked for when it's done;
  * then it's free to go. Leave the box before the next stop can start (no
  * second stop by standing there, and none for a car that starts in it).
@@ -109,7 +110,8 @@ export class PitCrew {
     if (this.service > 0) {
       this.service = Math.max(0, this.service - dt);
       if (this.service > 0) return null;
-      car.newTyres(fit);
+      if (car.wear) car.newTyres(fit);
+      car.repair();
       this.stops++;
       return 'done';
     }
@@ -120,7 +122,8 @@ export class PitCrew {
     }
     if (this.armed && Math.abs(st.speed) < CONDITIONS.stopSpeed) {
       this.armed = false;
-      this.service = CONDITIONS.service;
+      // New tyres, and the damage mended (longer the more there is).
+      this.service = CONDITIONS.service + (car.damageOn ? DAMAGE.repairTime * car.damage : 0);
       return 'start';
     }
     return null;

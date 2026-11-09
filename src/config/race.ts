@@ -61,6 +61,55 @@ export const CONDITIONS = {
 } as const;
 
 /**
+ * Damage (Conditions → Damage): hits on the barriers or other cars harder
+ * than `from` m/s damage the car, `perSpeed` per m/s over it, the front wing
+ * taking `wingShare` of it and the bodywork the rest. A fully broken wing
+ * costs `wingGrip` of the cornering grip, fully damaged bodywork `bodyDrag`
+ * more drag (a lower top speed). The pit crew mends it all in a stop, which
+ * takes `repairTime` s longer per unit of damage. AI cars pit for repairs
+ * above `aiPitAt`. The HUD warns as it passes each of `warnAt`.
+ */
+export const DAMAGE = {
+  from: 5,
+  perSpeed: 0.035,
+  wingShare: 0.6,
+  wingGrip: 0.15,
+  bodyDrag: 0.35,
+  repairTime: 8,
+  aiPitAt: 0.45,
+  warnAt: [0.15, 0.5],
+} as const;
+
+/**
+ * Race control (race/raceControl.ts): yellow flags and the safety car.
+ * A car slower than `stoppedSpeed` m/s for `stoppedTime` s on the track in a
+ * race (not in its pit stop), or hit harder than `crashSpeed` m/s, is an
+ * incident: yellow flags from `yellowBefore` m before it to `yellowAfter` m
+ * past it, until `yellowHold` s after it's gone. AI cars ease to `yellowPace`
+ * there. With the safety car on, a car stopped for `safetyCarAfter` s brings
+ * it out. It runs at `scSpeed` m/s; cars may close up to `scGap` m behind the
+ * car ahead (catching up at `scCatchUp` m/s more per metre of gap, up to
+ * `scMaxCatch` m/s). It stays out at least `scMin` s, then comes in at the
+ * end of that lap. No safety car in the last `scLastLaps` laps.
+ */
+export const FLAGS = {
+  stoppedSpeed: 3,
+  stoppedTime: 1.2,
+  crashSpeed: 14,
+  yellowBefore: 160,
+  yellowAfter: 30,
+  yellowHold: 6,
+  yellowPace: 0.85,
+  safetyCarAfter: 2,
+  scSpeed: 24,
+  scGap: 16,
+  scCatchUp: 0.2,
+  scMaxCatch: 14,
+  scMin: 25,
+  scLastLaps: 1,
+} as const;
+
+/**
  * Changing weather (race/weather.ts): rain that comes and goes during a race,
  * and a road that gets wet in it and dries out after, the racing line first.
  */

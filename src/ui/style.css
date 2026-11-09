@@ -3313,3 +3313,56 @@ html:not([data-screen="race"]) .rotate-prompt { display: none; }
 .picked-corner[hidden] {
   display: none;
 }
+
+/* ------------------------------------------------ race control: flags, damage */
+
+.hud-flag {
+  position: absolute;
+  left: 50%;
+  top: calc(0.6rem + max(2.5rem, 32px) + 3.4rem);
+  transform: translateX(-50%);
+  padding: 0.3em 0.9em;
+  border-radius: 0.45em;
+  font-weight: 900;
+  font-size: clamp(0.8rem, 1.6vw, 1.05rem);
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  pointer-events: none;
+  box-shadow: 0 2px 0 rgba(0, 0, 0, 0.35);
+}
+
+.hud-flag.yellow {
+  background: #f2c200;
+  color: #1d1f23;
+}
+
+.hud-flag.sc {
+  background: #1d1f23;
+  color: #f2c200;
+  border: 2px solid #f2c200;
+  animation: sc-blink 1s steps(2, start) infinite;
+}
+
+@keyframes sc-blink {
+  50% { border-color: transparent; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hud-flag.sc { animation: none; }
+}
+
+.hud-flag[hidden],
+.hud-damage[hidden] {
+  display: none;
+}
+
+.hud-damage {
+  margin-top: 0.25rem;
+  font-size: 0.68rem;
+  font-weight: 800;
+  color: #f2c200;
+}
+
+.hud-damage.bad {
+  color: #ff6b5f;
+}

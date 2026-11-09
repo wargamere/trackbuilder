@@ -1,5 +1,5 @@
 import { HANDLING } from '../config/handling.ts';
-import { DEFAULT_SETUP, SETUP, TYRES, type CarSetup, type Compound } from '../config/race.ts';
+import { DAMAGE, DEFAULT_SETUP, SETUP, TYRES, type CarSetup, type Compound } from '../config/race.ts';
 import { clamp } from '../core/math.ts';
 import { locatorFor, type TrackLocator } from '../track/locator.ts';
 import { pitLayout } from '../track/pits.ts';
@@ -187,6 +187,10 @@ export class CarPhysics {
   tyreUse = 0;
   /** Wing, gears and brake balance (see SETUP); the default is the car as it always was. */
   setup: CarSetup = DEFAULT_SETUP;
+  /** Damage (Conditions → Damage) on, and how damaged the front wing and the bodywork are (0..1). */
+  damageOn = false;
+  wingDamage = 0;
+  bodyDamage = 0;
   private readonly track: Track;
   private readonly locator: TrackLocator;
   private readonly obstacles: ObstacleGrid;
@@ -266,6 +270,32 @@ export class CarPhysics {
     return this.wear ? compoundBrake(this.compound, this.wetness) : standardBrake(this.wetness);
   }
 
+  /** How damaged the car is overall (0..1). */
+  get damage(): number {
+    return Math.max(this.wingDamage, this.bodyDamage);
+  }
+
+  /** The share of cornering grip a damaged front wing leaves. */
+  get damageGrip(): number {
+    return 1 - DAMAGE.wingGrip * this.wingDamage;
+  }
+
+  /** A hit at `speed` m/s (into a barrier or another car): damage, with damage on. Returns how much. */
+  addDamage(speed: number): number {
+    if (!this.damageOn) return 0;
+    const d = Math.max(0, speed - DAMAGE.from) * DAMAGE.perSpeed;
+    if (d <= 0) return 0;
+    this.wingDamage = Math.min(1, this.wingDamage + d * DAMAGE.wingShare);
+    this.bodyDamage = Math.min(1, this.bodyDamage + d * (1 - DAMAGE.wingShare));
+    return d;
+  }
+
+  /** The pit crew mends it all. */
+  repair(): void {
+    this.wingDamage = 0;
+    this.bodyDamage = 0;
+  }
+
   /** A fresh set of tyres (a pit stop, or a new run), of `compound` (the same kind by default). */
   newTyres(compound: Compound = this.compound): void {
     this.compound = compound;
@@ -320,7 +350,7 @@ export class CarPhysics {
     // The rain and worn tyres take some of it away: how hard the car can corner (not how
     // quickly it answers the wheel, which is the surface's).
     const surfaceGrip = (a.gripFactor + b.gripFactor) / 2;
-    const grip = surfaceGrip * this.gripScale * roadGrip;
+    const grip = surfaceGrip * this.gripScale * roadGrip * this.damageGrip;
     const wing = SETUP.wing[this.setup.wing];
     const gears = SETUP.gears[this.setup.gears];
     const balance = SETUP.brakes[this.setup.brakes];
@@ -346,7 +376,7 @@ export class CarPhysics {
     // In another car's slipstream the air resistance drops and the tow pulls the car along,
     // past its usual top speed: enough to draw alongside on a straight.
     const tow = this.draft;
-    let resist = H.rollingDrag + surfDrag + H.aeroDrag * wing.drag * (1 - H.slipstreamDragCut * tow) * vf * vf;
+    let resist = H.rollingDrag + surfDrag + H.aeroDrag * wing.drag * (1 + DAMAGE.bodyDrag * this.bodyDamage) * (1 - H.slipstreamDragCut * tow) * vf * vf;
     if (throttle > 0) {
       const fade = Math.max(0, 1 - vf / (H.maxSpeed * gears.top * speedF * (1 + H.slipstreamTopSpeed * tow)));
       if (vf >= -0.5) drive += (H.engineAccel * accelF * pull + H.slipstreamPush * tow) * throttle * fade;
@@ -400,6 +430,7 @@ export class CarPhysics {
 
     this.collide();
     this.collideWalls();
+    if (st.wallHit > 0) this.addDamage(st.wallHit);
     const bumped = this.bumpKerbs();
     this.updateGround();
 

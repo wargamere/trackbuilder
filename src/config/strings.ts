@@ -286,6 +286,12 @@ export const STR = {
     summaryWear: 'tyre wear & pit stops',
     summaryWearOn: 'tyre wear, {tyres} tyres',
     summaryNoWear: 'no tyre wear',
+    damage: 'Damage',
+    damageHint: 'Hard hits on the barriers or other cars break the front wing (less grip in corners) and the bodywork (a lower top speed). Stop in the pit box to have it mended: the worse it is, the longer it takes. The AI cars pit for repairs too.',
+    safetyCar: 'Safety car',
+    safetyCarHint: 'Yellow flags always come out where a car has crashed or stopped: ease off there. With the safety car on, a car stuck on the track brings it out. Everyone follows it at its pace and the field closes up, then it comes in at the end of a lap.',
+    summaryDamage: 'damage',
+    summarySafetyCar: 'safety car',
   },
 
   /** Car setup (ui/setupPanel.ts, config/race.ts SETUP). */
@@ -738,6 +744,17 @@ export const STR = {
     pitDone: '{tyres} tyres on: go!',
     pitPick: 'New tyres',
     pitBox: 'PIT',
+    safetyCarOut: 'Safety car! Slow down and hold your position',
+    safetyCar: 'SAFETY CAR',
+    safetyCarIn: 'Safety car in this lap: get ready',
+    safetyCarInBanner: 'SAFETY CAR IN THIS LAP',
+    greenFlag: 'Green flag: race on!',
+    yellowFlag: 'YELLOW FLAG: slow down',
+    damageLight: 'You’ve damaged the car: pit to have it mended',
+    damageHeavy: 'Heavy damage! Pit for repairs',
+    damage: 'Damage {n}%',
+    repairing: 'Repairs…',
+    repaired: 'Repaired: go, go, go!',
   },
 
   paint: {

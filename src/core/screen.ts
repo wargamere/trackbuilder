@@ -37,6 +37,10 @@ export interface RaceSetup {
   tyreWear: boolean;
   /** The tyres you start on (with tyre wear on). */
   tyres: Compound;
+  /** Hits damage the cars (mended in a pit stop). */
+  damage: boolean;
+  /** A stuck car brings out the safety car (yellow flags are always on in a race). */
+  safetyCar: boolean;
 }
 
 export interface Screen {

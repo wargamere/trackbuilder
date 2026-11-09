@@ -31,6 +31,8 @@ export class Hud {
   private readonly speedValue: HTMLElement;
   private readonly hint: HTMLElement;
   private readonly debug: HTMLElement;
+  private readonly flag: HTMLElement;
+  private readonly damage: HTMLElement;
   private readonly medals: HTMLElement;
   private readonly pos: HTMLElement;
   private readonly draft: HTMLElement;
@@ -103,6 +105,11 @@ export class Hud {
     this.picker.hidden = true;
     this.weather = h('div', { class: 'hud-weather' });
     this.weather.hidden = true;
+    this.flag = h('div', { class: 'hud-flag' });
+    this.flag.hidden = true;
+    this.flag.setAttribute('role', 'status');
+    this.damage = h('div', { class: 'hud-damage' });
+    this.damage.hidden = true;
     const speed = h(
       'div',
       { class: 'hud-speed' },
@@ -110,11 +117,12 @@ export class Hud {
       h('div', { class: 'speed-main' }, this.speedValue, this.speedUnit),
       this.revBar,
       this.tyres,
+      this.damage,
     );
     this.draft = h('div', { class: 'hud-draft', text: STR.race.slipstream });
     this.hint = h('div', { class: 'hud-hint' });
     this.debug = h('div', { class: 'hud-debug' });
-    this.root = h('div', { class: 'screen hud' }, top, timer, this.minimap.root, this.center, speed, this.draft, this.weather, this.picker, this.hint, this.debug);
+    this.root = h('div', { class: 'screen hud' }, top, timer, this.minimap.root, this.center, speed, this.draft, this.weather, this.flag, this.picker, this.hint, this.debug);
   }
 
   /** Medal targets under the timer; the ones your best lap has won are lit. */
@@ -335,6 +343,26 @@ export class Hud {
       this.splitTimer -= dt;
       if (this.splitTimer <= 0) this.split.classList.remove('visible');
     }
+  }
+
+  /** The flag banner: yellow flags, or the safety car; null hides it. */
+  setFlag(kind: 'yellow' | 'sc' | null, text = ''): void {
+    const show = kind !== null;
+    if (this.flag.hidden === show) this.flag.hidden = !show;
+    if (!show) return;
+    const cls = `hud-flag ${kind}`;
+    if (this.flag.className !== cls) this.flag.className = cls;
+    if (this.flag.textContent !== text) this.flag.textContent = text;
+  }
+
+  /** How damaged your car is (0..1; null hides it, as with damage off). */
+  setDamage(d: number | null): void {
+    const show = d !== null && d > 0.01;
+    if (this.damage.hidden === show) this.damage.hidden = !show;
+    if (!show || d === null) return;
+    const text = fmt(STR.race.damage, { n: Math.round(d * 100) });
+    if (this.damage.textContent !== text) this.damage.textContent = text;
+    this.damage.classList.toggle('bad', d >= 0.5);
   }
 
   /** Dev-build performance line (fps, draw calls). */

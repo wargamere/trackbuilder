@@ -74,7 +74,7 @@ const DEFAULTS: Settings = {
   keys: DEFAULT_BINDINGS,
   tower: 'full',
   carSetup: DEFAULT_SETUP,
-  raceSetup: { mode: 'race', ghost: true, opponents: 3, difficulty: 50, grid: 'pick', startSlot: 4, weather: 'dry', time: 'track', tyreWear: false, tyres: 'medium' },
+  raceSetup: { mode: 'race', ghost: true, opponents: 3, difficulty: 50, grid: 'pick', startSlot: 4, weather: 'dry', time: 'track', tyreWear: false, tyres: 'medium', damage: false, safetyCar: false },
 };
 const KEY = 'settings';
 

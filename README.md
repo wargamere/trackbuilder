@@ -498,6 +498,30 @@ The race setup's **Conditions** row (🌦, key C) opens a panel with three switc
   - *AI strategy:* it starts on the quickest kind that lasts the race. If none does, it starts on its own choice (medium, hard or soft by grid slot, so the field is mixed). In the rain it's wets. It stops when its tyres would go off before the box comes round again, give or take a bit per car, so they don't all stop on the same lap. It doesn't stop with less than a lap to go, or when its tyres will last to the finish. At a stop it picks the same way for the laps left. It pulls over to the box from 180 m out, brakes to stop in it, and rejoins the line over 90 m.
   - *Qualifying* is always on new tyres, without wear.
 
+### Damage, flags and the safety car
+
+Two more switches in Conditions (both off by default, saved with the rest). Race control is `race/raceControl.ts`; the numbers are `DAMAGE` and `FLAGS` in `config/race.ts`.
+
+- **Damage: Off / On** (`CarPhysics.addDamage`).
+  - A hit on a barrier or another car faster than 5 m/s does damage: 3.5 % for each m/s over that.
+  - 60 % goes to the front wing and 40 % to the bodywork.
+  - A broken wing costs up to 15 % grip. Broken bodywork adds up to 35 % aero drag, which lowers the top speed by about 5 %.
+  - The HUD shows *Damage n %* in yellow, then red. It warns at 15 % ("pit to have it mended") and again at 50 % ("Heavy damage!").
+  - The pit box mends it all, taking 8 s more per 100 % of damage on top of the usual stop. A stop for repairs alone fits no tyres when tyre wear is off.
+  - The AI pits for repairs once it's 45 % damaged, unless it's in the last lap.
+- **Yellow flags (always on in a race).**
+  - A car that has crashed (a hit over 14 m/s) or stopped on the track for 1.2 s brings yellow flags out around it.
+  - The flags cover 160 m before the car and 30 m after it, and stay out 6 s after the car moves on.
+  - The HUD shows *YELLOW FLAG* when you're in the zone or within 250 m of it.
+  - The AI eases to 85 % of its pace in the zone.
+- **Safety car: Off / On.**
+  - A car stuck on the track for 2 s brings out the safety car, except in the last lap.
+  - A white safety car leads the field round on the racing line. The leader is held to 24 m/s.
+  - The cars behind may close up to 16 m behind the car ahead: faster when further back (up to +14 m/s), slower when closer.
+  - Your throttle is cut above that speed and the brakes help a little.
+  - After 25 s it comes in at the end of the leader's lap ("SAFETY CAR IN THIS LAP"), and it's green when the leader starts the next one.
+  - Tests check a stuck car brings it out and the AI field bunches up behind it and races on afterwards (`tests/raceControl.test.ts`).
+
 ### Saving, sharing and sound
 
 - **Storage** (`platform/storage.ts`) is a small synchronous get/set store:
@@ -583,6 +607,7 @@ Tested against the real SDK in its `local` mode (localhost): the SDK's own log s
 - [x] Editor: TecPro and Armco barriers, barrier distance, painted kerbs, dirt and snow roads, Alpine / Forest / City landscapes (track codes v5)
 - [x] Editor: tap-to-place scenery, run-off per corner and painted with a brush, bump kerbs (per corner and on every chicane)
 - [x] Editor: bridges or tunnels where the track crosses itself, and lifting every level crossing
+- [x] Damage (wing and bodywork, mended in the pit box), yellow flags and the safety car
 
 ## Validation for the track editor
 

@@ -6,7 +6,7 @@ import type { RaceSetup, Weather } from '../core/screen.ts';
 import { button, h, segmented, type Choice } from './dom.ts';
 
 /** The race conditions in a race setup. */
-export type Conditions = Pick<RaceSetup, 'weather' | 'time' | 'tyreWear' | 'tyres'>;
+export type Conditions = Pick<RaceSetup, 'weather' | 'time' | 'tyreWear' | 'tyres' | 'damage' | 'safetyCar'>;
 
 /** The time of day a run is driven at: the setup's, or the track's own. */
 export function timeFor(c: Pick<RaceSetup, 'time'>, trackTime: TimeOfDay): TimeOfDay {
@@ -18,7 +18,8 @@ export function conditionsSummary(c: Conditions, trackTime: TimeOfDay): string {
   const C = STR.conditions;
   const wear = c.tyreWear ? fmt(C.summaryWearOn, { tyres: STR.tyres.lower[c.tyres] }) : C.summaryNoWear;
   const weather = c.weather === 'rain' ? C.summaryRain : c.weather === 'changing' ? C.summaryChanging : C.summaryDry;
-  return [weather, C.summaryTimes[timeFor(c, trackTime)], wear].join(' · ');
+  const extra = [c.damage ? C.summaryDamage : '', c.safetyCar ? C.summarySafetyCar : ''].filter(Boolean);
+  return [weather, C.summaryTimes[timeFor(c, trackTime)], wear, ...extra].join(' · ');
 }
 
 /** Changing the weather puts on the tyres for it: wets in the rain, mediums (from wets) in the dry. */
@@ -47,7 +48,9 @@ export class ConditionsPanel {
   private readonly lifeLine: HTMLElement;
   private readonly timeHint: HTMLElement;
   private readonly weatherHint: HTMLElement;
-  private get: () => Conditions = () => ({ weather: 'dry', time: 'track', tyreWear: false, tyres: 'medium' });
+  private readonly damage: Choice<boolean>;
+  private readonly safetyCar: Choice<boolean>;
+  private get: () => Conditions = () => ({ weather: 'dry', time: 'track', tyreWear: false, tyres: 'medium', damage: false, safetyCar: false });
   private trackTime: TimeOfDay = 'day';
   private mediumLife = 5;
   private change: (patch: Partial<Conditions>) => void = () => {};
@@ -83,6 +86,16 @@ export class ConditionsPanel {
       ],
       (v) => set({ tyreWear: v }),
     );
+    const onOff = (pick: (v: boolean) => void) =>
+      segmented<boolean>(
+        [
+          [false, C.off],
+          [true, C.on],
+        ],
+        pick,
+      );
+    this.damage = onOff((v) => set({ damage: v }));
+    this.safetyCar = onOff((v) => set({ safetyCar: v }));
     this.start = segmented<Compound>(
       TYRES.order.map((c) => [c, STR.tyres.names[c]] as [Compound, string]),
       (v) => set({ tyres: v }),
@@ -111,6 +124,8 @@ export class ConditionsPanel {
       field(C.time, this.time.el, this.timeHint),
       field(C.tyres, this.tyres.el, fmt(C.tyresHint, { s: CONDITIONS.service })),
       this.startField,
+      field(C.damage, this.damage.el, C.damageHint),
+      field(C.safetyCar, this.safetyCar.el, C.safetyCarHint),
       h('div', { class: 'menu row' }, button(C.done, () => this.close(), { icon: '✓', class: 'primary', key: 'Esc' })),
     );
     panel.setAttribute('role', 'dialog');
@@ -155,6 +170,8 @@ export class ConditionsPanel {
     this.weather.set(c.weather);
     this.time.set(c.time);
     this.tyres.set(c.tyreWear);
+    this.damage.set(c.damage);
+    this.safetyCar.set(c.safetyCar);
     this.start.set(c.tyres);
     this.startField.hidden = !c.tyreWear;
     this.startHint.textContent = STR.tyres.hints[c.tyres];

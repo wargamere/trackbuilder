@@ -278,8 +278,10 @@ test('AI strategy: the quickest tyres that last the race, else a stop before the
 test('race setup conditions: the summary line and the time of day (the track’s own unless chosen)', () => {
   assert.equal(timeFor({ time: 'track' }, 'sunset'), 'sunset');
   assert.equal(timeFor({ time: 'night' }, 'sunset'), 'night');
-  assert.equal(conditionsSummary({ weather: 'dry', time: 'track', tyreWear: false, tyres: 'soft' }, 'day'), 'Dry · day · no tyre wear');
-  assert.equal(conditionsSummary({ weather: 'rain', time: 'night', tyreWear: true, tyres: 'wet' }, 'day'), 'Rain · night · tyre wear, wet tyres');
+  const off = { damage: false, safetyCar: false };
+  assert.equal(conditionsSummary({ weather: 'dry', time: 'track', tyreWear: false, tyres: 'soft', ...off }, 'day'), 'Dry · day · no tyre wear');
+  assert.equal(conditionsSummary({ weather: 'rain', time: 'night', tyreWear: true, tyres: 'wet', ...off }, 'day'), 'Rain · night · tyre wear, wet tyres');
+  assert.equal(conditionsSummary({ weather: 'dry', time: 'day', tyreWear: false, tyres: 'soft', damage: true, safetyCar: true }, 'day'), 'Dry · day · no tyre wear · damage · safety car');
 });
 
 test('the conditions panel: each choice changes the setup and shows on its buttons; Done closes it', async () => {
@@ -298,7 +300,7 @@ test('the conditions panel: each choice changes the setup and shows on its butto
   const { ConditionsPanel } = await import('../src/ui/conditionsPanel.ts');
   const host = win.document.createElement('div');
   win.document.body.append(host);
-  const draft: Conditions = { weather: 'dry', time: 'track', tyreWear: false, tyres: 'soft' };
+  const draft: Conditions = { weather: 'dry', time: 'track', tyreWear: false, tyres: 'soft', damage: false, safetyCar: false };
   let closed = false;
   const panel = new ConditionsPanel();
   panel.open(host as unknown as HTMLElement, { get: () => draft, change: (p) => Object.assign(draft, p), trackTime: 'sunset', mediumLife: 5, onClose: () => (closed = true) });
@@ -312,7 +314,14 @@ test('the conditions panel: each choice changes the setup and shows on its butto
   btn('Weather', 'Rain').click();
   btn('Time of day', 'Night').click();
   btn('Tyre wear', 'On').click();
-  assert.deepEqual(draft, { weather: 'rain', time: 'night', tyreWear: true, tyres: 'wet' }, 'rain puts wets on');
+  assert.deepEqual(draft, { weather: 'rain', time: 'night', tyreWear: true, tyres: 'wet', damage: false, safetyCar: false }, 'rain puts wets on');
+  btn('Damage', 'On').click();
+  btn('Safety car', 'On').click();
+  assert.equal(draft.damage, true);
+  assert.equal(draft.safetyCar, true);
+  assert.equal(btn('Safety car', 'On').getAttribute('aria-pressed'), 'true');
+  btn('Damage', 'Off').click();
+  assert.equal(draft.damage, false);
   assert.equal(startField().hidden, false);
   assert.match(startField().textContent ?? '', /\(rain\): Soft ≈ 3\.3 · Medium ≈ 5\.0 · Hard ≈ 8\.0 · Wet ≈ 6\.5/);
   btn('Starting tyres', 'Hard').click();

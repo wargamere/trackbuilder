@@ -87,6 +87,8 @@ class Game implements GameContext {
       time: saved?.time === 'day' || saved?.time === 'sunset' || saved?.time === 'night' ? saved.time : 'track',
       tyreWear: saved?.tyreWear === true,
       tyres: saved?.tyres === 'soft' || saved?.tyres === 'hard' || saved?.tyres === 'wet' ? saved.tyres : 'medium',
+      damage: saved?.damage === true,
+      safetyCar: saved?.safetyCar === true,
     };
     wipeOldLibraryOnce(this.library, this.records);
     this.screens.menu = new MenuScreen(this);
@@ -124,8 +126,8 @@ class Game implements GameContext {
   start(patch: Partial<RaceSetup> = {}): void {
     this.syncLaps();
     Object.assign(this.setup, patch);
-    const { mode, ghost, opponents, difficulty, grid, startSlot, weather, time, tyreWear, tyres } = this.setup;
-    updateSettings({ raceSetup: { mode, ghost, opponents, difficulty, grid, startSlot, weather, time, tyreWear, tyres } });
+    const { mode, ghost, opponents, difficulty, grid, startSlot, weather, time, tyreWear, tyres, damage, safetyCar } = this.setup;
+    updateSettings({ raceSetup: { mode, ghost, opponents, difficulty, grid, startSlot, weather, time, tyreWear, tyres, damage, safetyCar } });
     this.setupBack = null;
     if (this.currentId === 'race') (this.screens.race as RaceScreen).startRun();
     else this.go('race');

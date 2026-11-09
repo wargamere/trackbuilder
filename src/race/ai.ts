@@ -1,7 +1,7 @@
 import { CarPhysics, NO_INPUT, type CarState, type DriveInput } from '../car/physics.ts';
 import { standardBrake, standardGrip } from '../car/tyres.ts';
 import { HANDLING } from '../config/handling.ts';
-import { AI, CONDITIONS, SETUP, TRAFFIC, WEATHER, type Compound } from '../config/race.ts';
+import { AI, CONDITIONS, DAMAGE, FLAGS, SETUP, TRAFFIC, WEATHER, type Compound } from '../config/race.ts';
 import { clamp, wrap } from '../core/math.ts';
 import { edgeOffsets } from '../track/spline.ts';
 import type { Track } from '../track/track.ts';
@@ -174,7 +174,11 @@ export class AiDriver {
   /** The road its speed plan was made for: dry (0) or soaked (1). As the road gets wetter or drier it drives by the grip and brakes there are against that. */
   private readonly planWetness: number;
 
-  constructor(track: Track, opts: { name: string; paint: number; difficulty: number; laps: number; slot: number; wet?: boolean; tyreWear?: boolean }) {
+  /** Race control: the most it may go (the safety car), and yellow flags where it is. */
+  raceCap = Infinity;
+  yellow = false;
+
+  constructor(track: Track, opts: { name: string; paint: number; difficulty: number; laps: number; slot: number; wet?: boolean; tyreWear?: boolean; damage?: boolean }) {
     const wet = !!opts.wet;
     this.name = opts.name;
     this.paint = opts.paint;
@@ -193,6 +197,7 @@ export class AiDriver {
     this.car.wet = wet;
     this.planWetness = wet ? 1 : 0;
     this.car.wear = !!opts.tyreWear;
+    this.car.damageOn = !!opts.damage;
     this.length = track.center.length;
     // Not everyone stops on the same lap, or picks the same tyres for a stint.
     this.pitEarly = CONDITIONS.pitEarly[opts.slot % CONDITIONS.pitEarly.length];
@@ -211,7 +216,8 @@ export class AiDriver {
     this.lane = g.lateral - this.driver.lateralAt(g.s);
     this.planner.choice = { offset: this.lane };
     this.session = new RaceSession(track.center.length, null, opts.laps, track.center.width);
-    this.crew = opts.tyreWear ? new PitCrew(track) : null;
+    // (A pit crew for new tyres, or for repairs.)
+    this.crew = opts.tyreWear || opts.damage ? new PitCrew(track) : null;
     this.crew?.reset(this.car.state);
   }
 
@@ -246,8 +252,13 @@ export class AiDriver {
       // makes its own call: some early, some late).
       const k = this.slot % WEATHER.aiToWets.length;
       const onWets = car.compound === 'wet';
-      const wantWets = onWets ? car.wetness > WEATHER.aiToSlicks[k] : car.wetness > WEATHER.aiToWets[k];
-      if (wantWets === onWets) {
+      const wantWets = car.wear && (onWets ? car.wetness > WEATHER.aiToSlicks[k] : car.wetness > WEATHER.aiToWets[k]);
+      // Badly damaged: in for repairs (unless the race is all but over).
+      const repairs = car.damageOn && car.damage >= DAMAGE.aiPitAt;
+      if (repairs) {
+        if (left < C.pitMinLaps) return null;
+      } else if (!car.wear) return null;
+      else if (wantWets === onWets) {
         // Wear: in now if they'd go off before the box comes round again (give or take its own
         // margin), unless the race is all but over, or they'll last to the finish.
         const onTyres = car.tyreLapsLeft;
@@ -262,7 +273,7 @@ export class AiDriver {
       this.pit = 'in';
       this.pitFrom = d;
       this.pitWait = 0;
-      this.nextTyres = pickCompound(left, car.mediumLife, wantWets ? 1 : 0, this.preference);
+      this.nextTyres = car.wear ? pickCompound(left, car.mediumLife, wantWets ? 1 : 0, this.preference) : car.compound;
     }
     if (this.pit === 'in' || this.pit === 'stop') {
       const ev = crew.step(this.car, dt, this.nextTyres);
@@ -339,7 +350,8 @@ export class AiDriver {
     }
 
     // Speed: the plan, held back to keep a gap behind the car in our way.
-    const cap = Math.min(this.planner.followSpeed(st, cars, this.lane, dt), pit?.cap ?? Infinity);
+    // (And held to the safety car's pace.)
+    const cap = Math.min(this.planner.followSpeed(st, cars, this.lane, dt), pit?.cap ?? Infinity, this.raceCap);
     // After the finish it carries on a little slower (not parked on the line for others to hit);
     // letting a quicker car by, it eases off (but not in the middle of a tight bend).
     let pace = finished ? AI.afterFinishPace : this.planner.lettingBy && !this.planner.inBend ? TRAFFIC.letByEase : 1;
@@ -350,6 +362,8 @@ export class AiDriver {
     if (run < AI.startStretch) pace *= 1 - AI.startSpread * this.slot;
     // Close to another car, a touch of caution.
     if (this.planner.crowded) pace *= 1 - TRAFFIC.crowdEase;
+    // Yellow flags: ease off.
+    if (this.yellow) pace *= FLAGS.yellowPace;
     // Stuck behind a slower car that isn't an AI (you): a push to get by, like a tow (see
     // TrafficPlanner.pushing).
     if (this.planner.pushing) this.car.draft = Math.max(this.car.draft, TRAFFIC.pushTow);
@@ -362,7 +376,7 @@ export class AiDriver {
       this.lane = st.lateral - this.driver.lateralAt(st.s);
       this.laneVel = 0;
     }
-    const inp = this.driver.drive(st, this.lane, this.inp, { pace, cap, tow: this.car.draft, keep, late: this.planner.fighting, route, grip: this.car.gripScale / standardGrip(this.planWetness), brake: this.car.brakeScale / standardBrake(this.planWetness) });
+    const inp = this.driver.drive(st, this.lane, this.inp, { pace, cap, tow: this.car.draft, keep, late: this.planner.fighting, route, grip: (this.car.gripScale * this.car.damageGrip) / standardGrip(this.planWetness), brake: this.car.brakeScale / standardBrake(this.planWetness) });
     // Sliding (knocked, or ran wide): easing off the throttle until it gathers itself. No braking,
     // which would only surprise the car behind. (Being off its path is already taken care of:
     // the speed then comes from the path it's really on.)
