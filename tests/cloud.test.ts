@@ -3,7 +3,7 @@ import { generateKeyPairSync, sign } from 'node:crypto';
 import { test } from 'node:test';
 import { CloudSync, crazyGamesBackend, webBackend, type CloudBackend, type CloudSave, type SessionStore } from '../src/platform/cloud.ts';
 import { onStorageWrite, storage } from '../src/platform/storage.ts';
-import { importRsaPublicKey, verifyCrazyGamesToken } from '../supabase/functions/_shared/cgToken.ts';
+import { handle, importRsaPublicKey, verifyCrazyGamesToken, type Deps } from '../supabase/functions/cg-save/index.ts';
 
 // ------------------------------------------------------------ CrazyGames tokens
 
@@ -207,4 +207,64 @@ test('CrazyGames: the player\'s token goes with every call; guests have no cloud
   assert.equal(await cgb.save({ a: '1' }), '2026-11-09T12:00:00Z');
   assert.ok(seen.every((h) => h['x-cg-token'] === 'cg-token' && h.apikey === 'anon-key'));
   await assert.rejects(crazyGamesBackend(cfg, async () => null, fakeFetch).load(), /not logged in/);
+  // A publishable key goes on apikey only (as a bearer token Supabase would reject it as a bad JWT);
+  // a legacy anon key (a JWT) on both.
+  assert.ok(seen.every((h) => !('Authorization' in h)));
+  seen.length = 0;
+  await crazyGamesBackend({ ...cfg, anonKey: 'eyJlegacy' }, async () => 'cg-token', fakeFetch).load();
+  assert.equal(seen[0].Authorization, 'Bearer eyJlegacy');
+});
+
+// ------------------------------------------------------- the cg-save function
+
+test('the cg-save function: a genuine token reads and writes that player\'s row with the admin key; anything else is turned away', async () => {
+  const key = await importRsaPublicKey(publicKey);
+  const now = Math.floor(Date.now() / 1000);
+  const token = jwt({ userId: 'u42', gameId: 'tb3d', username: 'Ada', exp: now + 3600 });
+  const rows = new Map<string, { data: unknown; updated_at: string }>();
+  const db: { url: string; headers: Record<string, string> }[] = [];
+  const env: Record<string, string> = { SUPABASE_URL: 'https://p.supabase.co', SUPABASE_SECRET_KEYS: JSON.stringify({ default: 'sb_secret_abc' }), CG_GAME_ID: 'tb3d' };
+  const deps: Deps = {
+    env: (n) => env[n],
+    key: async () => key,
+    fetch: (async (url: string, init?: RequestInit) => {
+      db.push({ url, headers: init?.headers as Record<string, string> });
+      const u = new URL(url);
+      assert.equal(u.origin + u.pathname, 'https://p.supabase.co/rest/v1/saves');
+      if ((init?.method ?? 'GET') === 'GET') {
+        const id = decodeURIComponent(u.searchParams.get('player')!.slice(3));
+        const row = rows.get(id);
+        return new Response(JSON.stringify(row ? [row] : []), { status: 200 });
+      }
+      const { player, data } = JSON.parse(String(init?.body));
+      const row = { data, updated_at: '2026-11-09T15:00:00Z' };
+      rows.set(player, row);
+      return new Response(JSON.stringify([{ updated_at: row.updated_at }]), { status: 201 });
+    }) as typeof fetch,
+  };
+  const call = (method: string, headers: Record<string, string>, body?: unknown) => handle(new Request('https://p.supabase.co/functions/v1/cg-save', { method, headers, body: body === undefined ? undefined : JSON.stringify(body) }), deps);
+  // Nothing saved yet; then a save; then it's there.
+  let res = await call('GET', { 'x-cg-token': token });
+  assert.equal(res.status, 200);
+  assert.equal(await res.json(), null);
+  res = await call('PUT', { 'x-cg-token': token }, { data: { 'trackbuilder3d.settings': '{}' } });
+  assert.deepEqual(await res.json(), { updated_at: '2026-11-09T15:00:00Z' });
+  assert.ok(rows.has('cg:u42'), 'the row is cg:<userId>');
+  res = await call('GET', { 'x-cg-token': token });
+  assert.deepEqual((await res.json()).data, { 'trackbuilder3d.settings': '{}' });
+  // The new secret key goes on apikey only.
+  assert.ok(db.every((c) => c.headers.apikey === 'sb_secret_abc' && !('Authorization' in c.headers)));
+  // On an older project, the legacy service_role key (a JWT) on both.
+  delete env.SUPABASE_SECRET_KEYS;
+  env.SUPABASE_SERVICE_ROLE_KEY = 'eyJservice';
+  db.length = 0;
+  await call('GET', { 'x-cg-token': token });
+  assert.equal(db[0].headers.Authorization, 'Bearer eyJservice');
+  // Turned away: no token, a forged one, another game's, a bad body.
+  assert.equal((await call('GET', {})).status, 401);
+  assert.equal((await call('GET', { 'x-cg-token': `${token.slice(0, -4)}AAAA` })).status, 401);
+  assert.equal((await call('GET', { 'x-cg-token': jwt({ userId: 'u42', gameId: 'other', exp: now + 3600 }) })).status, 401);
+  assert.equal((await call('PUT', { 'x-cg-token': token }, { data: [1, 2] })).status, 400);
+  assert.equal((await call('DELETE', { 'x-cg-token': token })).status, 405);
+  assert.equal((await call('OPTIONS', {})).status, 200);
 });

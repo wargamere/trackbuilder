@@ -17,8 +17,9 @@
  * game: with no network, no project set up, or any error, the game just
  * carries on with what's saved on the device.
  *
- * Set up: see supabase/README.md (the project URL and public anon key go in
- * VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY at build time).
+ * Set up: see supabase/README.md (the project URL and its publishable key, or
+ * the legacy anon key, go in VITE_SUPABASE_URL / VITE_SUPABASE_PUBLISHABLE_KEY
+ * at build time).
  */
 
 export interface CloudSave {
@@ -38,6 +39,7 @@ export interface CloudBackend {
 
 export interface CloudConfig {
   url: string;
+  /** The project's publishable key (sb_publishable_…), or its legacy anon key (a JWT). Public by design. */
   anonKey: string;
 }
 
@@ -47,7 +49,7 @@ type Fetch = typeof fetch;
 export function cloudConfig(): CloudConfig | null {
   const env = (import.meta as unknown as { env?: Record<string, string | undefined> }).env;
   const url = env?.VITE_SUPABASE_URL?.trim();
-  const anonKey = env?.VITE_SUPABASE_ANON_KEY?.trim();
+  const anonKey = (env?.VITE_SUPABASE_PUBLISHABLE_KEY || env?.VITE_SUPABASE_ANON_KEY)?.trim();
   return url && anonKey ? { url: url.replace(/\/+$/, ''), anonKey } : null;
 }
 
@@ -154,7 +156,9 @@ export function crazyGamesBackend(cfg: CloudConfig, token: () => Promise<string 
     if (!t) throw new Error('cloud: not logged in to CrazyGames');
     return doFetch(`${cfg.url}/functions/v1/cg-save`, {
       ...init,
-      headers: { apikey: cfg.anonKey, Authorization: `Bearer ${cfg.anonKey}`, 'Content-Type': 'application/json', 'x-cg-token': t },
+      // (A publishable key goes on apikey only: as a bearer token it would be rejected as a bad JWT.
+      // A legacy anon key is a JWT, and goes on both.)
+      headers: { apikey: cfg.anonKey, ...(cfg.anonKey.startsWith('eyJ') ? { Authorization: `Bearer ${cfg.anonKey}` } : {}), 'Content-Type': 'application/json', 'x-cg-token': t },
     });
   };
   return {

@@ -90,7 +90,7 @@ The covers show real in-game footage plus the title only: no other text, icons, 
 ## 6. Steps
 
 1. **Sign up** at developer.crazygames.com and finish onboarding. You can choose "hold payments" for now.
-2. **Supabase:** follow [`../supabase/README.md`](../supabase/README.md), put the URL and anon key in `.env`, then run `npm run package:cg`.
+2. **Supabase:** follow [`../supabase/README.md`](../supabase/README.md) (the project's URL and publishable key are already in `.env`), then run `npm run package:cg`.
 3. **Submit a game:** upload `dist/track-builder-3d-crazygames-basic.zip`, then fill in the text and answers above.
 4. **Preview / QA tool** (in the portal): play a race to the end, try "Race again", pause and resume, open the editor, draw and race a track, mute from the CrazyGames bar, and try on a phone in landscape.
 5. **Upload** the three covers and the two videos, then **submit for Basic Launch**.
