@@ -7,7 +7,7 @@ import { edgeOffsets } from '../track/spline.ts';
 import type { Track } from '../track/track.ts';
 import { RacingDriver } from './driver.ts';
 import { along, PitCrew } from './pitStop.ts';
-import { planLapTime, racingLine, speedProfile, topSpeed, type Pace } from './racingLine.ts';
+import { planLapTime, racingLine, roadPace, speedProfile, topSpeed, type Pace } from './racingLine.ts';
 import { pickCompound, preferredCompound, suggestedSetup, trackTyreLife } from './strategy.ts';
 import { RaceSession } from './session.ts';
 import { aiCars, TrafficPlanner } from './traffic.ts';
@@ -57,7 +57,7 @@ export function trackDifficulty(track: Track, difficulty: number): number {
   const known = m.get(key);
   if (known !== undefined) return known;
   const line = racingLine(track);
-  const lap = (x: number) => planLapTime(line, speedProfile(track, line, aiPace(x)));
+  const lap = (x: number) => planLapTime(line, speedProfile(track, line, roadPace(aiPace(x), track)));
   const want = lap(1) * knotAt(AI.lapRatio, d);
   // Slower with a lower raw difficulty: find where the lap is the one we want.
   let lo = 0;
@@ -185,7 +185,7 @@ export class AiDriver {
     const setup = suggestedSetup(track);
     const wing = SETUP.wing[setup.wing];
     const base = aiPace(opts.difficulty, track);
-    const pace = { ...base, maxSpeed: base.maxSpeed * (topSpeed(wing.drag) / topSpeed()), downforce: wing.downforce, drag: wing.drag };
+    const pace = roadPace({ ...base, maxSpeed: base.maxSpeed * (topSpeed(wing.drag) / topSpeed()), downforce: wing.downforce, drag: wing.drag }, track);
     this.driver = new RacingDriver(track, opts.wet ? wetPace(pace) : pace);
     this.planner = new TrafficPlanner(this.driver, track, opts.difficulty);
     this.car = new CarPhysics(track);

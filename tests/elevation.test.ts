@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { CarPhysics } from '../src/car/physics.ts';
 import { HANDLING } from '../src/config/handling.ts';
-import { DEFAULT_OPTIONS, OPTION_CHOICES, TRACK, type TrackOptions } from '../src/config/track.ts';
+import { DEFAULT_OPTIONS, OPTION_CHOICES, THEME_IDS, TRACK, type TrackOptions } from '../src/config/track.ts';
 import { dist, type Dot, type Vec2 } from '../src/core/math.ts';
 import { rng } from '../src/core/random.ts';
 import { rollingHeights, withHeights } from '../src/editor/heights.ts';
@@ -51,6 +51,9 @@ function hillyEight(f: (u: number) => number) {
 /** Height difference `a` between the two roads at the crossing (low at the start, high half a lap later). */
 const rise = (a: number) => (u: number) => (a * (1 - Math.cos((u - 0.25) * Math.PI * 2))) / 2;
 
+/** A track code written by version 4 of the format (desert, tyre barriers, flat kerbs, 13.5 m, a banked dot). */
+const V4_CODE = 'IC1.BARGb3VyjREbAQY4_5z_BZADdyaQA3hwUOgCnwHfA3gC3wN3AQAAAAAJADM';
+
 test('track codes keep heights and every option; old v1 and v2 codes still load', () => {
   const dots: Dot[] = [{ x: -100, y: -50, h: 2.5 }, { x: 0, y: -80, h: 12 }, { x: 100, y: -50, h: 40 }, { x: 120, y: 40 }, { x: 0, y: 70, h: 0.5 }, { x: -120, y: 40 }];
   const options: TrackOptions = {
@@ -60,7 +63,9 @@ test('track codes keep heights and every option; old v1 and v2 codes still load'
     width: 15,
     kerbs: 'flat',
     runoff: 'gravel',
-    barrier: 'tyres',
+    barrier: 'armco',
+    barrierGap: 17,
+    road: 'dirt',
     pits: false,
     time: 'sunset',
     laps: 5,
@@ -73,11 +78,25 @@ test('track codes keep heights and every option; old v1 and v2 codes still load'
     assert.deepEqual(d.options, options);
   }
   // Every choice of every option survives on its own too.
-  for (const [k, choices] of Object.entries(OPTION_CHOICES)) {
+  const every: [string, readonly unknown[]][] = [...Object.entries(OPTION_CHOICES), ['theme', THEME_IDS], ['barrierGap', [0, 1, 12, TRACK.maxBarrierGap]]];
+  for (const [k, choices] of every) {
     for (const v of choices) {
       const e = decodeTrack(encodeTrack('o', dots, { [k]: v }));
       assert.ok(e.ok && (e.options as unknown as Record<string, unknown>)[k] === v, `${k}=${v}`);
     }
+  }
+  // ...and together with the newest bits set.
+  const newest: TrackOptions = { ...options, theme: 'forest', barrier: 'tecpro', road: 'snow', kerbs: 'painted', barrierGap: TRACK.maxBarrierGap };
+  const n = decodeTrack(encodeTrack('n', dots, newest));
+  assert.ok(n.ok);
+  if (n.ok) assert.deepEqual(n.options, newest);
+  // Written by version 4 (before barrier distance, road surfaces and the newer landscapes).
+  const v4 = decodeTrack(V4_CODE);
+  assert.ok(v4.ok, 'a version 4 code still loads');
+  if (v4.ok) {
+    assert.equal(v4.name, 'Four');
+    assert.deepEqual(v4.options, { ...DEFAULT_OPTIONS, theme: 'desert', barrier: 'tyres', kerbs: 'flat', width: 13.5 });
+    assert.equal(v4.dots[4].b, 8);
   }
   // Written by the version with heights but only three options.
   const v2 = decodeTrack('IC1.AgdWMiBjb2RlCgY4_5z_CJADdw-QA3gqUOgCKd8DeADfA3cAeA');

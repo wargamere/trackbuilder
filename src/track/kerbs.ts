@@ -52,7 +52,7 @@ export function kerbLayout(track: Track): KerbLayout {
     outerR: new Float32Array(n),
   };
   if (track.options.kerbs !== 'none') {
-    const kw = TRACK.kerbWidth;
+    const kw = TRACK.kerbWidths[track.options.kerbs];
     const mark = (run: KerbRun) => {
       for (let o = 0; o <= run.count; o++) {
         const i = wrap(run.from + o, n);

@@ -3,7 +3,7 @@ import { HANDLING } from '../config/handling.ts';
 import { AI, CONDITIONS, DEFAULT_SETUP, SETUP, TYRES, type CarSetup, type Compound, type WingLevel } from '../config/race.ts';
 import { clamp } from '../core/math.ts';
 import type { Track } from '../track/track.ts';
-import { planLapTime, racingLine, speedProfile, type Pace } from './racingLine.ts';
+import { planLapTime, racingLine, roadPace, speedProfile, type Pace } from './racingLine.ts';
 
 const works = new WeakMap<Track, number>();
 
@@ -66,7 +66,7 @@ export function wingLapTimes(track: Track): Record<WingLevel, number> {
   if (known) return known;
   const line = racingLine(track);
   const top = AI.pace[AI.pace.length - 1];
-  const base: Pace = { grip: top[0], maxSpeed: HANDLING.maxSpeed * top[1], brake: top[2] };
+  const base: Pace = roadPace({ grip: top[0], maxSpeed: HANDLING.maxSpeed * top[1], brake: top[2] }, track);
   const lap = (w: WingLevel) => planLapTime(line, speedProfile(track, line, { ...base, downforce: SETUP.wing[w].downforce, drag: SETUP.wing[w].drag }));
   const times = { low: lap('low'), medium: lap('medium'), high: lap('high') };
   wingLaps.set(track, times);
@@ -94,7 +94,7 @@ export function trackLapTime(track: Track): number {
   if (known !== undefined) return known;
   const line = racingLine(track);
   const p = AI.pace[3];
-  const t = planLapTime(line, speedProfile(track, line, { grip: p[0], maxSpeed: HANDLING.maxSpeed * p[1], brake: p[2] }));
+  const t = planLapTime(line, speedProfile(track, line, roadPace({ grip: p[0], maxSpeed: HANDLING.maxSpeed * p[1], brake: p[2] }, track)));
   lapTimes.set(track, t);
   return t;
 }

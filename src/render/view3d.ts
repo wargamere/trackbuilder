@@ -25,7 +25,7 @@ import {
   BackSide,
 } from 'three';
 import { THEMES, type Theme } from '../config/themes.ts';
-import type { ThemeId, TimeOfDay } from '../config/track.ts';
+import type { RoadSurface, ThemeId, TimeOfDay } from '../config/track.ts';
 import { valueNoise } from '../core/random.ts';
 import { buildKerbGeometry, buildPitGeometry, buildRoadGeometry, buildRunoffGeometry, buildWallGeometry } from '../track/mesh.ts';
 import { buildScenery } from '../track/scenery.ts';
@@ -211,6 +211,19 @@ export class View3D {
     return new Mesh(g, this.mats.ground);
   }
 
+  private readonly roadTextures = new Map<RoadSurface, Texture>();
+
+  /** The road's texture for a surface (made once). */
+  private roadTexture(kind: RoadSurface): Texture {
+    let t = this.roadTextures.get(kind);
+    if (!t) {
+      t = kind === 'tarmac' ? (this.mats.runoffTarmac.map as Texture) : makeAsphaltTexture(kind);
+      t.anisotropy = this.maxAniso;
+      this.roadTextures.set(kind, t);
+    }
+    return t;
+  }
+
   /** A ring of low, faceted hills on the horizon (one mesh, recoloured per theme). */
   private buildHills(): Mesh {
     const segs = 72;
@@ -369,6 +382,8 @@ export class View3D {
     sc.needsUpdate = true;
     this.stars.visible = night && rain < 0.2;
 
+    // Mountains for the Alps, a low skyline for the city.
+    this.hills.scale.y = th.hillScale ?? 1;
     const hc = this.hills.geometry.getAttribute('color');
     for (let i = 0; i < hc.count; i++) {
       const v = [near, far, near, near, far, far][i % 6];
@@ -468,6 +483,14 @@ export class View3D {
     owned.push(terrain.geometry);
     group.add(terrain);
     const road = buildRoadGeometry(track.center, surf);
+    // Tarmac, dirt or snow.
+    const roadTex = this.roadTexture(track.options.road);
+    for (const m of [this.mats.road, this.mats.deck]) {
+      if (m.map === roadTex) continue;
+      if (m.emissiveMap) m.emissiveMap = roadTex;
+      m.map = roadTex;
+      m.needsUpdate = true;
+    }
     add(road.ground, this.mats.road, 1);
     add(road.deck, this.mats.deck, 2);
     const runoff = track.options.runoff === 'gravel' ? this.mats.gravel : this.mats.runoffTarmac;

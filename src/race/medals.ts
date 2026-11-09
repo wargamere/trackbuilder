@@ -4,7 +4,7 @@ import type { Track } from '../track/track.ts';
 import { AI, DEFAULT_SETUP, SETUP, type CarSetup } from '../config/race.ts';
 import { aiPace, wetPace } from './ai.ts';
 import { RacingDriver } from './driver.ts';
-import { topSpeed } from './racingLine.ts';
+import { roadPace, topSpeed } from './racingLine.ts';
 
 export type MedalId = 'gold' | 'silver' | 'bronze';
 
@@ -70,7 +70,7 @@ export class AuthorLap {
     this.record = record;
     const wing = SETUP.wing[setup.wing];
     const base = aiPace(difficulty, track);
-    const pace = { ...base, maxSpeed: base.maxSpeed * (topSpeed(wing.drag) / topSpeed()), downforce: wing.downforce, drag: wing.drag };
+    const pace = roadPace({ ...base, maxSpeed: base.maxSpeed * (topSpeed(wing.drag) / topSpeed()), downforce: wing.downforce, drag: wing.drag }, track);
     this.driver = new RacingDriver(track, wet ? wetPace(pace) : pace);
     this.car = new CarPhysics(track);
     this.car.wet = wet;

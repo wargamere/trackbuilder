@@ -1,4 +1,4 @@
-import { DEFAULT_OPTIONS, OPTION_CHOICES, TRACK, type ThemeId, type TrackOptions } from '../config/track.ts';
+import { DEFAULT_OPTIONS, OPTION_CHOICES, THEME_IDS, TRACK, type TrackOptions } from '../config/track.ts';
 import { fromBase64Url, toBase64Url } from '../core/base64.ts';
 import type { Dot } from '../core/math.ts';
 
@@ -9,24 +9,30 @@ import type { Dot } from '../core/math.ts';
  * centre-line spline runs through) and options, so the code stores just those
  * plus the name:
  *   "IC1." + base64url(
- *     version (4), name length, name (UTF-8), options (varint), road width
+ *     version (5), name length, name (UTF-8), options (varint), road width
  *     (byte, 0.5 m steps), flags (bit 0: per-corner banking follows), dot count
  *     (varint), first dot (2 × int16 + uint8 height), then each next dot as
  *     zig-zag varint deltas of x, y and height, [one varint per dot: 0 = the
- *     track's banking, else bank degrees + 1], checksum byte)
+ *     track's banking, else bank degrees + 1], extras, checksum byte)
  * Positions and heights are in 0.5 m steps, so most deltas fit in a byte or
  * two. A 30-dot track is about 100-200 characters. Version 1 codes (no
  * heights or options), version 2 codes (an options byte with just banking,
- * barriers and scenery) and version 3 codes (preset widths, no per-corner
- * banking) still decode.
+ * barriers and scenery), version 3 codes (preset widths, no per-corner
+ * banking) and version 4 codes (no extras) still decode.
  *
  * Options bits: banking 0-1, barriers on 2, theme 3-4, then each field of
- * OPTION_CHOICES in order (index 0 = the default), so older codes, whose
+ * OPTION_CHOICES up to trees in order (index 0 = the default), then (version
+ * 5) the theme's third bit, the barrier style's second bit, the road surface
+ * (2 bits) and the barrier distance (5 bits, whole metres). Older codes, whose
  * higher bits are all zero, get the defaults for everything newer.
+ *
+ * Extras (version 5): a varint count, then that many blocks of a varint tag,
+ * a varint length and that many bytes. Blocks with a tag this version doesn't
+ * know are skipped, so later versions can add things older ones ignore.
  */
 export const CODE_PREFIX = 'IC1.';
-const VERSION = 4;
-const THEMES: ThemeId[] = ['meadow', 'desert', 'snow'];
+const VERSION = 5;
+const THEMES = THEME_IDS;
 const MAX_NAME_BYTES = 64;
 const MAX_DOTS = 2000;
 
@@ -52,35 +58,49 @@ function checksum(bytes: ArrayLike<number>, n: number): number {
   return h;
 }
 
-/** Bits per OPTION_CHOICES field (room to grow). */
-const FIELD_BITS: Record<keyof typeof OPTION_CHOICES, number> = { width: 2, kerbs: 2, runoff: 2, barrier: 1, pits: 1, time: 2, laps: 2, trees: 2 };
-const FIELDS = Object.keys(OPTION_CHOICES) as (keyof typeof OPTION_CHOICES)[];
+/** The fields stored in order after the theme, and their bits (the barrier style's second bit comes later). */
+type Field = Exclude<keyof typeof OPTION_CHOICES, 'road'>;
+const FIELD_BITS: Record<Field, number> = { width: 2, kerbs: 2, runoff: 2, barrier: 1, pits: 1, time: 2, laps: 2, trees: 2 };
+const FIELDS = Object.keys(FIELD_BITS) as Field[];
+/** Where the version 5 bits start. */
+const V5_SHIFT = 19;
+const GAP_BITS = 5;
+
+const indexIn = (choices: readonly unknown[], v: unknown) => Math.max(0, choices.indexOf(v));
 
 function optionsBits(o: TrackOptions): number {
-  let v = (o.banking & 3) | (o.walls ? 4 : 0) | (Math.max(0, THEMES.indexOf(o.theme)) << 3);
+  const theme = indexIn(THEMES, o.theme);
+  let v = (o.banking & 3) | (o.walls ? 4 : 0) | ((theme & 3) << 3);
   let shift = 5;
   for (const f of FIELDS) {
-    const idx = Math.max(0, (OPTION_CHOICES[f] as readonly unknown[]).indexOf(o[f]));
-    v |= idx << shift;
+    v |= (indexIn(OPTION_CHOICES[f], o[f]) & ((1 << FIELD_BITS[f]) - 1)) << shift;
     shift += FIELD_BITS[f];
   }
+  const gap = Math.max(0, Math.min((1 << GAP_BITS) - 1, Math.round(o.barrierGap)));
+  v |= ((theme >> 2) & 1) << V5_SHIFT;
+  v |= ((indexIn(OPTION_CHOICES.barrier, o.barrier) >> 1) & 1) << (V5_SHIFT + 1);
+  v |= indexIn(OPTION_CHOICES.road, o.road) << (V5_SHIFT + 2);
+  v |= gap << (V5_SHIFT + 4);
   return v >>> 0;
 }
 
 function optionsFrom(v: number): TrackOptions {
+  const pickFrom = <T>(choices: readonly T[], idx: number): T => choices[idx] ?? choices[0];
   const o: TrackOptions = {
     ...DEFAULT_OPTIONS,
     banking: Math.min(2, v & 3) as 0 | 1 | 2,
     walls: (v & 4) !== 0,
-    theme: THEMES[(v >> 3) & 3] ?? 'meadow',
+    theme: pickFrom(THEMES, ((v >> 3) & 3) | (((v >>> V5_SHIFT) & 1) << 2)),
   };
   let shift = 5;
   for (const f of FIELDS) {
-    const choices = OPTION_CHOICES[f] as readonly unknown[];
     const idx = (v >>> shift) & ((1 << FIELD_BITS[f]) - 1);
-    (o as unknown as Record<string, unknown>)[f] = choices[idx] ?? choices[0];
+    (o as unknown as Record<string, unknown>)[f] = pickFrom(OPTION_CHOICES[f] as readonly unknown[], idx);
     shift += FIELD_BITS[f];
   }
+  o.barrier = pickFrom(OPTION_CHOICES.barrier, indexIn(OPTION_CHOICES.barrier, o.barrier) | (((v >>> (V5_SHIFT + 1)) & 1) << 1));
+  o.road = pickFrom(OPTION_CHOICES.road, (v >>> (V5_SHIFT + 2)) & 3);
+  o.barrierGap = Math.min(TRACK.maxBarrierGap, (v >>> (V5_SHIFT + 4)) & ((1 << GAP_BITS) - 1));
   return o;
 }
 
@@ -115,6 +135,7 @@ export function encodeTrack(name: string, dots: readonly Dot[], options: Partial
     ph = hgt;
   });
   if (banks) for (const d of dots) pushVarint(out, d.b === undefined ? 0 : Math.max(0, Math.round(d.b)) + 1);
+  pushVarint(out, 0); // extras: none yet
   out.push(checksum(out, out.length));
   return CODE_PREFIX + toBase64Url(Uint8Array.from(out));
 }
@@ -153,7 +174,7 @@ function decodeBody(code: string): DecodeResult {
     }
   };
   const version = byte();
-  if (version < 1 || version > 4) return { ok: false, error: 'format' };
+  if (version < 1 || version > VERSION) return { ok: false, error: 'format' };
   const nameLen = byte();
   if (nameLen < 0 || nameLen > MAX_NAME_BYTES || i + nameLen > end) return { ok: false, error: 'format' };
   const name = new TextDecoder().decode(bytes.slice(i, i + nameLen));
@@ -204,6 +225,17 @@ function decodeBody(code: string): DecodeResult {
       const v = varint();
       if (v < 0) return { ok: false, error: 'format' };
       if (v > 0) d.b = v - 1;
+    }
+  }
+  if (version >= 5) {
+    // Extras: none are known yet, so every block is skipped.
+    const blocks = varint();
+    if (blocks < 0 || blocks > 64) return { ok: false, error: 'format' };
+    for (let b = 0; b < blocks; b++) {
+      const tag = varint();
+      const len = varint();
+      if (tag < 0 || len < 0 || i + len > end) return { ok: false, error: 'format' };
+      i += len;
     }
   }
   if (i !== end) return { ok: false, error: 'format' };

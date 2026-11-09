@@ -4,6 +4,7 @@ import { ASSISTS } from '../config/race.ts';
 import type { Assists } from '../core/settings.ts';
 import type { Track } from '../track/track.ts';
 import { wetPace } from './ai.ts';
+import { roadPace } from './racingLine.ts';
 import { RacingDriver } from './driver.ts';
 
 const drivers = new WeakMap<Track, RacingDriver>();
@@ -19,7 +20,7 @@ export function assistDriver(track: Track, wet = false): RacingDriver {
   const map = wet ? wetDrivers : drivers;
   let d = map.get(track);
   if (!d) {
-    const pace = { grip: ASSISTS.grip, brake: ASSISTS.brake, maxSpeed: HANDLING.maxSpeed * 1.3 };
+    const pace = roadPace({ grip: ASSISTS.grip, brake: ASSISTS.brake, maxSpeed: HANDLING.maxSpeed * 1.3 }, track);
     d = new RacingDriver(track, wet ? wetPace(pace) : pace);
     map.set(track, d);
   }

@@ -213,6 +213,12 @@ export interface Pace {
   drag?: number;
 }
 
+/** The same pace on `track`'s road surface: the share of the grip and the brakes dirt or snow gives (HANDLING.roads). */
+export function roadPace(p: Pace, track: Track): Pace {
+  const r = HANDLING.roads[track.options.road];
+  return r.grip === 1 && r.brake === 1 ? p : { ...p, grip: p.grip * r.grip, brake: p.brake * r.brake };
+}
+
 /**
  * Sideways acceleration the car can hold at `grip` of the tyres' grip in a
  * bend of curvature `k` (signed like a yaw rate) on a road banked `bank`

@@ -393,7 +393,8 @@ export function surfaceFor(track: Track): TrackSurface {
     const wx = p.x + l.x * c.wallOffset * side;
     const wz = p.y + l.y * c.wallOffset * side;
     const y = surfaceY(c, i, c.wallOffset * side);
-    const clear = hw + 2.5;
+    // On the other road, or (with the barriers moved out) inside its own barrier line.
+    const clear = Math.max(hw + 2.5, c.wallOffset - 0.5);
     for (const j of grid.near(wx, wz, clear + 20, tmp)) {
       const ring = Math.min(Math.abs(j - i), n - Math.abs(j - i));
       if (ring * c.spacing < 30) continue; // this stretch itself

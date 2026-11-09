@@ -1,4 +1,4 @@
-import { DEFAULT_OPTIONS, OPTION_CHOICES, TRACK, WORLD, type TrackOptions } from '../config/track.ts';
+import { DEFAULT_OPTIONS, OPTION_CHOICES, THEME_IDS, TRACK, WORLD, type TrackOptions } from '../config/track.ts';
 import type { Dot } from '../core/math.ts';
 import { loadJSON, saveJSON } from '../platform/storage.ts';
 
@@ -24,7 +24,8 @@ export function readDraft(): EditorDraft | null {
   }
   if (Number.isFinite(raw.width)) options.width = Math.max(TRACK.minWidth, Math.min(TRACK.maxWidth, Math.round(raw.width * 2) / 2));
   if ([0, 1, 2].includes(raw.banking)) options.banking = raw.banking;
-  if (['meadow', 'desert', 'snow'].includes(raw.theme)) options.theme = raw.theme;
+  if (THEME_IDS.includes(raw.theme)) options.theme = raw.theme;
+  if (Number.isFinite(raw.barrierGap)) options.barrierGap = Math.max(0, Math.min(TRACK.maxBarrierGap, Math.round(raw.barrierGap)));
   if (typeof raw.walls === 'boolean') options.walls = raw.walls;
   return { dots: d.dots.map((p) => ({ ...p })), closed: d.closed && d.dots.length >= 3, name: d.name.slice(0, 32), options, savedAt: d.savedAt! };
 }

@@ -21,6 +21,9 @@ export const PAPER = {
   ink: '#1b3a8a',
   inkWash: 'rgba(27, 58, 138, 0.13)',
   asphalt: '#4a4f58',
+  /** Dirt and snow roads. */
+  dirt: '#8a6744',
+  snow: '#dfe6ee',
   edge: '#f8f8f4',
   kerbRed: '#d8342c',
   kerbWhite: '#ffffff',
@@ -187,12 +190,21 @@ function paintRoad(ctx: CanvasRenderingContext2D, v: View, track: Track, s: Road
   }
 }
 
-/** Thin barrier lines just outside the kerbs. */
+/** Barrier line colour and thickness (m) for each style. */
+const WALL_LINES = {
+  concrete: ['rgba(40, 44, 52, 0.55)', 0.5],
+  tyres: ['rgba(20, 22, 26, 0.75)', 0.6],
+  tecpro: ['rgba(35, 87, 184, 0.85)', 0.9],
+  armco: ['rgba(120, 128, 140, 0.9)', 0.35],
+} as const;
+
+/** Thin barrier lines just outside the kerbs (or further out), coloured by the kind of barrier. */
 function drawWallLines(ctx: CanvasRenderingContext2D, v: View, track: Track): void {
   const c = track.center;
   const off = c.wallOffset;
-  ctx.strokeStyle = 'rgba(40, 44, 52, 0.55)';
-  ctx.lineWidth = Math.max(1, 0.5 * v.scale);
+  const [colour, width] = WALL_LINES[track.options.barrier];
+  ctx.strokeStyle = colour;
+  ctx.lineWidth = Math.max(1, width * v.scale);
   for (const side of [1, -1]) {
     ctx.beginPath();
     c.points.forEach((p, i) => {
@@ -209,7 +221,9 @@ function drawWallLines(ctx: CanvasRenderingContext2D, v: View, track: Track): vo
 
 /** Road ribbon with edge lines, kerbs, direction arrows and the start/finish line; bridges on top. */
 export function drawTrack(ctx: CanvasRenderingContext2D, v: View, track: Track, style?: Partial<RoadStyle>): void {
-  const s: RoadStyle = { asphalt: PAPER.asphalt, edge: PAPER.edge, arrows: true, heights: false, walls: false, ...style };
+  const surface = track.options.road;
+  const asphalt = surface === 'dirt' ? PAPER.dirt : surface === 'snow' ? PAPER.snow : PAPER.asphalt;
+  const s: RoadStyle = { asphalt, edge: surface === 'snow' ? '#9aa6b4' : PAPER.edge, arrows: true, heights: false, walls: false, ...style };
   const c = track.center;
   const n = c.points.length;
   const w = c.width * v.scale;

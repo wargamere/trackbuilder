@@ -185,9 +185,13 @@ export class CarPhysics {
   private readonly locator: TrackLocator;
   private readonly obstacles: ObstacleGrid;
   private readonly surf: TrackSurface;
+  /** The road as a surface: tarmac, or dirt or snow (slower to pull away on, rougher). */
+  private readonly roadSurface: { speedFactor: number; accelFactor: number; drag: number; gripFactor: number; rough: number };
 
   constructor(track: Track) {
     this.track = track;
+    const kind = HANDLING.roads[track.options.road];
+    this.roadSurface = { ...HANDLING.road, accelFactor: kind.accel, rough: kind.rough };
     this.locator = locatorFor(track);
     this.surf = surfaceFor(track);
     this.obstacles = new ObstacleGrid([...placeTrees(track).map((t) => ({ x: t.x, z: t.z, r: t.radius })), ...pitObstacles(track)]);
@@ -284,9 +288,16 @@ export class CarPhysics {
     // Off the road, the run-off surface reaches out to the barrier line; beyond it is grass.
     const runoffEdge = this.track.center.wallOffset + 1.5;
     const runoff = H[this.track.options.runoff];
-    const surfaceAt = (w: number) => (w <= edgeL && w >= edgeR ? H.road : Math.abs(w) <= runoffEdge ? runoff : H.grass);
+    const onTheRoad = (w: number) => w <= edgeL && w >= edgeR;
+    const road = this.roadSurface;
+    const surfaceAt = (w: number) => (onTheRoad(w) ? road : Math.abs(w) <= runoffEdge ? runoff : H.grass);
     const a = surfaceAt(pos.lateral + H.halfTrack);
     const b = surfaceAt(pos.lateral - H.halfTrack);
+    // Dirt or snow: less grip in corners and less bite from the brakes, on the share of the car on it.
+    const share = ((a === road ? 1 : 0) + (b === road ? 1 : 0)) / 2;
+    const kind = H.roads[this.track.options.road];
+    const roadGrip = 1 + (kind.grip - 1) * share;
+    const roadBite = 1 + (kind.brake - 1) * share;
     // Track limits: both wheel tracks beyond the same edge, with a little grace.
     const grace = 0.25;
     st.offTrack = pos.lateral - H.halfTrack > edgeL + grace || pos.lateral + H.halfTrack < edgeR - grace;
@@ -295,11 +306,11 @@ export class CarPhysics {
     // The rain and worn tyres take some of it away: how hard the car can corner (not how
     // quickly it answers the wheel, which is the surface's).
     const surfaceGrip = (a.gripFactor + b.gripFactor) / 2;
-    const grip = surfaceGrip * this.gripScale;
+    const grip = surfaceGrip * this.gripScale * roadGrip;
     const wing = SETUP.wing[this.setup.wing];
     const gears = SETUP.gears[this.setup.gears];
     const balance = SETUP.brakes[this.setup.brakes];
-    const brakeDecel = H.brakeDecel * this.brakeScale * balance.bite;
+    const brakeDecel = H.brakeDecel * this.brakeScale * balance.bite * roadBite;
     const speedF = (a.speedFactor + b.speedFactor) / 2;
     const accelF = (a.accelFactor + b.accelFactor) / 2;
     const surfDrag = (a.drag + b.drag) / 2;

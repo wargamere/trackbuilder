@@ -144,8 +144,8 @@ A track is a closed loop of **dots** with a smooth spline through them (`TrackDe
 | 2 Size & shape | **Track length** slider, road width slider (8–20 m, with 10 / 12 / 15 m shortcuts), **terrain climb** slider (flat to 40 m) and flat / rolling / hilly presets, smooth heights, **corner smoothing** slider, smaller / bigger / rotate / mirror the whole track |
 | 3 Corners | Banking level for the whole track (off / normal / steep), **banking for every corner at once** (shows Mixed when they differ), ‹ › to step from corner to corner, Flatten all, Back to the level, and a bank slider (0–30°) for every numbered corner, with Auto to go back to the level; tap a corner's number to zoom to it |
 | 4 Start & pits | Laps per race (1 / 3 / 5), pit building on/off, move the start/finish line 10 m back or on, reverse direction |
-| 5 Track edges | Kerbs (raised / flat / none), run-off (grass / gravel / tarmac), barriers (none / concrete / tyres) |
-| 6 Scenery & world | Meadow / Desert / Snow, day / sunset, few / normal / lots of trees |
+| 5 Track edges | Kerbs (raised / flat / painted / none), run-off (grass / gravel / tarmac), barriers (none / concrete / tyres / TecPro / Armco), **barrier distance** (2.8 m to 32.8 m from the road) |
+| 6 Scenery & world | **Ground** (tarmac / dirt / snow), landscape (Countryside / Alpine / Desert / Snow / Forest / City), day / sunset / night, few / normal / lots of trees |
 | 7 Display | Graphics full / fast, km/h or mph, minimap in the race, corner numbers on the map, the preview car (player settings, not part of the track) |
 
 **New tools in Draw, Size & shape and Corners.**
@@ -158,6 +158,26 @@ A track is a closed loop of **dots** with a smooth spline through them (`TrackDe
 - **Trace an image**: load a picture (a map, a sketch) under the paper and draw over it, with see-through and size sliders. It's only read into the open tab: never uploaded, saved or shared.
 - **Track length** scales the whole track about its middle (as far as the paper allows); **Terrain** sets the climb from the lowest to the highest point and keeps the hills' shape (a flat track gets new rolling hills); **Corner smoothing** opens up every corner tighter than the radius you pick. Each slider drag is one undo step.
 - **Banking, every corner** sets every corner's bank at once; Flatten all sets them all to 0°, and Back to the level clears them.
+
+**Track edges and the world around it.**
+- **Barriers:** concrete (red and white tops), tyre walls, TecPro (big blue, red and white foam blocks) or Armco (a steel rail on posts). All four stop a car the same way.
+- **Barrier distance** moves the barriers further out, with the run-off (gravel, tarmac or grass) reaching out to them. Where two stretches of road run closer than twice the distance, the barriers between them give way rather than stand on the other road's run-off.
+- **Kerbs:**
+  - Raised: a hump.
+  - Flat: barely raised.
+  - Painted: a narrower stripe of paint on the road.
+  - None.
+  Kerbs always count as track.
+- **Ground** (`HANDLING.roads`): the road itself can be tarmac, dirt or snow.
+  - On dirt the car has about ¾ of the grip and the brakes about ¾ of the bite; on snow a little over half of each. It also pulls away more slowly on both.
+  - The AI's speed plan, the medal laps, the racing line and the assists all plan with the same, so they brake earlier too.
+  - Gold laps are about 9 % slower on dirt and 20 % slower on snow.
+  - The road is brown with ruts, or white with packed tyre tracks, in 3D and on the editor's map.
+- **Landscapes** (`config/themes.ts`):
+  - Countryside (as before), Desert and Snow;
+  - **Alpine:** high meadows, pines and grey boulders under tall snowy peaks;
+  - **Forest:** trees right up to the barriers;
+  - **City:** offices and low blocks square to a street grid, standing well clear of the barriers, with a low skyline on the horizon. Pick the time of day for a city by day or by night.
 
 **Fast starts and accessible editing.** Starter cards show the real layout before loading it. Surprise me uses the tested generated-track catalog, with mirrored and reversed variants, and creates an editable copy. Every layout change is undoable. Reshape is the initial tool for an existing track; a new blank page switches to Freehand.
 
@@ -468,7 +488,7 @@ The race setup's **Conditions** row (🌦, key C) opens a panel with three switc
   If storage itself is blocked (private mode, sandboxed iframe), values live in memory for the session.
 
   What's saved: the tracks you save, best lap and splits, best score and the best-lap ghost per track (40 most recent tracks), and settings (sound, camera, editor mode, smoothing, snap, display settings, the open sidebar section). Ghosts are stored at 30 samples/s as int16 (5 cm), about 11 KB per 45 s lap.
-- **Track codes** (`track/code.ts`): `IC1.` + base64url of the dots, delta-encoded as zig-zag varints in 0.5 m steps, plus their heights, the options as a varint (banking, barriers, scenery, kerbs, run-off, barrier style, pits, time of day, laps, trees), the road width, per-corner bank overrides when there are any, the name and a checksum. That's about 100–300 characters. Older codes (v1 without heights, v2 with three options, v3 with preset widths) still load with defaults for everything newer. Pasting a damaged code gives a clear error.
+- **Track codes** (`track/code.ts`): `IC1.` + base64url of the dots, delta-encoded as zig-zag varints in 0.5 m steps, plus their heights, the options as a varint (banking, barriers, scenery, kerbs, run-off, barrier style, pits, time of day, laps, trees, and from v5 the road surface and barrier distance), the road width, per-corner bank overrides when there are any, a list of tagged extra blocks (v5; blocks a version doesn't know are skipped), the name and a checksum. That's about 100–300 characters. Older codes (v1 without heights, v2 with three options, v3 with preset widths, v4 without the newer options) still load with defaults for everything newer. Pasting a damaged code gives a clear error.
   - The web build also puts the current track's code in the URL hash (`#track=…`), so the address bar is a share link, and has a "Copy link" button.
   - The CrazyGames build never touches the URL or shows links.
 - **My tracks** (Pause → My tracks, Results, editor Options):
@@ -533,6 +553,7 @@ Tested against the real SDK in its `local` mode (localhost): the SDK's own log s
 - [x] Changing weather: rain that comes and goes, a road that dries on the racing line first, and wet/slick calls for you and the AI
 - [x] Kinds of tyre (soft / medium / hard / wet) with a life that depends on the track (4–6 laps for mediums) and a heavy drop-off once they go; choose them at the start and at each stop; races up to 50 laps
 - [x] Editor: pick any track to edit, six track generators, trace an image, track length / terrain climb / corner smoothing sliders, banking for every corner at once
+- [x] Editor: TecPro and Armco barriers, barrier distance, painted kerbs, dirt and snow roads, Alpine / Forest / City landscapes (track codes v5)
 
 ## Validation for the track editor
 

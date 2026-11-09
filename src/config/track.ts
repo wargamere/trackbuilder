@@ -54,18 +54,24 @@ export const TRACK = {
   levelCrossingTolerance: 1,
   /** Barriers stand this far beyond the kerb's outer edge (so road half-width + kerb + this). */
   wallGap: 1.2,
+  /** The barriers can be moved this much further out (TrackOptions.barrierGap). */
+  maxBarrierGap: 30,
   wallHeight: 0.95,
+  /** How wide each kerb style is (m). */
+  kerbWidths: { raised: 1.6, flat: 1.6, painted: 0.9, none: 0 },
   /** The road counts as a raised deck (bridge) when it's this far above the ground below. */
   deckClearance: 1.2,
 } as const;
 
 /** Per-track options, stored with the track. */
-export type ThemeId = 'meadow' | 'desert' | 'snow';
+export type ThemeId = 'meadow' | 'desert' | 'snow' | 'alpine' | 'city' | 'forest';
 /** Road width (m): any value from TRACK.minWidth to TRACK.maxWidth in 0.5 m steps. */
 export type RoadWidth = number;
-export type KerbStyle = 'raised' | 'flat' | 'none';
+export type KerbStyle = 'raised' | 'flat' | 'painted' | 'none';
 export type RunoffId = 'grass' | 'gravel' | 'tarmac';
-export type BarrierStyle = 'concrete' | 'tyres';
+export type BarrierStyle = 'concrete' | 'tyres' | 'tecpro' | 'armco';
+/** What the road itself is made of: it sets the grip and the brakes (HANDLING.roads). */
+export type RoadSurface = 'tarmac' | 'dirt' | 'snow';
 export type TimeOfDay = 'day' | 'sunset' | 'night';
 export type LapCount = 1 | 3 | 5;
 export type TreeDensity = 'normal' | 'sparse' | 'dense';
@@ -77,12 +83,16 @@ export interface TrackOptions {
   theme: ThemeId;
   /** Road width (m). */
   width: RoadWidth;
-  /** Kerbs on the outside of corners: raised (a bump), flat (painted), or none. */
+  /** Kerbs on the outside of corners: raised (a bump), flat, painted on the road, or none. */
   kerbs: KerbStyle;
   /** What's beside the road: grass, gravel traps (very slow) or tarmac run-off (no penalty). */
   runoff: RunoffId;
   /** What the barriers look like. */
   barrier: BarrierStyle;
+  /** How much further out than usual the barriers stand (m, whole metres, 0..TRACK.maxBarrierGap). */
+  barrierGap: number;
+  /** The road's surface. */
+  road: RoadSurface;
   /** Pit building and garages beside the start straight. */
   pits: boolean;
   time: TimeOfDay;
@@ -99,6 +109,8 @@ export const DEFAULT_OPTIONS: TrackOptions = {
   kerbs: 'raised',
   runoff: 'grass',
   barrier: 'concrete',
+  barrierGap: 0,
+  road: 'tarmac',
   pits: true,
   time: 'day',
   laps: 3,
@@ -108,14 +120,18 @@ export const DEFAULT_OPTIONS: TrackOptions = {
 /** Choices for each option, in the order the track code stores them (the first is the default). */
 export const OPTION_CHOICES = {
   width: [12, 10, 15],
-  kerbs: ['raised', 'flat', 'none'],
+  kerbs: ['raised', 'flat', 'none', 'painted'],
   runoff: ['grass', 'gravel', 'tarmac'],
-  barrier: ['concrete', 'tyres'],
+  barrier: ['concrete', 'tyres', 'tecpro', 'armco'],
   pits: [true, false],
   time: ['day', 'sunset', 'night'],
   laps: [3, 1, 5],
   trees: ['normal', 'sparse', 'dense'],
+  road: ['tarmac', 'dirt', 'snow'],
 } as const;
+
+/** The scenery themes, in the order the track code stores them. */
+export const THEME_IDS: readonly ThemeId[] = ['meadow', 'desert', 'snow', 'alpine', 'city', 'forest'];
 
 /**
  * Freehand smoothing levels: how much hand jitter is filtered out (Taubin

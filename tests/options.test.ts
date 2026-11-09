@@ -8,7 +8,10 @@ import { getSampleTrack, trackFromControl } from '../src/editor/pipeline.ts';
 import { transformDots } from '../src/editor/transform.ts';
 import { validateCenterline } from '../src/editor/validation.ts';
 import { locatorFor } from '../src/track/locator.ts';
-import { buildKerbGeometry, buildRoadGeometry } from '../src/track/mesh.ts';
+import { buildKerbGeometry, buildRoadGeometry, buildWallGeometry } from '../src/track/mesh.ts';
+import { kerbLayout } from '../src/track/kerbs.ts';
+import { AuthorLap } from '../src/race/medals.ts';
+import { THEME_IDS, TRACK } from '../src/config/track.ts';
 import { pitLayout } from '../src/track/pits.ts';
 import { placeTrees } from '../src/track/placement.ts';
 import { buildCenterline } from '../src/track/spline.ts';
@@ -88,6 +91,107 @@ test('kerb styles: raised and flat kerbs are drawn, none means no kerbs at all',
   assert.equal(buildKerbGeometry(none), null);
   const loc = locatorFor(none);
   assert.ok(loc.kerbSide.every((k) => k === 0), 'no kerb counts as road');
+});
+
+test('dirt and snow roads: less grip and less bite from the brakes, and the gold lap allows for it', () => {
+  const stop = (road: TrackOptions['road']) => {
+    const t = stadium({ road });
+    const car = new CarPhysics(t);
+    Object.assign(car.state, { x: -700, z: -300, heading: 0, vx: 40, vz: 0, trackIndex: -1 });
+    const x0 = car.state.x;
+    for (let k = 0; k < HANDLING.tickRate * 10 && (k === 0 || car.state.speed > 0.5); k++) car.step({ throttle: 0, brake: 1, steer: 0, handbrake: false });
+    return car.state.x - x0;
+  };
+  const corner = (road: TrackOptions['road']) => {
+    const t = stadium({ road, walls: false });
+    const car = new CarPhysics(t);
+    Object.assign(car.state, { x: -700, z: -300, heading: 0, vx: 30, vz: 0, trackIndex: -1 });
+    let most = 0;
+    for (let k = 0; k < HANDLING.tickRate * 0.6; k++) {
+      car.step({ throttle: 0.4, brake: 0, steer: 1, handbrake: false });
+      most = Math.max(most, Math.abs(car.state.latAccel));
+    }
+    return most;
+  };
+  const [tarmac, dirt, snow] = (['tarmac', 'dirt', 'snow'] as const).map(stop);
+  assert.ok(tarmac < dirt && dirt < snow, `stopping from 40 m/s: ${tarmac.toFixed(0)} / ${dirt.toFixed(0)} / ${snow.toFixed(0)} m`);
+  const [gT, gD, gS] = (['tarmac', 'dirt', 'snow'] as const).map(corner);
+  assert.ok(gT > gD && gD > gS, `cornering: ${gT.toFixed(1)} / ${gD.toFixed(1)} / ${gS.toFixed(1)} m/s²`);
+  const gold = (road: TrackOptions['road']) => {
+    const lap = new AuthorLap(with_(getSampleTrack(0), { road }));
+    while (!lap.run(5000));
+    return lap.result;
+  };
+  const times = (['tarmac', 'dirt', 'snow'] as const).map(gold);
+  assert.ok(times.every((x) => typeof x === 'number'), 'the gold bot gets round on every surface');
+  const [a, b, c] = times as number[];
+  assert.ok(a < b && b < c && c < a * 1.35, `gold laps ${a.toFixed(1)} / ${b.toFixed(1)} / ${c.toFixed(1)} s`);
+});
+
+test('barrier distance moves the barriers (and the run-off) out, and they give way between close roads', () => {
+  const near = stadium({ runoff: 'tarmac' });
+  const far = stadium({ runoff: 'tarmac', barrierGap: 12 });
+  assert.ok(Math.abs(far.center.wallOffset - near.center.wallOffset - 12) < 1e-9);
+  // A car 14 m out drives on in the run-off past where the barrier used to be.
+  const out = (t: Track) => {
+    const car = new CarPhysics(t);
+    Object.assign(car.state, { x: -700, z: -300 - 14, heading: 0, vx: 25, vz: 0, trackIndex: -1 });
+    for (let k = 0; k < HANDLING.tickRate; k++) car.step({ throttle: 1, brake: 0, steer: 0, handbrake: false });
+    return { lateral: Math.abs(car.state.lateral), speed: car.state.speed };
+  };
+  assert.ok(out(far).lateral > 13 && out(far).speed > 25, 'tarmac run-off out to the moved barrier');
+  // Two straights 40 m apart: barriers 10 m out stand between them, 25 m out they'd overlap and give way.
+  const pair = (barrierGap: number) => {
+    const t = stadium({ barrierGap }, 20, 300);
+    const surf = surfaceFor(t);
+    const mid = Math.round(t.center.points.length * 0.12);
+    return { L: surf.wallL[mid], R: surf.wallR[mid] };
+  };
+  const close = pair(7);
+  const wide = pair(25);
+  assert.equal(close.L + close.R, 2, 'both barriers along the straight');
+  assert.equal(wide.L + wide.R, 1, 'only the outer barrier: the inner one would stand inside the other road\'s');
+});
+
+test('TecPro, Armco, concrete and tyre barriers, and raised, flat and painted kerbs, are all drawn', () => {
+  const base = getSampleTrack(2);
+  const counts = (['concrete', 'tyres', 'tecpro', 'armco'] as const).map((barrier) => {
+    const t = with_(base, { barrier, walls: true });
+    const g = buildWallGeometry(t, surfaceFor(t));
+    assert.ok(g, barrier);
+    return g.getAttribute('position').count;
+  });
+  assert.notEqual(counts[3], counts[0], 'Armco has posts and rails, not blocks');
+  // (On a flat, unbanked track, so the highest point is the kerb's crown.)
+  const top = (kerbs: TrackOptions['kerbs']) => {
+    const g = buildKerbGeometry(stadium({ kerbs, banking: 0 }, 30, 100));
+    assert.ok(g, kerbs);
+    const p = g.getAttribute('position');
+    let hi = -Infinity;
+    for (let i = 0; i < p.count; i++) hi = Math.max(hi, p.getY(i));
+    return hi;
+  };
+  assert.ok(top('painted') < top('flat') && top('flat') < top('raised'));
+  const painted = kerbLayout(with_(base, { kerbs: 'painted' }));
+  const raised = kerbLayout(with_(base, { kerbs: 'raised' }));
+  const i = painted.sides.findIndex((s) => s !== 0);
+  const w = (k: typeof painted) => Math.max(k.outerL[i] - k.innerL[i], k.outerR[i] - k.innerR[i]);
+  assert.ok(w(painted) < w(raised) - 0.4, 'painted kerbs are narrower');
+});
+
+test('landscapes: every one has scenery; forests are thicker, and city buildings stand on a grid clear of the barriers', () => {
+  const base = getSampleTrack(0);
+  for (const theme of THEME_IDS) assert.ok(placeTrees(with_(base, { theme })).length > 50, theme);
+  assert.ok(placeTrees(with_(base, { theme: 'forest' })).length > placeTrees(with_(base, { theme: 'meadow' })).length * 1.5);
+  const city = with_(base, { theme: 'city' });
+  const c = city.center;
+  for (const b of placeTrees(city)) {
+    assert.ok(Math.abs(Math.sin(2 * b.rot)) < 1e-9, 'square to the grid');
+    let d = Infinity;
+    for (const p of c.points) d = Math.min(d, Math.hypot(p.x - b.x, p.y - b.z));
+    assert.ok(d - b.radius > c.wallOffset + 2, `a building ${(d - b.radius - c.wallOffset).toFixed(1)} m beyond the barrier`);
+  }
+  assert.equal(TRACK.maxBarrierGap, 30);
 });
 
 test('pits sit beside the start straight, clear of the track, with no trees on them', () => {

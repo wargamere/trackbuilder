@@ -69,7 +69,29 @@ const PROP_BUILDERS: Record<PropKind, () => BufferGeometry> = {
       tint(new IcosahedronGeometry(1.3, 0).scale(1.3, 0.7, 1.05).translate(0, 0.45, 0), 0xa98c6c),
       tint(new IcosahedronGeometry(0.7, 0).scale(1, 0.8, 1).translate(1.1, 0.25, 0.4), 0x9c7f61),
     ]),
+  boulder: () =>
+    merge([
+      tint(new IcosahedronGeometry(1.2, 0).scale(1.2, 0.85, 1).translate(0, 0.55, 0), 0x8d939a),
+      tint(new IcosahedronGeometry(0.75, 0).scale(1, 0.9, 1.1).translate(1.0, 0.35, -0.5), 0x7c838b),
+      tint(new IcosahedronGeometry(0.45, 0).translate(-0.9, 0.2, 0.6), 0x9aa1a8),
+    ]),
+  office: () => building(10, 6, 0xc9ccd2, 0x45627f, 0x9aa0a8),
+  block: () => building(13, 2, 0xd8c7a8, 0x51677a, 0x8f7f6a, 9),
 };
+
+/**
+ * A low-poly building, `w` m across (`d` deep, square by default), `floors`
+ * storeys of 3 m: a wall slab and a band of windows each, and a flat roof.
+ */
+function building(w: number, floors: number, wall: number, glass: number, roof: number, d = w): BufferGeometry {
+  const parts: BufferGeometry[] = [];
+  for (let f = 0; f < floors; f++) {
+    parts.push(tint(new BoxGeometry(w, 0.9, d).translate(0, f * 3 + 0.45, 0), wall));
+    parts.push(tint(new BoxGeometry(w - 0.3, 2.1, d - 0.3).translate(0, f * 3 + 1.95, 0), glass));
+  }
+  parts.push(tint(new BoxGeometry(w + 0.2, 0.5, d + 0.2).translate(0, floors * 3 + 0.25, 0), roof));
+  return merge(parts);
+}
 
 function propGeometry(kind: PropKind): BufferGeometry {
   let g = props.get(kind);
@@ -96,7 +118,10 @@ const tmpColor = new Color();
 function buildTrees(track: Track, mat: Material, terrain: Terrain): InstancedMesh[] {
   const spots = placeTrees(track);
   const out: InstancedMesh[] = [];
-  const kinds = THEMES[track.options.theme].props;
+  const theme = THEMES[track.options.theme];
+  const kinds = theme.props;
+  // Buildings grow taller more than they grow wider.
+  const wide = (s: number) => (theme.layout === 'city' ? Math.min(1.1, s) : s);
   const geoms = [propGeometry(kinds[0]), propGeometry(kinds[1])];
   for (const kind of [0, 1] as const) {
     const list = spots.filter((s) => s.kind === kind);
@@ -105,7 +130,7 @@ function buildTrees(track: Track, mat: Material, terrain: Terrain): InstancedMes
     list.forEach((s, i) => {
       tmpObj.position.set(s.x, terrainHeight(terrain, s.x, s.z) - 0.1, s.z);
       tmpObj.rotation.set(0, s.rot, 0);
-      tmpObj.scale.setScalar(s.scale);
+      tmpObj.scale.set(wide(s.scale), s.scale, wide(s.scale));
       tmpObj.updateMatrix();
       mesh.setMatrixAt(i, tmpObj.matrix);
       mesh.setColorAt(i, tmpColor.setRGB(s.shade, s.shade, s.shade * 0.95));

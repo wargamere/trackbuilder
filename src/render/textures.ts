@@ -1,5 +1,6 @@
 import { CanvasTexture, ClampToEdgeWrapping, RepeatWrapping, SRGBColorSpace, type Texture } from 'three';
 import { STR } from '../config/strings.ts';
+import type { RoadSurface } from '../config/track.ts';
 import { rng } from '../core/random.ts';
 
 /**
@@ -39,28 +40,30 @@ function speckle(ctx: CanvasRenderingContext2D, w: number, h: number, count: num
  * 1 = right edge) and has the white edge lines baked in. V runs along the road
  * and repeats; one tile is about as long as the road is wide.
  */
-export function makeAsphaltTexture(): Texture {
+export function makeAsphaltTexture(kind: RoadSurface = 'tarmac'): Texture {
   const W = 256;
   const H = 256;
   const [c, ctx] = canvas(W, H);
   const rand = rng(7);
-  ctx.fillStyle = '#54575d';
+  const look = ROAD_LOOKS[kind];
+  ctx.fillStyle = look.base;
   ctx.fillRect(0, 0, W, H);
   speckle(ctx, W, H, 9000, rand, (v) => {
-    const g = Math.round(60 + v * 50);
-    return `rgb(${g},${g},${g + 3})`;
+    const g = look.lo + v * (look.hi - look.lo);
+    return `rgb(${Math.round(g * look.tint[0])},${Math.round(g * look.tint[1])},${Math.round(g * look.tint[2])})`;
   });
-  // Two darker racing-line bands where tyres wear the surface.
+  // Two darker racing-line bands where tyres wear the surface (ruts in dirt, packed tracks in snow).
   const band = (x: number, w: number) => {
     const grad = ctx.createLinearGradient(x - w, 0, x + w, 0);
-    grad.addColorStop(0, 'rgba(20,20,24,0)');
-    grad.addColorStop(0.5, 'rgba(20,20,24,0.16)');
-    grad.addColorStop(1, 'rgba(20,20,24,0)');
+    grad.addColorStop(0, `rgba(${look.band},0)`);
+    grad.addColorStop(0.5, `rgba(${look.band},${look.bandAlpha})`);
+    grad.addColorStop(1, `rgba(${look.band},0)`);
     ctx.fillStyle = grad;
     ctx.fillRect(x - w, 0, w * 2, H);
   };
   band(W * 0.32, 22);
   band(W * 0.68, 22);
+  if (!look.lines) return finish(c, false, true);
   // Edge lines (~0.45 m wide, ~0.35 m in from the edge on a 12 m road).
   ctx.fillStyle = '#f2f2ee';
   ctx.fillRect(Math.round(W * 0.03), 0, Math.round(W * 0.04), H);
@@ -71,6 +74,13 @@ export function makeAsphaltTexture(): Texture {
   ctx.fillRect(W - 3, 0, 3, H);
   return finish(c, false, true);
 }
+
+/** How each road surface looks: base colour, speckle brightness and tint, the tyre bands, and whether it has painted edge lines. */
+const ROAD_LOOKS: Record<RoadSurface, { base: string; lo: number; hi: number; tint: [number, number, number]; band: string; bandAlpha: number; lines: boolean }> = {
+  tarmac: { base: '#54575d', lo: 60, hi: 110, tint: [1, 1, 1.03], band: '20,20,24', bandAlpha: 0.16, lines: true },
+  dirt: { base: '#8a6744', lo: 95, hi: 165, tint: [1.08, 0.82, 0.58], band: '60,40,22', bandAlpha: 0.3, lines: false },
+  snow: { base: '#e3e9ef', lo: 200, hi: 250, tint: [0.97, 0.99, 1.03], band: '120,132,152', bandAlpha: 0.38, lines: false },
+};
 
 /** Tiling ground (grass, sand or snow). Large-scale colour variation comes from the terrain's vertex colours. */
 export function makeGroundTexture(g: { base: string; speck: [number, number, number]; lo: number; hi: number }): Texture {

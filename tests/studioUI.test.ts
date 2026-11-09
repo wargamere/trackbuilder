@@ -220,8 +220,17 @@ test('Pick a track loads a real circuit or a pasted code as a copy of your own',
   assert.equal(game.track.def.control.length, easy.def.control.length);
 });
 
+const pickTrack = (group: string, name: string) => {
+  click(group);
+  const item = [...ui.querySelectorAll<TestButton>('.track-picker button')].find((b) => b.textContent?.startsWith(name));
+  assert.ok(item, `${name} is listed`);
+  item.click();
+  frame();
+};
+
 test('Size & shape sliders: length, terrain climb and corner smoothing, each one undo step', () => {
-  click('Grand Prix');
+  // (Monza: a fixed layout with tight chicanes to smooth out.)
+  pickTrack('Real circuits', 'Monza');
   const before = built().center.length;
   slide('Track length', 1000);
   const after = built().center.length;
@@ -249,6 +258,25 @@ test('Banking, every corner sets and clears every bank at once', () => {
   assert.ok(built().def.control.every((d) => d.b === undefined));
   click('Undo (Z)');
   assert.ok(built().def.control.every((d) => d.b === 0), 'undo brings back the flat corners');
+});
+
+test('Track edges and Scenery & world: barrier styles and distance, ground, landscapes, kerbs', () => {
+  click('Grand Prix');
+  const before = built().center.wallOffset;
+  click('Armco');
+  click('Painted');
+  slide('Barrier distance', 10);
+  click('Dirt');
+  click('Alpine');
+  const t = built();
+  assert.equal(t.options.barrier, 'armco');
+  assert.equal(t.options.kerbs, 'painted');
+  assert.equal(t.options.road, 'dirt');
+  assert.equal(t.options.theme, 'alpine');
+  assert.ok(Math.abs(t.center.wallOffset - before - 10) < 1e-9, 'the barriers moved 10 m out');
+  assert.match(ui.querySelector('.range-value')?.textContent ?? '', /./);
+  click('Undo (Z)');
+  assert.equal(built().options.theme, 'meadow');
 });
 
 test('small screens expose sidebar sections by name with expansion state', () => {

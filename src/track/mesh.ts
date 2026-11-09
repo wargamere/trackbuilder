@@ -81,9 +81,11 @@ export function buildKerbGeometry(track: Track): BufferGeometry | null {
   const n = c.points.length;
   const layout = kerbLayout(track);
   const q = new QuadBuilder();
-  const crown = track.options.kerbs === 'raised' ? 0.11 : ROAD_Y + 0.015;
+  // Raised kerbs have a hump, flat ones barely any, painted ones are just paint on the road.
+  const style = track.options.kerbs;
+  const crown = style === 'raised' ? 0.11 : style === 'flat' ? 0.045 : ROAD_Y + 0.015;
   // Lift above the road surface of the profile's three edges (inner, crown, outer).
-  const lifts = [ROAD_Y + 0.01, crown, 0.025];
+  const lifts = [ROAD_Y + 0.01, crown, style === 'painted' ? ROAD_Y + 0.01 : 0.025];
   const at = (i: number, side: 1 | -1, k: number): Vector3 | null => {
     const e = kerbAt(layout, i, side);
     if (!e) return null;
@@ -133,6 +135,12 @@ class Panels {
   }
 }
 
+const TECPRO = [0x2357b8, 0xd23a2e, 0x2357b8, 0xf2f2ee] as const;
+const ARMCO_LIGHT = 0xc9ced6;
+const ARMCO_DARK = 0x8f969f;
+const ARMCO_POST = 0x5b6067;
+/** How thick each kind of barrier is (m). */
+const BARRIER_THICK = { concrete: 0.45, tyres: 0.45, tecpro: 0.9, armco: 0.3 } as const;
 const CONCRETE = 0xc9ccd2;
 const CONCRETE_DARK = 0x9ea2aa;
 const WALL_RED = 0xd8342c;
@@ -154,29 +162,60 @@ export function buildWallGeometry(track: Track, surf: TrackSurface): BufferGeome
   const n = c.points.length;
   const p = new Panels();
   const off = c.wallOffset;
-  const tyres = track.options.barrier === 'tyres';
-  const thick = 0.45;
+  const style = track.options.barrier;
   const hgt = TRACK.wallHeight;
   const band = Math.max(1, Math.round(10 / c.spacing));
-  const at = (i: number, lateral: number, lift: number) => {
+  /** A point `lateral` m left of sample i (and `ahead` m along the road), `lift` m above the surface there. */
+  const at = (i: number, lateral: number, lift: number, ahead = 0) => {
     const q = c.points[i];
-    const l = leftOf(c.tangents[i]);
-    return [q.x + l.x * lateral, surfaceY(c, i, lateral) + lift, q.y + l.y * lateral];
+    const t = c.tangents[i];
+    const l = leftOf(t);
+    return [q.x + l.x * lateral + t.x * ahead, surfaceY(c, i, lateral) + lift, q.y + l.y * lateral + t.y * ahead];
   };
+  /** How thick each kind of barrier is (bridge rails are always concrete). */
+  const thickOf = (i: number) => (surf.deck[i] ? 0.45 : BARRIER_THICK[style]);
   for (const side of [1, -1] as const) {
     const flags = side === 1 ? surf.wallL : surf.wallR;
     for (let i = 0; i < n; i++) {
       const j = (i + 1) % n;
       if (!flags[i] || !flags[j]) continue;
+      const kind = surf.deck[i] ? 'concrete' : style;
       const inner = off * side;
-      const outer = (off + thick) * side;
-      const tyre = tyres && !surf.deck[i];
-      const top = tyre ? TYRE_BAND[Math.floor(i / band) % TYRE_BAND.length] : Math.floor(i / band) % 2 === 0 ? WALL_RED : WALL_WHITE;
-      const face = tyre ? (i % 2 ? TYRE : TYRE_DARK) : CONCRETE;
+      const outer = (off + thickOf(i)) * side;
       // Faces reach below the surface so banked or uneven ground never shows a gap.
-      p.quad(at(i, inner, -1.2), at(j, inner, -1.2), at(j, inner, hgt), at(i, inner, hgt), face);
-      p.quad(at(i, outer, -1.2), at(j, outer, -1.2), at(j, outer, hgt), at(i, outer, hgt), tyre ? TYRE_DARK : CONCRETE_DARK);
-      p.quad(at(i, inner, hgt), at(j, inner, hgt), at(j, outer, hgt), at(i, outer, hgt), top);
+      const block = (face: number, back: number, top: number, h: number) => {
+        p.quad(at(i, inner, -1.2), at(j, inner, -1.2), at(j, inner, h), at(i, inner, h), face);
+        p.quad(at(i, outer, -1.2), at(j, outer, -1.2), at(j, outer, h), at(i, outer, h), back);
+        p.quad(at(i, inner, h), at(j, inner, h), at(j, outer, h), at(i, outer, h), top);
+      };
+      if (kind === 'tyres') {
+        block(i % 2 ? TYRE : TYRE_DARK, TYRE_DARK, TYRE_BAND[Math.floor(i / band) % TYRE_BAND.length], hgt);
+      } else if (kind === 'tecpro') {
+        // Big foam blocks, one per sample, alternating colours, a little taller than a wall.
+        const colour = TECPRO[i % TECPRO.length];
+        block(colour, new Color(colour).multiplyScalar(0.7).getHex(), new Color(colour).lerp(new Color(0xffffff), 0.25).getHex(), 1.1);
+      } else if (kind === 'armco') {
+        // A steel W-beam rail on posts: light, dark, light bands for the corrugation.
+        const rails: [number, number, number][] = [
+          [0.48, 0.58, ARMCO_LIGHT],
+          [0.58, 0.68, ARMCO_DARK],
+          [0.68, 0.78, ARMCO_LIGHT],
+        ];
+        for (const [y0, y1, col] of rails) p.quad(at(i, inner, y0), at(j, inner, y0), at(j, inner, y1), at(i, inner, y1), col);
+        p.quad(at(i, inner, 0.78), at(j, inner, 0.78), at(j, inner + 0.08 * side, 0.78), at(i, inner + 0.08 * side, 0.78), ARMCO_LIGHT);
+        if (i % 2 === 0) {
+          // A post just behind the rail.
+          const a = inner + 0.08 * side;
+          const b = inner + 0.24 * side;
+          const w = 0.08;
+          p.quad(at(i, a, -0.6, -w), at(i, a, -0.6, w), at(i, a, 0.74, w), at(i, a, 0.74, -w), ARMCO_POST);
+          p.quad(at(i, b, -0.6, -w), at(i, b, -0.6, w), at(i, b, 0.74, w), at(i, b, 0.74, -w), ARMCO_POST);
+          p.quad(at(i, a, -0.6, -w), at(i, b, -0.6, -w), at(i, b, 0.74, -w), at(i, a, 0.74, -w), ARMCO_POST);
+          p.quad(at(i, a, -0.6, w), at(i, b, -0.6, w), at(i, b, 0.74, w), at(i, a, 0.74, w), ARMCO_POST);
+        }
+      } else {
+        block(CONCRETE, CONCRETE_DARK, Math.floor(i / band) % 2 === 0 ? WALL_RED : WALL_WHITE, hgt);
+      }
     }
     // Close the ends where a barrier stops (gaps at crossings, the inside of hairpins).
     for (let i = 0; i < n; i++) {
@@ -184,9 +223,12 @@ export function buildWallGeometry(track: Track, surf: TrackSurface): BufferGeome
       const next = flags[(i + 1) % n];
       if (!flags[i] || (prev && next)) continue;
       if (!prev && !next) continue; // a lone sample draws no barrier at all
+      const kind = surf.deck[i] ? 'concrete' : style;
+      if (kind === 'armco') continue; // a rail just ends
       const inner = off * side;
-      const outer = (off + thick) * side;
-      p.quad(at(i, inner, -1.2), at(i, outer, -1.2), at(i, outer, hgt), at(i, inner, hgt), tyres && !surf.deck[i] ? TYRE_DARK : CONCRETE_DARK);
+      const outer = (off + thickOf(i)) * side;
+      const h = kind === 'tecpro' ? 1.1 : hgt;
+      p.quad(at(i, inner, -1.2), at(i, outer, -1.2), at(i, outer, h), at(i, inner, h), kind === 'tyres' ? TYRE_DARK : kind === 'tecpro' ? TECPRO[0] : CONCRETE_DARK);
     }
   }
   // A short earth skirt down from the outer edge of the road surface (kerb or
@@ -221,11 +263,11 @@ export function buildWallGeometry(track: Track, surf: TrackSurface): BufferGeome
     if (!surf.deck[i] || !surf.deck[j]) continue;
     for (const side of [1, -1]) {
       p.quad(at(i, (hw - 0.2) * side, ROAD_Y * 0.5), at(j, (hw - 0.2) * side, ROAD_Y * 0.5), at(j, off * side, ROAD_Y * 0.5), at(i, off * side, ROAD_Y * 0.5), CONCRETE);
-      const e = (off + thick) * side;
+      const e = (off + 0.45) * side;
       p.quad(at(i, e, 0), at(j, e, 0), at(j, e, -1.1), at(i, e, -1.1), CONCRETE_DARK);
     }
     // Underside of the slab.
-    p.quad(at(i, off + thick, -1.1), at(j, off + thick, -1.1), at(j, -(off + thick), -1.1), at(i, -(off + thick), -1.1), CONCRETE_DARK);
+    p.quad(at(i, off + 0.45, -1.1), at(j, off + 0.45, -1.1), at(j, -(off + 0.45), -1.1), at(i, -(off + 0.45), -1.1), CONCRETE_DARK);
   }
   return p.empty ? null : p.build();
 }

@@ -3287,3 +3287,17 @@ html:not([data-screen="race"]) .rotate-prompt { display: none; }
 .picker-code .help {
   flex-basis: 100%;
 }
+
+/* A choice with many options (barriers, landscapes): three to a row. */
+.segmented.grid3 {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.35rem;
+}
+
+.segmented.grid3 .btn,
+.segmented.grid3 .btn + .btn {
+  border-radius: 0.6em;
+  border-left-width: 2px;
+  justify-content: center;
+}

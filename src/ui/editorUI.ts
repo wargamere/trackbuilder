@@ -206,6 +206,8 @@ export class EditorUI {
     kerbs: Choice<string>;
     runoff: Choice<string>;
     barrier: Choice<string>;
+    barrierGap: Slider;
+    road: Choice<string>;
     theme: Choice<string>;
     time: Choice<string>;
     trees: Choice<string>;
@@ -335,7 +337,7 @@ export class EditorUI {
     );
     const pitsNote = h('p', { class: 'help warn', text: S.pitsNoRoom });
     const kerbs = segmented<string>(
-      (['raised', 'flat', 'none'] as const).map((v) => [v, S.kerbStyles[v]] as [string, string]),
+      (['raised', 'flat', 'painted', 'none'] as const).map((v) => [v, S.kerbStyles[v]] as [string, string]),
       (v) => opt({ kerbs: v as TrackOptions['kerbs'] }),
     );
     const runoff = segmented<string>(
@@ -343,13 +345,22 @@ export class EditorUI {
       (v) => opt({ runoff: v as TrackOptions['runoff'] }),
     );
     const barrier = segmented<string>(
-      (['none', 'concrete', 'tyres'] as const).map((v) => [v, S.barriers[v]] as [string, string]),
+      (['none', 'concrete', 'tyres', 'tecpro', 'armco'] as const).map((v) => [v, S.barriers[v]] as [string, string]),
       (v) => opt(v === 'none' ? { walls: false } : { walls: true, barrier: v as TrackOptions['barrier'] }),
     );
+    barrier.el.classList.add('grid3');
+    const barrierGap = slider(0, TRACK.maxBarrierGap, 1, (m) => actions.previewOptions({ barrierGap: m }), actions.commitLive, (m) =>
+      fmt(S.barrierGapValue, { m: (TRACK.kerbWidth + TRACK.wallGap + m).toFixed(1) }),
+    );
+    const road = segmented<string>(
+      (['tarmac', 'dirt', 'snow'] as const).map((v) => [v, S.roads[v]] as [string, string]),
+      (v) => opt({ road: v as TrackOptions['road'] }),
+    );
     const theme = segmented<string>(
-      (['meadow', 'desert', 'snow'] as const).map((v) => [v, STR.editor.themes[v]] as [string, string]),
+      (['meadow', 'alpine', 'desert', 'snow', 'forest', 'city'] as const).map((v) => [v, STR.editor.themes[v]] as [string, string]),
       (v) => opt({ theme: v as TrackOptions['theme'] }),
     );
+    theme.el.classList.add('grid3');
     const time = segmented<string>(
       (['day', 'sunset', 'night'] as const).map((v) => [v, S.times[v]] as [string, string]),
       (v) => opt({ time: v as TrackOptions['time'] }),
@@ -456,6 +467,8 @@ export class EditorUI {
       kerbs,
       runoff,
       barrier,
+      barrierGap,
+      road,
       theme,
       time,
       trees,
@@ -558,8 +571,28 @@ export class EditorUI {
           h('div', { class: 'row wrap' }, button(STR.buttons.reverse, actions.reverse, { icon: '⇄', key: 'R' })),
         ],
       ],
-      [S.sections.edges, [field(S.kerbs, kerbs.el), field(S.runoff, runoff.el), field(S.barrier, barrier.el), h('p', { class: 'help', text: S.edgesHelp })]],
-      [S.sections.world, [field(STR.editor.optTheme, theme.el), field(S.time, time.el), field(S.trees, trees.el)]],
+      [
+        S.sections.edges,
+        [
+          field(S.kerbs, kerbs.el),
+          field(S.runoff, runoff.el),
+          field(S.barrier, barrier.el),
+          field(S.barrierGap, barrierGap.el),
+          h('p', { class: 'help', text: S.barrierGapHelp }),
+          h('p', { class: 'help', text: S.edgesHelp }),
+        ],
+      ],
+      [
+        S.sections.world,
+        [
+          field(S.road, road.el),
+          h('p', { class: 'help', text: S.roadHelp }),
+          field(STR.editor.optTheme, theme.el),
+          h('p', { class: 'help', text: S.themeHelp }),
+          field(S.time, time.el),
+          field(S.trees, trees.el),
+        ],
+      ],
       [S.sections.display, [field(S.graphics, graphics.el), h('p', { class: 'help', text: S.graphicsHelp }), field(S.units, units.el), minimap.el, cornerLabels.el, car.el]],
     ];
     const list = h('div', { class: 'sections' });
@@ -872,6 +905,8 @@ export class EditorUI {
     c.kerbs.set(o.kerbs);
     c.runoff.set(o.runoff);
     c.barrier.set(o.walls ? o.barrier : 'none');
+    c.barrierGap.set(o.barrierGap);
+    c.road.set(o.road);
     c.theme.set(o.theme);
     c.time.set(o.time);
     c.trees.set(o.trees);
@@ -891,7 +926,7 @@ export class EditorUI {
       fmt(S.sum.corners, { n: st?.corners ?? 0, banking: S.bankingSum[o.banking] }),
       fmt(S.sum.start, { laps: o.laps, pits: o.pits ? (s.pitsNoRoom ? S.pitsNoRoomShort : S.pitsOn) : S.pitsOff }),
       fmt(S.sum.edges, { kerbs: S.kerbStyles[o.kerbs], runoff: S.runoffs[o.runoff], barrier: o.walls ? S.barriers[o.barrier] : S.noBarriers }),
-      fmt(S.sum.world, { theme: STR.editor.themes[o.theme], time: S.times[o.time], trees: S.treeLevels[o.trees] }),
+      fmt(S.sum.world, { theme: STR.editor.themes[o.theme], road: S.roads[o.road].toLowerCase(), time: S.times[o.time], trees: S.treeLevels[o.trees] }),
       fmt(S.sum.display, { graphics: S.graphicsLevels[s.display.graphics], units: S.unitNames[s.display.units] }),
     ];
     summaries.forEach((t, i) => {

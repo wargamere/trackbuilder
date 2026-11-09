@@ -165,10 +165,10 @@ export function limitSlope(h: Float32Array, maxStep: number): Float32Array {
 export const BANK_LEVELS = [0, (7 * Math.PI) / 180, (15 * Math.PI) / 180] as const;
 
 /** Barrier distance from the centre line for a road `width` wide. */
-export const wallOffsetFor = (width: number): number => width / 2 + TRACK.kerbWidth + TRACK.wallGap;
+export const wallOffsetFor = (width: number, gap = 0): number => width / 2 + TRACK.kerbWidth + TRACK.wallGap + gap;
 
 /** Builds the evenly sampled centre line through a closed loop of dots. `banking` is 0 (off), 1 or 2. */
-export function buildCenterline(ctrl: readonly Dot[], banking = 0, spacing: number = TRACK.centerSpacing, width: number = TRACK.roadWidth): Centerline {
+export function buildCenterline(ctrl: readonly Dot[], banking = 0, spacing: number = TRACK.centerSpacing, width: number = TRACK.roadWidth, barrierGap = 0): Centerline {
   // Per-corner bank overrides: every dot gets a value (the level's angle where unset) so they blend.
   const levelBank = BANK_LEVELS[Math.max(0, Math.min(2, banking))];
   const custom = ctrl.some((d) => d.b !== undefined);
@@ -216,7 +216,7 @@ export function buildCenterline(ctrl: readonly Dot[], banking = 0, spacing: numb
   }
   const r = Math.max(1, Math.round(12 / realSpacing));
   const bank = banked ? smoothLoop(smoothLoop(rawBank, r), r) : rawBank;
-  return { points, tangents, curvature, height, grade, eased, bank, dist: distArr, length, spacing: realSpacing, width, wallOffset: wallOffsetFor(width) };
+  return { points, tangents, curvature, height, grade, eased, bank, dist: distArr, length, spacing: realSpacing, width, wallOffset: wallOffsetFor(width, barrierGap) };
 }
 
 /** Position and direction at distance `s` along the loop (wraps; linearly interpolated). */

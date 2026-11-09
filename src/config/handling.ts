@@ -102,6 +102,16 @@ export const HANDLING = {
   tarmac: { speedFactor: 1, accelFactor: 1, drag: 0, gripFactor: 1, rough: 0 },
   /** The road itself. */
   road: { speedFactor: 1, accelFactor: 1, drag: 0, gripFactor: 1, rough: 0 },
+  /**
+   * What the road is made of (TrackOptions.road): how much of the tyres' grip
+   * it gives in corners, how hard the brakes bite, how hard the engine can
+   * pull, and how rough it feels. The AI and the medal laps plan with the same.
+   */
+  roads: {
+    tarmac: { grip: 1, brake: 1, accel: 1, rough: 0 },
+    dirt: { grip: 0.76, brake: 0.74, accel: 0.86, rough: 0.3 },
+    snow: { grip: 0.58, brake: 0.56, accel: 0.68, rough: 0.12 },
+  },
 
   // ------------------------------------------------------- slopes and banking
   /** Share of gravity along a slope that acts on the car (1 = full physics, lower = more arcade). */

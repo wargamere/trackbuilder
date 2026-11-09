@@ -1407,8 +1407,9 @@ export class EditorScreen implements Screen {
       // A flat track: the climb slider raises a fresh set of rolling hills.
       const pos = pathPositions([...this.dots, this.dots[0]]);
       const hills = rollingHeights(pos.slice(0, this.dots.length), pos[this.dots.length], rng((Math.random() * 2 ** 31) | 0), [10, 10]);
-      const top = Math.max(...hills, 1e-6);
-      pattern = hills.map((h) => h / top);
+      const low = Math.min(...hills);
+      const span = Math.max(1e-6, Math.max(...hills) - low);
+      pattern = hills.map((h) => (h - low) / span);
     }
     this.shapeBase = { dots: this.dots.map((d) => ({ ...d })), length: this.trackLength(), pattern, climb };
     return this.shapeBase;
