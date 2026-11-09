@@ -1,0 +1,54 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<style>
+  html, body { margin: 0; padding: 0; overflow: hidden; }
+  body { width: var(--w); height: var(--h); position: relative; font-family: 'Inter Display', 'Inter', sans-serif; }
+  .photo { position: absolute; inset: 0; background-size: cover; }
+  .card { position: absolute; background-color: #f4efe1; border-radius: calc(var(--minor) * 0.6);
+    background-image:
+      linear-gradient(rgba(60,100,170,.22) 2px, transparent 2px), linear-gradient(90deg, rgba(60,100,170,.22) 2px, transparent 2px),
+      linear-gradient(rgba(60,100,170,.10) 1px, transparent 1px), linear-gradient(90deg, rgba(60,100,170,.10) 1px, transparent 1px);
+    background-size: var(--major) var(--major), var(--major) var(--major), var(--minor) var(--minor), var(--minor) var(--minor);
+    box-shadow: 0 calc(var(--minor) * 0.8) calc(var(--minor) * 2.4) rgba(10, 20, 50, .45); }
+  svg { position: absolute; overflow: visible; left: 0; top: 0; }
+  .title { position: absolute; color: #1b3a8a; font-weight: 900; line-height: .88; letter-spacing: -0.02em; white-space: nowrap; }
+  .title .l1 { display: block; }
+  .title .three { display: inline-block; color: #f2b705; -webkit-text-stroke: var(--stroke) #1b3a8a; paint-order: stroke fill; margin-left: .08em; }
+</style></head>
+<body>
+<div class="photo" id="photo"></div>
+<div class="card" id="card">
+  <svg id="track"></svg>
+  <div class="title" id="title"><span class="l1">Track</span><span class="l1">Builder<span class="three">3D</span></span></div>
+</div>
+<script>
+  const L = JSON.parse(new URLSearchParams(location.search).get('layout'));
+  const root = document.documentElement.style;
+  root.setProperty('--w', L.w + 'px'); root.setProperty('--h', L.h + 'px');
+  root.setProperty('--major', L.grid * 5 + 'px'); root.setProperty('--minor', L.grid + 'px');
+  root.setProperty('--stroke', L.stroke + 'px');
+  const photo = document.getElementById('photo');
+  photo.style.backgroundImage = `url(${L.img})`;
+  photo.style.backgroundPosition = L.pos || 'center';
+  photo.style.backgroundSize = L.size || 'cover';
+  const card = document.getElementById('card');
+  Object.assign(card.style, { left: L.card.x + 'px', top: L.card.y + 'px', width: L.card.w + 'px', height: L.card.h + 'px', transform: `rotate(${L.card.rot}deg)` });
+  Object.assign(document.getElementById('title').style, L.titleStyle);
+  Promise.resolve(window.__TRACK).then(({ pts }) => {
+    const xs = pts.map((p) => p[0]); const ys = pts.map((p) => p[1]);
+    const [x0, x1, y0, y1] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
+    const b = L.trackBox;
+    const s = Math.min(b.w / (x1 - x0), b.h / (y1 - y0));
+    const ox = b.x + (b.w - (x1 - x0) * s) / 2, oy = b.y + (b.h - (y1 - y0) * s) / 2;
+    const d = pts.map((p, i) => `${i ? 'L' : 'M'}${(ox + (p[0] - x0) * s).toFixed(1)},${(oy + (p[1] - y0) * s).toFixed(1)}`).join(' ') + ' Z';
+    const svg = document.getElementById('track');
+    svg.setAttribute('width', L.card.w); svg.setAttribute('height', L.card.h);
+    const w = L.road;
+    svg.innerHTML = `
+      <path d="${d}" fill="none" stroke="#1b3a8a" stroke-width="${w * 1.7}" stroke-linejoin="round" opacity=".16"/>
+      <path d="${d}" fill="none" stroke="#1b3a8a" stroke-width="${w}" stroke-linejoin="round"/>
+      <path d="${d}" fill="none" stroke="#f4efe1" stroke-width="${w * 0.34}" stroke-linejoin="round" stroke-dasharray="${w * 1.2} ${w * 1.1}"/>`;
+    document.body.dataset.ready = '1';
+  });
+</script>
+</body></html>

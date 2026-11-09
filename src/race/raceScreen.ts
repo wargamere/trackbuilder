@@ -34,7 +34,8 @@ import { Hud } from '../ui/hud.ts';
 import { PauseMenu } from '../ui/pauseMenu.ts';
 import { TouchControls } from '../ui/touchControls.ts';
 import { GridOverlay, type GridEntry } from '../ui/gridOverlay.ts';
-import { AiDriver, aiField, gridOrder, gridPlace, qualifyingOrder, YOU } from './ai.ts';
+import { AiDriver, aiField, aiPace, gridOrder, gridPlace, qualifyingOrder, YOU } from './ai.ts';
+import { RacingDriver } from './driver.ts';
 import { GhostRecorder, ghostPose, type GhostLap } from './ghost.ts';
 import { applyAssists, assistDriver } from './assists.ts';
 import { AuthorLap, medalTimes } from './medals.ts';
@@ -170,6 +171,8 @@ export class RaceScreen implements Screen {
   private raining = false;
   /** The timing tower, the gaps it shows, and when it's next refreshed (s). */
   private readonly tower = new TimingTower();
+  /** Dev builds only, with ?autopilot in the URL: the player's car drives itself (for recording trailers). */
+  private autopilot: RacingDriver | null = null;
   private gaps: GapTracker | null = null;
   private towerIn = 0;
 
@@ -422,6 +425,7 @@ export class RaceScreen implements Screen {
       this.playerStart = -8;
     }
     this.prepareCar(car, setup.tyreWear);
+    this.autopilot = import.meta.env.DEV && new URLSearchParams(location.search).has('autopilot') ? new RacingDriver(t, aiPace(0.8, t)) : null;
     this.states = [car.state, ...this.opponents.map((o) => o.ai.car.state)];
     this.gaps = this.opponents.length ? new GapTracker(1 + this.opponents.length) : null;
     this.tower.mode = settings().tower;
@@ -636,6 +640,7 @@ export class RaceScreen implements Screen {
     car.gearbox = assists.gears;
     let inp = session.phase === 'racing' ? this.input.sample(this.tickInput) : session.phase === 'finished' ? BRAKE : NO_INPUT;
     if (session.phase === 'racing') inp = applyAssists(this.game.track, car.state, this.tickInput, assists, this.wet);
+    if (this.autopilot && session.phase === 'racing') inp = this.autopilot.drive(car.state);
     // In the pit box the crew holds the car while it works.
     if (this.crew?.busy) inp = HOLD;
     const prev = this.progress();
