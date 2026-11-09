@@ -63,7 +63,7 @@ src/
               cars), bot.ts (test driver), medals.ts (medal times), assists.ts
               (braking and steering assists), pitStop.ts (pit box and pit stops),
               strategy.ts (tyre life per track, AI tyre choices)
-  ui/         dom helpers, menuScreen.ts (main menu), raceSetupScreen.ts (race
+  ui/         dom helpers, menuScreen.ts (main menu), setupPanel.ts (car setup), raceSetupScreen.ts (race
               setup), assistsPanel.ts, conditionsPanel.ts (rain, time of day,
               tyre wear), controlsPanel.ts (key bindings), gridOverlay.ts (grid after qualifying), editor overlay, HUD,
               minimap, pause menu, touch controls,
@@ -393,6 +393,20 @@ Your best lap is recorded tick by tick and replayed as a translucent ghost. The 
 
 A **minimap** in the top-right corner shows the track (bridges drawn on top), you, the ghost and the AI cars.
 
+### Car setup
+
+🔧 Setup in the race setup (G) opens the car setup (`ui/setupPanel.ts`, `SETUP` in `config/race.ts`). It's remembered between races. The middle of each choice is the car as it always was.
+
+| | Low / Short / Front | Medium / Balanced | High / Long / Rear |
+|---|---|---|---|
+| **Wing** | 82 % drag, 5 % less grip at 40 m/s: quicker on the straights | standard | 118 % drag, 5 % more grip at 40 m/s: quicker through fast bends |
+| **Gears** | 5 % more pull, tops out 3 % lower | standard | 5 % less pull, tops out 3 % higher |
+| **Brake balance** | front: 97 % bite, steadier under braking | standard | rear: 102 % bite, turns in more readily under braking, but the tail can step out |
+
+- Downforce grows with the square of the speed, so the wing matters most in fast bends. The AI's speed plan includes it: `cornerSpeed()` in `race/racingLine.ts` solves for the speed a bend allows with downforce.
+- The panel shows what each wing is worth on this track: the flat-out planned lap with low and high wing against medium (`wingLapTimes()` in `race/strategy.ts`). It also suggests the quickest. The balance is set so each wing is the quickest on about a third of the built-in tracks, by a few tenths a lap: Monza and Las Vegas are low-wing tracks, Budapest a high-wing one.
+- **AI teams** run the suggested setup for each track (and qualify on it). Each AI car's top speed is scaled with its wing's, so the field keeps its spread of straight-line speed. Without that, a draggy high wing caps every car at the same top speed and the quick cars can't pass. Medal times stay on the standard setup.
+
 ### Timing tower
 
 In a race with AI cars a timing tower runs down the left of the screen (`ui/timingTower.ts`, gaps from `race/timing.ts`):
@@ -497,6 +511,7 @@ Tested against the real SDK in its `local` mode (localhost): the SDK's own log s
 - [x] Rebindable keyboard controls (two keys per action)
 - [x] Race conditions, each switchable: rain, time of day (track / day / sunset / night, with car lights), tyre wear with working pit stops for you and the AI
 - [x] Live timing tower (gaps, tyres, stops, where you'd rejoin after a stop)
+- [x] Car setup: wing, gears, brake balance; the AI teams pick the quickest wing for each track
 - [x] Kinds of tyre (soft / medium / hard / wet) with a life that depends on the track (4–6 laps for mediums) and a heavy drop-off once they go; choose them at the start and at each stop; races up to 50 laps
 
 ## Validation for the track editor

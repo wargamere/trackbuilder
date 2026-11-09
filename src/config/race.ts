@@ -60,6 +60,57 @@ export const CONDITIONS = {
   pitExit: 90,
 } as const;
 
+/** The car's setup (see SETUP). */
+export type WingLevel = 'low' | 'medium' | 'high';
+export type GearSet = 'short' | 'medium' | 'long';
+export type BrakeBalance = 'front' | 'balanced' | 'rear';
+export interface CarSetup {
+  wing: WingLevel;
+  gears: GearSet;
+  brakes: BrakeBalance;
+}
+export const DEFAULT_SETUP: CarSetup = { wing: 'medium', gears: 'medium', brakes: 'balanced' };
+
+/**
+ * Car setups (car/physics.ts). The middle of each is the car as it always
+ * was, so a car on the default setup drives exactly as before.
+ */
+export const SETUP = {
+  /**
+   * Wing: drag (× the car's) and downforce: grip in the bends grows by
+   * `downforce` × (speed / downforceSpeed)², so it matters most in fast
+   * bends. Low wing is quicker on the straights, high wing through fast bends.
+   * Balanced so each is the quickest on about a third of the built-in tracks
+   * (Monza and Las Vegas low, Budapest high), by a few tenths a lap.
+   */
+  wing: {
+    low: { drag: 0.82, downforce: -0.05 },
+    medium: { drag: 1, downforce: 0 },
+    high: { drag: 1.18, downforce: 0.05 },
+  },
+  downforceSpeed: 40,
+  /**
+   * Gears: every gear's top speed × `ratio` (the revs and the limiter), the
+   * engine's pull × `pull`, and the speed it stops pulling at × `top`. Short
+   * gears get going quicker but top out lower; long gears the other way.
+   */
+  gears: {
+    short: { ratio: 0.9, pull: 1.05, top: 0.97 },
+    medium: { ratio: 1, pull: 1, top: 1 },
+    long: { ratio: 1.1, pull: 0.95, top: 1.03 },
+  },
+  /**
+   * Brake balance: the brakes' bite (×), and under braking how much more
+   * readily the car turns in (`turn`: + rear, − front) and lets its tail
+   * slide (`slide`).
+   */
+  brakes: {
+    front: { bite: 0.97, turn: -0.25, slide: 0 },
+    balanced: { bite: 1, turn: 0, slide: 0 },
+    rear: { bite: 1.02, turn: 0.35, slide: 0.25 },
+  },
+} as const;
+
 /** A kind of tyre (see TYRES.compounds). */
 export type Compound = 'soft' | 'medium' | 'hard' | 'wet';
 

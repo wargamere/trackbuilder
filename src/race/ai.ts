@@ -1,14 +1,14 @@
 import { CarPhysics, NO_INPUT, type CarState, type DriveInput } from '../car/physics.ts';
 import { standardGrip } from '../car/tyres.ts';
 import { HANDLING } from '../config/handling.ts';
-import { AI, CONDITIONS, TRAFFIC, type Compound } from '../config/race.ts';
+import { AI, CONDITIONS, SETUP, TRAFFIC, type Compound } from '../config/race.ts';
 import { clamp, wrap } from '../core/math.ts';
 import { edgeOffsets } from '../track/spline.ts';
 import type { Track } from '../track/track.ts';
 import { RacingDriver } from './driver.ts';
 import { along, PitCrew } from './pitStop.ts';
-import { planLapTime, racingLine, speedProfile, type Pace } from './racingLine.ts';
-import { pickCompound, preferredCompound, trackTyreLife } from './strategy.ts';
+import { planLapTime, racingLine, speedProfile, topSpeed, type Pace } from './racingLine.ts';
+import { pickCompound, preferredCompound, suggestedSetup, trackTyreLife } from './strategy.ts';
 import { RaceSession } from './session.ts';
 import { aiCars, TrafficPlanner } from './traffic.ts';
 
@@ -177,10 +177,17 @@ export class AiDriver {
     this.name = opts.name;
     this.paint = opts.paint;
     this.difficulty = opts.difficulty;
-    const pace = aiPace(opts.difficulty, track);
+    // Its team's setup for the track (the quickest wing there), and a speed plan that knows it.
+    // (Its top speed is scaled with the wing's, so the field keeps its spread of straight-line
+    // speed: with more drag every car's top end comes down, not just the quick ones'.)
+    const setup = suggestedSetup(track);
+    const wing = SETUP.wing[setup.wing];
+    const base = aiPace(opts.difficulty, track);
+    const pace = { ...base, maxSpeed: base.maxSpeed * (topSpeed(wing.drag) / topSpeed()), downforce: wing.downforce, drag: wing.drag };
     this.driver = new RacingDriver(track, opts.wet ? wetPace(pace) : pace);
     this.planner = new TrafficPlanner(this.driver, track, opts.difficulty);
     this.car = new CarPhysics(track);
+    this.car.setup = setup;
     this.car.wet = wet;
     this.car.wear = !!opts.tyreWear;
     this.length = track.center.length;

@@ -1,5 +1,5 @@
 import { HANDLING } from '../config/handling.ts';
-import { CONDITIONS, TYRES, type Compound } from '../config/race.ts';
+import { CONDITIONS, DEFAULT_SETUP, SETUP, TYRES, type CarSetup, type Compound } from '../config/race.ts';
 import { clamp } from '../core/math.ts';
 import { locatorFor, type TrackLocator } from '../track/locator.ts';
 import { pitLayout } from '../track/pits.ts';
@@ -174,6 +174,8 @@ export class CarPhysics {
   mediumLife = 5;
   /** Laps driven on these tyres (sliding counts extra). */
   tyreAge = 0;
+  /** Wing, gears and brake balance (see SETUP); the default is the car as it always was. */
+  setup: CarSetup = DEFAULT_SETUP;
   private readonly track: Track;
   private readonly locator: TrackLocator;
   private readonly obstacles: ObstacleGrid;
@@ -275,7 +277,10 @@ export class CarPhysics {
     // quickly it answers the wheel, which is the surface's).
     const surfaceGrip = (a.gripFactor + b.gripFactor) / 2;
     const grip = surfaceGrip * this.gripScale;
-    const brakeDecel = H.brakeDecel * this.brakeScale;
+    const wing = SETUP.wing[this.setup.wing];
+    const gears = SETUP.gears[this.setup.gears];
+    const balance = SETUP.brakes[this.setup.brakes];
+    const brakeDecel = H.brakeDecel * this.brakeScale * balance.bite;
     const speedF = (a.speedFactor + b.speedFactor) / 2;
     const accelF = (a.accelFactor + b.accelFactor) / 2;
     const surfDrag = (a.drag + b.drag) / 2;
@@ -291,14 +296,15 @@ export class CarPhysics {
 
     // --- longitudinal: driving force, then resistances that can only slow the car
     let drive = 0;
-    stepGearbox(st, this.gearbox, inp.shift ?? 0, vf, dt);
-    const pull = enginePull(st, vf);
+    stepGearbox(st, this.gearbox, inp.shift ?? 0, vf, dt, gears.ratio);
+    // (Shorter gears pull harder but top out lower, longer ones the other way.)
+    const pull = enginePull(st, vf, gears.ratio) * gears.pull;
     // In another car's slipstream the air resistance drops and the tow pulls the car along,
     // past its usual top speed: enough to draw alongside on a straight.
     const tow = this.draft;
-    let resist = H.rollingDrag + surfDrag + H.aeroDrag * (1 - H.slipstreamDragCut * tow) * vf * vf;
+    let resist = H.rollingDrag + surfDrag + H.aeroDrag * wing.drag * (1 - H.slipstreamDragCut * tow) * vf * vf;
     if (throttle > 0) {
-      const fade = Math.max(0, 1 - vf / (H.maxSpeed * speedF * (1 + H.slipstreamTopSpeed * tow)));
+      const fade = Math.max(0, 1 - vf / (H.maxSpeed * gears.top * speedF * (1 + H.slipstreamTopSpeed * tow)));
       if (vf >= -0.5) drive += (H.engineAccel * accelF * pull + H.slipstreamPush * tow) * throttle * fade;
       else resist += brakeDecel * throttle;
     }
@@ -322,15 +328,20 @@ export class CarPhysics {
     const onRoad = Math.abs(pos.lateral) <= this.track.center.wallOffset;
     const bank = onRoad ? c.bank[pos.index] * along : 0;
     const bankAssist = G * Math.sin(Math.abs(bank)) * (Math.sign(bank) === Math.sign(st.yawRate) ? 1 : -0.5);
-    const latMax = Math.max(H.maxLateralAccel * grip * 0.5, H.maxLateralAccel * grip + bankAssist * H.bankGripFactor);
+    // Downforce (the wing): more grip the faster the car goes.
+    const downforce = 1 + wing.downforce * (vf / SETUP.downforceSpeed) ** 2;
+    const latMax = Math.max(H.maxLateralAccel * grip * 0.5, H.maxLateralAccel * grip + bankAssist * H.bankGripFactor) * downforce;
     let yawTarget = (vf * Math.tan(st.steer)) / H.wheelBase;
     if (inp.handbrake) yawTarget *= H.handbrakeYawBoost;
     const yawLimit = (latMax * H.yawOvershoot * (inp.handbrake ? 1.8 : 1)) / Math.max(Math.abs(vf), 2);
     yawTarget = clamp(yawTarget, -yawLimit, yawLimit);
-    st.yawRate += (yawTarget - st.yawRate) * (1 - Math.exp(-H.yawResponse * surfaceGrip * dt));
+    // Brake balance: under braking a rearward balance turns the car in more readily (and lets the
+    // tail slide), a forward one less.
+    const braking = vf > 3 ? brake : 0;
+    st.yawRate += (yawTarget - st.yawRate) * (1 - Math.exp(-H.yawResponse * surfaceGrip * (1 + balance.turn * braking) * dt));
 
     // --- lateral grip: sideways sliding decays, but never faster than the tyres allow
-    const gripRate = (inp.handbrake ? H.handbrakeGripRate : H.gripRate) * surfaceGrip;
+    const gripRate = (inp.handbrake ? H.handbrakeGripRate : H.gripRate) * surfaceGrip * (1 - balance.slide * braking);
     const dvr = clamp(vr * (Math.exp(-gripRate * dt) - 1), -latMax * dt, latMax * dt);
     vr += dvr;
 

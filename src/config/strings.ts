@@ -285,6 +285,41 @@ export const STR = {
     summaryNoWear: 'no tyre wear',
   },
 
+  /** Car setup (ui/setupPanel.ts, config/race.ts SETUP). */
+  carSetup: {
+    title: 'Car setup',
+    open: 'Setup',
+    intro: 'How your car is set up for this track. The AI teams pick theirs too.',
+    wing: 'Wing',
+    wings: { low: 'Low', medium: 'Medium', high: 'High' },
+    wingHint: 'Low wing: quicker on the straights, less grip in fast bends. High wing: the other way round.',
+    gears: 'Gears',
+    gearSets: { short: 'Short', medium: 'Medium', long: 'Long' },
+    gearsHint: 'Short gears pull harder out of the bends but top out lower. Long gears the other way round: best where the straights are long.',
+    brakes: 'Brake balance',
+    balances: { front: 'Front', balanced: 'Balanced', rear: 'Rear' },
+    brakesHint: 'Rearward: a touch more bite, and the car turns in more readily under braking, but the tail can step out. Forward: steadier, a touch less bite.',
+    /** "On this track, against medium: low wing −0.08 s a lap, high +0.23 s (flat out)." */
+    wingLine: 'Here, against medium wing: low {low} s, high {high} s a lap (flat out).',
+    suggested: 'Suggested here: {wing} wing.',
+    useSuggested: 'Use suggested',
+    reset: 'Standard',
+    done: 'Done',
+    /** One-line summary in the race setup: "Low wing · short gears · balanced brakes". */
+    summary: '{wing} wing · {gears} gears · {brakes} brakes',
+    summaryStandard: 'Standard',
+    lower: {
+      low: 'low',
+      medium: 'medium',
+      high: 'high',
+      short: 'short',
+      long: 'long',
+      front: 'front-biased',
+      balanced: 'balanced',
+      rear: 'rear-biased',
+    },
+  },
+
   /** The timing tower in a race (ui/timingTower.ts). */
   tower: {
     title: 'Timing',
@@ -481,7 +516,7 @@ export const STR = {
     ],
     start: 'Start',
     back: 'Back',
-    keys: 'Enter start · Esc back · P practice · R race · A assists · C conditions',
+    keys: 'Enter start · Esc back · P practice · R race · A assists · C conditions · G setup',
   },
 
   grid: {

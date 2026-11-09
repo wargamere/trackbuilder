@@ -1,5 +1,5 @@
 import { HANDLING } from '../config/handling.ts';
-import { RACING_LINE } from '../config/race.ts';
+import { RACING_LINE, SETUP } from '../config/race.ts';
 import { kerbAt, kerbLayout } from '../track/kerbs.ts';
 import { edgeOffsets, leftOf } from '../track/spline.ts';
 import type { Track } from '../track/track.ts';
@@ -200,11 +200,17 @@ export function racingLine(track: Track): RacingLine {
   return line;
 }
 
-/** How hard a driver pushes: share of the tyres' grip used in corners, of the brakes, and a top speed (m/s). */
+/**
+ * How hard a driver pushes: share of the tyres' grip used in corners, of the
+ * brakes, and a top speed (m/s); and the car's wing (SETUP.wing), if it isn't
+ * the standard one: its downforce and drag.
+ */
 export interface Pace {
   grip: number;
   brake: number;
   maxSpeed: number;
+  downforce?: number;
+  drag?: number;
 }
 
 /**
@@ -219,9 +225,31 @@ export function cornerGrip(k: number, bank: number, grip: number): number {
   return Math.max(H.maxLateralAccel * 0.5, H.maxLateralAccel + assist * H.bankGripFactor) * grip;
 }
 
-/** Deceleration available from the brakes at `brake` of their force, plus drag, at speed v on slope `grade`. */
-export const brakingDecel = (brake: number, v: number, grade: number): number =>
-  HANDLING.brakeDecel * brake + HANDLING.rollingDrag + HANDLING.aeroDrag * v * v + G * HANDLING.slopeFactor * grade;
+/** Deceleration available from the brakes at `brake` of their force, plus drag (× `drag`, the wing's), at speed v on slope `grade`. */
+export const brakingDecel = (brake: number, v: number, grade: number, drag = 1): number =>
+  HANDLING.brakeDecel * brake + HANDLING.rollingDrag + HANDLING.aeroDrag * drag * v * v + G * HANDLING.slopeFactor * grade;
+
+/** The car's top speed on the flat (m/s) with drag × `drag` (the wing): where the engine's pull meets the drag. */
+export function topSpeed(drag = 1): number {
+  const H = HANDLING;
+  // engineAccel (1 − v / maxSpeed) = rollingDrag + aeroDrag·drag·v²
+  const a = H.aeroDrag * drag;
+  const b = H.engineAccel / H.maxSpeed;
+  const c = H.rollingDrag - H.engineAccel;
+  return (-b + Math.sqrt(b * b - 4 * a * c)) / (2 * a);
+}
+
+/**
+ * The speed (m/s) a bend of curvature `k` allows at `grip` (see cornerGrip),
+ * with a wing giving `downforce` (more grip the faster: × 1 + downforce ×
+ * (v / SETUP.downforceSpeed)², as in the physics). Infinity when the
+ * downforce would hold any speed.
+ */
+export function cornerSpeed(k: number, bank: number, grip: number, downforce = 0): number {
+  const a = cornerGrip(k, bank, grip);
+  const den = Math.max(Math.abs(k), 1e-5) - (a * downforce) / SETUP.downforceSpeed ** 2;
+  return den <= 1e-7 ? Infinity : Math.sqrt(a / den);
+}
 
 /** Speeds along the line (m/s per sample). */
 export interface SpeedPlan {
@@ -240,20 +268,21 @@ export interface SpeedPlan {
  * (`brake` of the brakes, drag, slopes).
  */
 export function speedProfile(track: Track, line: RacingLine, pace: Pace): SpeedPlan {
+  const drag = pace.drag ?? 1;
   const H = HANDLING;
   const c = track.center;
   const n = c.points.length;
   const v = new Float32Array(n);
   for (let i = 0; i < n; i++) {
     const k = line.curvature[i];
-    v[i] = Math.min(pace.maxSpeed, Math.sqrt(cornerGrip(k, c.bank[i], pace.grip) / Math.max(Math.abs(k), 1e-5)));
+    v[i] = Math.min(pace.maxSpeed, cornerSpeed(k, c.bank[i], pace.grip, pace.downforce));
   }
   const brakeBack = (arr: Float32Array) => {
     // Twice round, so the limits carry across the start line.
     for (let round = 0; round < 2; round++) {
       for (let i = n - 1; i >= 0; i--) {
         const j = (i + 1) % n;
-        const reach = Math.sqrt(Math.max(0, arr[j] * arr[j] + 2 * brakingDecel(pace.brake, arr[j], c.grade[i]) * line.ds[i]));
+        const reach = Math.sqrt(Math.max(0, arr[j] * arr[j] + 2 * brakingDecel(pace.brake, arr[j], c.grade[i], drag) * line.ds[i]));
         if (reach < arr[i]) arr[i] = reach;
       }
     }
@@ -265,7 +294,7 @@ export function speedProfile(track: Track, line: RacingLine, pace: Pace): SpeedP
     for (let i = 0; i < n; i++) {
       const j = (i + 1) % n;
       const vi = v[i];
-      const acc = H.engineAccel * Math.max(0, 1 - vi / H.maxSpeed) - H.rollingDrag - H.aeroDrag * vi * vi - G * H.slopeFactor * c.grade[i];
+      const acc = H.engineAccel * Math.max(0, 1 - vi / H.maxSpeed) - H.rollingDrag - H.aeroDrag * drag * vi * vi - G * H.slopeFactor * c.grade[i];
       const reach = Math.sqrt(Math.max(0, vi * vi + 2 * acc * line.ds[i]));
       if (reach < v[j]) v[j] = reach;
     }

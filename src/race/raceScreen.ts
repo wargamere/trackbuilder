@@ -39,7 +39,7 @@ import { GhostRecorder, ghostPose, type GhostLap } from './ghost.ts';
 import { applyAssists, assistDriver } from './assists.ts';
 import { AuthorLap, medalTimes } from './medals.ts';
 import { PitCrew, pitBox } from './pitStop.ts';
-import { pitLoss, trackTyreLife } from './strategy.ts';
+import { pitLoss, suggestedSetup, trackTyreLife } from './strategy.ts';
 import { formatGap, GapTracker } from './timing.ts';
 import { TimingTower, type TowerRow } from '../ui/timingTower.ts';
 import { scoreFor, type RunResult } from './records.ts';
@@ -373,6 +373,7 @@ export class RaceScreen implements Screen {
   private prepareCar(car: CarPhysics, wear: boolean): void {
     car.wet = this.wet;
     car.wear = wear;
+    car.setup = settings().carSetup;
     car.mediumLife = trackTyreLife(this.game.track);
     car.newTyres(wear ? this.game.setup.tyres : 'medium');
     this.crew = wear ? new PitCrew(this.game.track) : null;
@@ -443,7 +444,7 @@ export class RaceScreen implements Screen {
     this.gaps = null;
     this.tower.hide();
     this.states = [car.state];
-    this.qualSims = this.field(setup.opponents).map((f) => new AuthorLap(t, f.difficulty, false, this.wet));
+    this.qualSims = this.field(setup.opponents).map((f) => new AuthorLap(t, f.difficulty, false, this.wet, suggestedSetup(t)));
     this.hud.setMode('race');
     this.pauseMenu.setMode('qualifying');
     this.rig.snap(car.state);

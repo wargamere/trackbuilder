@@ -4,7 +4,7 @@ import { DRIVER } from '../config/race.ts';
 import { clamp } from '../core/math.ts';
 import { leftOf } from '../track/spline.ts';
 import type { Track } from '../track/track.ts';
-import { brakingDecel, cornerGrip, racingLine, speedProfile, type Pace, type RacingLine, type SpeedPlan } from './racingLine.ts';
+import { brakingDecel, cornerSpeed, racingLine, speedProfile, type Pace, type RacingLine, type SpeedPlan } from './racingLine.ts';
 
 /** A stretch across the road (m left of the centre line) for a car to keep within. */
 export interface Corridor {
@@ -93,7 +93,7 @@ export class RacingDriver {
     for (let i = 0; i < n; i++) {
       const s = i * c.spacing;
       const k = this.pathCurvature(s, lat);
-      v[i] = Math.min(this.pace.maxSpeed, Math.sqrt(cornerGrip(k, c.bank[i], this.pace.grip * DRIVER.offLineGrip) / Math.max(Math.abs(k), 1e-5)));
+      v[i] = Math.min(this.pace.maxSpeed, cornerSpeed(k, c.bank[i], this.pace.grip * DRIVER.offLineGrip, this.pace.downforce));
     }
     // Light smoothing (the curvature of a shifted path is a little noisy), keeping the lows.
     const sm = new Float32Array(n);
@@ -102,7 +102,7 @@ export class RacingDriver {
       for (let round = 0; round < 2; round++) {
         for (let i = n - 1; i >= 0; i--) {
           const j = (i + 1) % n;
-          const reach = Math.sqrt(arr[j] * arr[j] + 2 * brakingDecel(brake, arr[j], c.grade[i]) * c.spacing);
+          const reach = Math.sqrt(arr[j] * arr[j] + 2 * brakingDecel(brake, arr[j], c.grade[i], this.pace.drag) * c.spacing);
           if (reach < arr[i]) arr[i] = reach;
         }
       }
@@ -118,7 +118,7 @@ export class RacingDriver {
       for (let i = 0; i < n; i++) {
         const j = (i + 1) % n;
         const vi = sp[i];
-        const acc = H.engineAccel * Math.max(0, 1 - vi / H.maxSpeed) - H.rollingDrag - H.aeroDrag * vi * vi - 9.81 * H.slopeFactor * c.grade[i];
+        const acc = H.engineAccel * Math.max(0, 1 - vi / H.maxSpeed) - H.rollingDrag - H.aeroDrag * (this.pace.drag ?? 1) * vi * vi - 9.81 * H.slopeFactor * c.grade[i];
         const reach = Math.sqrt(Math.max(0, vi * vi + 2 * acc * c.spacing));
         if (reach < sp[j]) sp[j] = reach;
       }
@@ -263,8 +263,8 @@ export class RacingDriver {
       const s1 = s + d;
       const k = this.pathCurvature(s1, lat, keepOnRoad);
       // Off the line it keeps some grip in hand (for moving across, and for others).
-      const vc = Math.min(this.pace.maxSpeed, Math.sqrt(cornerGrip(k, this.at(c.bank, s1), this.pace.grip * grip) / Math.max(Math.abs(k), 1e-5)));
-      const allowed = Math.sqrt(vc * vc + 2 * brakingDecel(brake, vc, this.at(c.grade, s1)) * d);
+      const vc = Math.min(this.pace.maxSpeed, cornerSpeed(k, this.at(c.bank, s1), this.pace.grip * grip, this.pace.downforce));
+      const allowed = Math.sqrt(vc * vc + 2 * brakingDecel(brake, vc, this.at(c.grade, s1), this.pace.drag) * d);
       if (allowed < lim) lim = allowed;
     }
     return lim;

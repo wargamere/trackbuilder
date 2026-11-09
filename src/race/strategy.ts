@@ -1,9 +1,9 @@
 import { compoundLife } from '../car/tyres.ts';
 import { HANDLING } from '../config/handling.ts';
-import { AI, CONDITIONS, TYRES, type Compound } from '../config/race.ts';
+import { AI, CONDITIONS, DEFAULT_SETUP, SETUP, TYRES, type CarSetup, type Compound, type WingLevel } from '../config/race.ts';
 import { clamp } from '../core/math.ts';
 import type { Track } from '../track/track.ts';
-import { racingLine, speedProfile } from './racingLine.ts';
+import { planLapTime, racingLine, speedProfile, type Pace } from './racingLine.ts';
 
 const works = new WeakMap<Track, number>();
 
@@ -56,4 +56,32 @@ export function pickCompound(lapsLeft: number, mediumLife: number, wet: boolean,
   if (wet) return 'wet';
   for (const c of ['soft', 'medium', 'hard'] as const) if (compoundLife(c, false, mediumLife) + CONDITIONS.pitEndSlack >= lapsLeft) return c;
   return preference;
+}
+
+const wingLaps = new WeakMap<Track, Record<WingLevel, number>>();
+
+/** The flat-out planned lap on `track` with each wing (s): low wing wins where the straights are long, high where the bends are fast. */
+export function wingLapTimes(track: Track): Record<WingLevel, number> {
+  const known = wingLaps.get(track);
+  if (known) return known;
+  const line = racingLine(track);
+  const top = AI.pace[AI.pace.length - 1];
+  const base: Pace = { grip: top[0], maxSpeed: HANDLING.maxSpeed * top[1], brake: top[2] };
+  const lap = (w: WingLevel) => planLapTime(line, speedProfile(track, line, { ...base, downforce: SETUP.wing[w].downforce, drag: SETUP.wing[w].drag }));
+  const times = { low: lap('low'), medium: lap('medium'), high: lap('high') };
+  wingLaps.set(track, times);
+  return times;
+}
+
+/** The quickest wing for `track` (ties go to medium). */
+export function bestWing(track: Track): WingLevel {
+  const t = wingLapTimes(track);
+  let best: WingLevel = 'medium';
+  for (const w of ['low', 'high'] as const) if (t[w] < t[best] - 0.02) best = w;
+  return best;
+}
+
+/** The setup the AI teams run on `track` (and the one suggested to you): the quickest wing, standard gears and brakes. */
+export function suggestedSetup(track: Track): CarSetup {
+  return { ...DEFAULT_SETUP, wing: bestWing(track) };
 }

@@ -6,6 +6,7 @@ import { TrackOrbit } from '../render/orbit.ts';
 import { AssistsPanel, assistsSummary } from './assistsPanel.ts';
 import { trackTyreLife } from '../race/strategy.ts';
 import { ConditionsPanel, conditionsSummary, timeFor } from './conditionsPanel.ts';
+import { SetupPanel, setupSummary } from './setupPanel.ts';
 import { button, h, segmented, slider, type Choice, type Slider } from './dom.ts';
 
 type GridKind = RaceSetup['grid'];
@@ -46,6 +47,8 @@ export class RaceSetupScreen implements Screen {
   private readonly assistsLine: HTMLElement;
   private readonly conditionsPanel = new ConditionsPanel();
   private readonly conditionsLine: HTMLElement;
+  private readonly setupPanel = new SetupPanel();
+  private readonly setupLine: HTMLElement;
   /** The choices being made (the game's setup only changes on Start). */
   private draft: RaceSetup;
   private abort: AbortController | null = null;
@@ -114,6 +117,14 @@ export class RaceSetupScreen implements Screen {
       this.conditionsLine,
       button(STR.conditions.open, () => this.openConditions(), { icon: '🌦', class: 'compact', key: 'C' }),
     );
+    this.setupLine = h('span', { class: 'assists-summary' });
+    const carSetup = h(
+      'div',
+      { class: 'setup-assists setup-car' },
+      h('span', { class: 'label', text: STR.carSetup.title }),
+      this.setupLine,
+      button(STR.carSetup.open, () => this.openSetupPanel(), { icon: '🔧', class: 'compact', key: 'G' }),
+    );
     this.raceOnly = [laps, cars];
     this.withAi = [diff, grid];
     this.panel = h(
@@ -129,6 +140,7 @@ export class RaceSetupScreen implements Screen {
       ),
       assists,
       conditions,
+      carSetup,
       h(
         'div',
         { class: 'menu row setup-buttons' },
@@ -158,7 +170,7 @@ export class RaceSetupScreen implements Screen {
       (e) => {
         if (e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;
         // A panel on top: Esc closes it, nothing else here.
-        const panel = this.assistsPanel.isOpen ? this.assistsPanel : this.conditionsPanel.isOpen ? this.conditionsPanel : null;
+        const panel = this.assistsPanel.isOpen ? this.assistsPanel : this.conditionsPanel.isOpen ? this.conditionsPanel : this.setupPanel.isOpen ? this.setupPanel : null;
         if (panel) {
           if (e.code === 'Escape') {
             e.preventDefault();
@@ -174,6 +186,7 @@ export class RaceSetupScreen implements Screen {
           KeyR: () => this.set({ mode: 'race' }),
           KeyA: () => this.assistsPanel.open(this.game.ui, () => this.renderHints()),
           KeyC: () => this.openConditions(),
+          KeyG: () => this.openSetupPanel(),
         };
         const a = act[e.code];
         if (!a) return;
@@ -187,6 +200,7 @@ export class RaceSetupScreen implements Screen {
   exit(): void {
     this.assistsPanel.close();
     this.conditionsPanel.close();
+    this.setupPanel.close();
     this.game.view3d?.setConditions(null);
     this.abort?.abort();
     this.abort = null;
@@ -204,6 +218,10 @@ export class RaceSetupScreen implements Screen {
   frame(dt: number): void {
     const v = this.game.view3d;
     if (v) this.orbit.frame(v, dt);
+  }
+
+  private openSetupPanel(): void {
+    this.setupPanel.open(this.game.ui, this.game.track, () => this.renderHints());
   }
 
   private openConditions(): void {
@@ -269,6 +287,7 @@ export class RaceSetupScreen implements Screen {
     this.gridHint.textContent = fmt(S.gridHints[d.grid], { n: AI.qualifyingLaps });
     this.assistsLine.textContent = assistsSummary(settings().assists);
     this.conditionsLine.textContent = conditionsSummary(d, this.game.track.options.time);
+    this.setupLine.textContent = setupSummary(settings().carSetup);
     // The track behind shows the conditions chosen.
     this.game.view3d?.setConditions({ time: timeFor(d, this.game.track.options.time), rain: d.weather === 'rain' });
     // The slot slider's labels depend on the number of cars.

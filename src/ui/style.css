@@ -3138,3 +3138,25 @@ html:not([data-screen="race"]) .rotate-prompt { display: none; }
     height: 1.2rem;
   }
 }
+
+/* Car setup panel: the suggested setup and its buttons on one line. */
+.setup-suggest-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.6rem;
+  margin: 0.2rem 0 0.6rem;
+}
+
+.setup-suggested {
+  flex: 1;
+  min-width: 10rem;
+  font-weight: 700;
+  font-size: 0.85rem;
+  color: #2a3150;
+}
+
+.setup-numbers {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}

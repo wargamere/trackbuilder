@@ -1,5 +1,6 @@
 import { cleanBindings, DEFAULT_BINDINGS, type KeyBindings } from '../car/bindings.ts';
 import type { PaintId } from '../config/paint.ts';
+import { DEFAULT_SETUP, SETUP, type CarSetup } from '../config/race.ts';
 import type { RaceSetup } from './screen.ts';
 import { loadJSON, saveJSON } from '../platform/storage.ts';
 
@@ -44,6 +45,8 @@ export interface Settings {
   assists: Assists;
   /** Keyboard keys for driving (see car/bindings.ts). */
   keys: KeyBindings;
+  /** Your car's setup: wing, gears, brake balance (see SETUP). */
+  carSetup: CarSetup;
   /** The timing tower in races with AI cars: every car, just the cars near you (and the leaders), or hidden. */
   tower: 'full' | 'compact' | 'off';
   /** Race setup choices (laps come from each track). */
@@ -70,16 +73,24 @@ const DEFAULTS: Settings = {
   assists: DEFAULT_ASSISTS,
   keys: DEFAULT_BINDINGS,
   tower: 'full',
+  carSetup: DEFAULT_SETUP,
   raceSetup: { mode: 'race', ghost: true, opponents: 3, difficulty: 50, grid: 'pick', startSlot: 4, weather: 'dry', time: 'track', tyreWear: false, tyres: 'medium' },
 };
 const KEY = 'settings';
 
 let current: Settings | null = null;
 
+/** A saved setup, made safe: anything unknown is the standard choice. */
+function cleanSetup(saved: unknown): CarSetup {
+  const s = saved && typeof saved === 'object' ? (saved as Record<string, unknown>) : {};
+  const pick = <K extends keyof CarSetup>(k: K, options: object): CarSetup[K] => (typeof s[k] === 'string' && s[k] in options ? (s[k] as CarSetup[K]) : DEFAULT_SETUP[k]);
+  return { wing: pick('wing', SETUP.wing), gears: pick('gears', SETUP.gears), brakes: pick('brakes', SETUP.brakes) };
+}
+
 export function settings(): Settings {
   if (!current) {
     const saved = loadJSON<Partial<Settings>>(KEY, {});
-    current = { ...DEFAULTS, ...saved, assists: { ...DEFAULT_ASSISTS, ...saved.assists }, keys: cleanBindings(saved.keys) };
+    current = { ...DEFAULTS, ...saved, assists: { ...DEFAULT_ASSISTS, ...saved.assists }, keys: cleanBindings(saved.keys), carSetup: cleanSetup(saved.carSetup) };
   }
   return current;
 }

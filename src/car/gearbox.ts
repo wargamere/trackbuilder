@@ -21,9 +21,9 @@ export interface GearState {
   shift: number;
 }
 
-/** Revs (share of the limit) at `speed` in `gear`. */
-export function revsAt(speed: number, gear: number): number {
-  return Math.max(0, speed) / G.top[gear - 1];
+/** Revs (share of the limit) at `speed` in `gear`, with every gear's top speed × `ratio` (the setup's gears). */
+export function revsAt(speed: number, gear: number, ratio = 1): number {
+  return Math.max(0, speed) / (G.top[gear - 1] * ratio);
 }
 
 /**
@@ -45,7 +45,7 @@ export function pullAt(r: number, gear: number): number {
  * the drive for a moment (down changes are blipped). A down change that
  * would over-rev the engine is refused. Nearly stopped, it drops to 1st.
  */
-export function stepGearbox(gs: GearState, mode: GearboxMode, request: number, speed: number, dt: number): void {
+export function stepGearbox(gs: GearState, mode: GearboxMode, request: number, speed: number, dt: number, ratio = 1): void {
   gs.shift = Math.max(0, gs.shift - dt);
   if (Math.abs(speed) < 0.5) {
     gs.gear = 1;
@@ -54,7 +54,7 @@ export function stepGearbox(gs: GearState, mode: GearboxMode, request: number, s
     if (request > 0 && gs.gear < GEAR_COUNT) {
       gs.gear++;
       gs.shift = G.shiftTime;
-    } else if (request < 0 && gs.gear > 1 && revsAt(speed, gs.gear - 1) < 1) {
+    } else if (request < 0 && gs.gear > 1 && revsAt(speed, gs.gear - 1, ratio) < 1) {
       // Down changes are blipped: no break in the drive.
       gs.gear--;
     }
@@ -62,20 +62,20 @@ export function stepGearbox(gs: GearState, mode: GearboxMode, request: number, s
     const up = G.idealUp;
     const down = G.idealDown;
     const time = mode === 'auto' ? G.autoShiftTime : G.shiftTime;
-    const r = revsAt(speed, gs.gear);
+    const r = revsAt(speed, gs.gear, ratio);
     if (r >= up && gs.gear < GEAR_COUNT) {
       gs.gear++;
       gs.shift = time;
-    } else if (r < down && gs.gear > 1 && revsAt(speed, gs.gear - 1) < up - 0.05) {
+    } else if (r < down && gs.gear > 1 && revsAt(speed, gs.gear - 1, ratio) < up - 0.05) {
       gs.gear--;
     }
   }
-  gs.rpm = Math.min(1, revsAt(Math.abs(speed), gs.gear));
+  gs.rpm = Math.min(1, revsAt(Math.abs(speed), gs.gear, ratio));
 }
 
 /** The engine's pull now (share of full): none while the automatic's gear goes in. */
-export function enginePull(gs: GearState, speed: number): number {
-  return gs.shift > 0 ? 0 : pullAt(revsAt(speed, gs.gear), gs.gear);
+export function enginePull(gs: GearState, speed: number, ratio = 1): number {
+  return gs.shift > 0 ? 0 : pullAt(revsAt(speed, gs.gear, ratio), gs.gear);
 }
 
 /** The best gear for `speed`: the one the ideal box would be in. */
