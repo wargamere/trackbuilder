@@ -285,6 +285,24 @@ export const STR = {
     summaryNoWear: 'no tyre wear',
   },
 
+  /** The timing tower in a race (ui/timingTower.ts). */
+  tower: {
+    title: 'Timing',
+    you: 'YOU',
+    lap: 'LAP',
+    laps: 'LAPS',
+    pit: 'PIT',
+    out: 'OUT',
+    finished: 'FIN',
+    /** Tyre age in laps, beside its kind. */
+    age: '{n}',
+    stops: '{n} stop',
+    stopsMany: '{n} stops',
+    rejoin: 'Pit now: rejoin {pos}, behind {name}',
+    rejoinKeep: 'Pit now: you’d keep {pos}',
+    hint: 'Gaps to you · tap to shrink',
+  },
+
   /** Kinds of tyre (config/race.ts TYRES). */
   tyres: {
     names: { soft: 'Soft', medium: 'Medium', hard: 'Hard', wet: 'Wet' },
@@ -325,6 +343,7 @@ export const STR = {
       camera: 'Camera',
       pause: 'Pause',
       mute: 'Sound on / off',
+      tower: 'Timing tower',
     },
   },
 
@@ -508,6 +527,7 @@ export const STR = {
       pause: 'pause',
       gears: 'gear up / down',
       restart: 'restart lap',
+      tower: 'timing',
     },
     hintGamepad: 'RT drive · LT brake & reverse · stick steer · Back reset · Y camera · Start pause',
     hintTouch: 'Hold ◀ ▶ to steer, GAS and BRAKE on the right. Hold BRAKE to reverse.',

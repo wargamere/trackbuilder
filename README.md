@@ -58,7 +58,7 @@ src/
               model.ts (low-poly car), camera.ts (chase + bonnet)
   race/       raceScreen.ts (fixed-step loop, interpolation, pause), session.ts
               (countdown, checkpoints, lap timing, splits, race distance), ghost.ts,
-              records.ts, resultsScreen.ts, ai.ts (AI opponents), racingLine.ts
+              records.ts, resultsScreen.ts, timing.ts (gaps between cars), ai.ts (AI opponents), racingLine.ts
               (line + speed plan), driver.ts (drives it), traffic.ts (racing other
               cars), bot.ts (test driver), medals.ts (medal times), assists.ts
               (braking and steering assists), pitStop.ts (pit box and pit stops),
@@ -108,8 +108,9 @@ Physics runs at a fixed 120 Hz from an accumulator (`core/fixedStep.ts`), and re
 | Gear up / down (manual gears) | E / Q | RB / LB | ▲ ▼ buttons |
 | Camera (chase / bonnet) | C | Y | — |
 | Pause | Esc / P | Start | Ⅱ button |
+| Timing tower (full / compact / hidden) | T | — | tap it (full / compact) |
 
-**Your own keys** (`car/bindings.ts`, `ui/controlsPanel.ts`). The keyboard keys above are the defaults. ⌨ Controls, in the main menu and the pause menu, changes them: every driving action (drive, brake, steer left and right, gear up and down, reset, camera, pause, sound) has two keys. Click one and press the new key; Esc cancels and Backspace clears it. A key already used by another action moves over, and the panel says from where. Reset to defaults puts them all back. Esc always pauses whatever you set, and Tab, Ctrl, Alt and the system keys can't be bound. Keys are physical keys (`KeyboardEvent.code`), shown as your keyboard layout prints them where the browser can say (Z for W on AZERTY). The race's controls hint, the pause menu and the assists panel all show your keys. The gamepad and touch controls don't change.
+**Your own keys** (`car/bindings.ts`, `ui/controlsPanel.ts`). The keyboard keys above are the defaults. ⌨ Controls, in the main menu and the pause menu, changes them: every driving action (drive, brake, steer left and right, gear up and down, reset, camera, pause, sound, timing tower) has two keys. Click one and press the new key; Esc cancels and Backspace clears it. A key already used by another action moves over, and the panel says from where. Reset to defaults puts them all back. Esc always pauses whatever you set, and Tab, Ctrl, Alt and the system keys can't be bound. Keys are physical keys (`KeyboardEvent.code`), shown as your keyboard layout prints them where the browser can say (Z for W on AZERTY). The race's controls hint, the pause menu and the assists panel all show your keys. The gamepad and touch controls don't change.
 
 **Gears** (`car/gearbox.ts`, tuning in `HANDLING.gearbox`). The car has six gears; the HUD shows the gear (R when reversing), AUTO or MAN, and a rev bar.
 - *Revs:* the engine pulls fully from half the revs to 90 % of the limit, less low down (except in 1st, where the clutch slips to get going), tailing off above 90 %, and not at all on the limiter. Changing up at 90 % lands in the full band of the next gear.
@@ -392,6 +393,15 @@ Your best lap is recorded tick by tick and replayed as a translucent ghost. The 
 
 A **minimap** in the top-right corner shows the track (bridges drawn on top), you, the ghost and the AI cars.
 
+### Timing tower
+
+In a race with AI cars a timing tower runs down the left of the screen (`ui/timingTower.ts`, gaps from `race/timing.ts`):
+- Each car's position, colour and name, and its gap to you: "−1.8" if it's ahead, "+0.6" behind, "+1 LAP" when a lap or more apart.
+- Gaps are worked out the way race timing does it: how long ago the car ahead passed the point where the car behind is now. Every car's time is recorded at each 10 m of race distance.
+- With tyre wear: the kind of tyres each car is on, how many laps old they are (red once they've gone off), its stops so far, and PIT while it's in the pits.
+- Under it, with tyre wear: where you'd rejoin if you stopped now, e.g. "Pit now: rejoin P5, behind Ada". The cars behind you by less than a stop costs (the 3 s service plus about 3.5 s braking in and getting going) would get by.
+- T (rebindable) switches it full → compact (the leaders and the cars around you) → hidden. Tapping it switches full and compact, and the choice is remembered.
+
 ### Conditions: rain, night, tyre wear and pit stops
 
 The race setup's **Conditions** row (🌦, key C) opens a panel with three switches. They apply to every car on the track, the AI cars too, and are remembered for the next race. Each one is on or off on its own.
@@ -486,6 +496,7 @@ Tested against the real SDK in its `local` mode (localhost): the SDK's own log s
 - [x] Six-speed gearbox (manual or automatic, the automatic a little slower) and driving assists: racing line (braking / full), and braking and steering assists that help a little without driving for you
 - [x] Rebindable keyboard controls (two keys per action)
 - [x] Race conditions, each switchable: rain, time of day (track / day / sunset / night, with car lights), tyre wear with working pit stops for you and the AI
+- [x] Live timing tower (gaps, tyres, stops, where you'd rejoin after a stop)
 - [x] Kinds of tyre (soft / medium / hard / wet) with a life that depends on the track (4–6 laps for mediums) and a heavy drop-off once they go; choose them at the start and at each stop; races up to 50 laps
 
 ## Validation for the track editor

@@ -4,7 +4,7 @@ import { settings } from '../core/settings.ts';
 import { actionMap, type DriveAction, type KeyBindings } from './bindings.ts';
 import type { DriveInput } from './physics.ts';
 
-export type InputAction = 'pause' | 'reset' | 'camera' | 'mute';
+export type InputAction = 'pause' | 'reset' | 'camera' | 'mute' | 'tower';
 export type InputDevice = 'keyboard' | 'gamepad' | 'touch';
 
 /** Written by the on-screen touch controls. */
@@ -18,7 +18,7 @@ export interface TouchState {
 }
 
 /** Bound actions that fire once per press (the rest are held). */
-const PRESS_ACTIONS: Partial<Record<DriveAction, InputAction>> = { pause: 'pause', reset: 'reset', camera: 'camera', mute: 'mute' };
+const PRESS_ACTIONS: Partial<Record<DriveAction, InputAction>> = { pause: 'pause', reset: 'reset', camera: 'camera', mute: 'mute', tower: 'tower' };
 
 /** Standard-mapping gamepad buttons. */
 const PAD = { a: 0, b: 1, x: 2, y: 3, lb: 4, rb: 5, lt: 6, rt: 7, back: 8, start: 9, left: 14, right: 15 } as const;

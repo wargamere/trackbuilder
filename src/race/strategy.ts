@@ -36,6 +36,11 @@ export function trackTyreLife(track: Track): number {
   return T.lifeEasy + (T.lifeHard - T.lifeEasy) * hard;
 }
 
+/** About how much time a pit stop costs on `track` (s): the service, and slowing for it and getting going again. */
+export function pitLoss(_track: Track): number {
+  return CONDITIONS.service + CONDITIONS.pitLossExtra;
+}
+
 /** The kind of tyres an AI prefers for a stint that won't reach the finish (by grid slot: a mix in the field). */
 export function preferredCompound(slot: number): Compound {
   return (['medium', 'hard', 'soft'] as const)[slot % 3];

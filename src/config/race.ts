@@ -42,6 +42,8 @@ export const CONDITIONS = {
   service: 3,
   /** With no pit building, the box is this far past the start line (m). */
   boxDefaultS: 30,
+  /** Time a stop costs beyond the service itself (s): braking into the box and getting going again (for the timing tower's "pit now" estimate). */
+  pitLossExtra: 3.5,
   /**
    * AI cars stop for tyres when theirs would go off before the box comes
    * round again, give or take pitEarly laps (one each, by grid slot, so not

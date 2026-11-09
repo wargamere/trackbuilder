@@ -15,7 +15,7 @@ import { compoundLife } from '../car/tyres.ts';
 import { STR, fmt } from '../config/strings.ts';
 import { FixedStep } from '../core/fixedStep.ts';
 import type { GameContext, Screen } from '../core/screen.ts';
-import { settings } from '../core/settings.ts';
+import { settings, updateSettings } from '../core/settings.ts';
 import { CAPS, prefersTouchControls } from '../platform/platform.ts';
 import { platform } from '../platform/services.ts';
 import { writeHashCode } from '../platform/web.ts';
@@ -39,7 +39,9 @@ import { GhostRecorder, ghostPose, type GhostLap } from './ghost.ts';
 import { applyAssists, assistDriver } from './assists.ts';
 import { AuthorLap, medalTimes } from './medals.ts';
 import { PitCrew, pitBox } from './pitStop.ts';
-import { trackTyreLife } from './strategy.ts';
+import { pitLoss, trackTyreLife } from './strategy.ts';
+import { formatGap, GapTracker } from './timing.ts';
+import { TimingTower, type TowerRow } from '../ui/timingTower.ts';
 import { scoreFor, type RunResult } from './records.ts';
 import { formatDelta, formatTime, RaceSession, type Progress, type RaceEvent } from './session.ts';
 
@@ -61,6 +63,8 @@ interface Opponent {
 
 /** A car in the race order. */
 interface Entry {
+  /** 0 = you, k + 1 = AI car k. */
+  idx: number;
   name: string;
   you: boolean;
   paint: number;
@@ -158,6 +162,10 @@ export class RaceScreen implements Screen {
   private nextTyres: Compound = 'medium';
   /** The weather the racing line was built for. */
   private lineWet = false;
+  /** The timing tower, the gaps it shows, and when it's next refreshed (s). */
+  private readonly tower = new TimingTower();
+  private gaps: GapTracker | null = null;
+  private towerIn = 0;
 
   constructor(game: GameContext) {
     this.game = game;
@@ -192,7 +200,11 @@ export class RaceScreen implements Screen {
     this.ghostModel = game.view3d ? new CarModel(currentPaintHex(), RACE.ghostOpacity) : null;
     this.ghostLabel = h('div', { class: 'ghost-label', text: STR.race.ghostYou });
     this.ghostLabel.hidden = true;
-    this.hud.root.append(this.ghostLabel);
+    this.hud.root.append(this.ghostLabel, this.tower.root);
+    this.tower.onToggle = (mode) => {
+      updateSettings({ tower: mode });
+      this.towerIn = 0;
+    };
     // Logged-in CrazyGames players see their username on their ghost (no other login exists).
     void platform.username().then((name) => {
       if (name) this.ghostLabel.textContent = fmt(STR.race.ghostUser, { name });
@@ -275,6 +287,7 @@ export class RaceScreen implements Screen {
     this.controlsPanel.close();
     if (this.lineOverlay) this.lineOverlay.mesh.visible = false;
     if (this.pitMesh) this.pitMesh.visible = false;
+    this.tower.hide();
     if (this.ghostModel) this.ghostModel.root.visible = false;
     this.ghostLabel.hidden = true;
     this.clearOpponents();
@@ -399,6 +412,10 @@ export class RaceScreen implements Screen {
     }
     this.prepareCar(car, setup.tyreWear);
     this.states = [car.state, ...this.opponents.map((o) => o.ai.car.state)];
+    this.gaps = this.opponents.length ? new GapTracker(1 + this.opponents.length) : null;
+    this.tower.mode = settings().tower;
+    this.tower.hide();
+    this.towerIn = 0;
     this.hud.setMode(setup.mode);
     this.pauseMenu.setMode(setup.mode);
     this.rig.snap(car.state);
@@ -423,6 +440,8 @@ export class RaceScreen implements Screen {
     this.playerStart = -8;
     // Qualifying is on new tyres (no wear), in the weather of the race.
     this.prepareCar(car, false);
+    this.gaps = null;
+    this.tower.hide();
     this.states = [car.state];
     this.qualSims = this.field(setup.opponents).map((f) => new AuthorLap(t, f.difficulty, false, this.wet));
     this.hud.setMode('race');
@@ -516,7 +535,7 @@ export class RaceScreen implements Screen {
     if (d === 'touch') return STR.race.hintTouch + (manual ? STR.race.hintGearsTouch : '');
     const practice = this.game.mode === 'practice';
     if (d === 'gamepad') return STR.race.hintGamepad + (manual ? STR.race.hintGearsGamepad : '') + (practice ? STR.race.hintRestartGamepad : '');
-    return keyboardHint(settings().keys, { manual, practice });
+    return keyboardHint(settings().keys, { manual, practice, tower: this.opponents.length > 0 });
   }
 
   private onAction(a: InputAction): void {
@@ -535,6 +554,13 @@ export class RaceScreen implements Screen {
     else if (this.paused) return;
     else if (a === 'reset') this.onReset();
     else if (a === 'camera') this.rig.toggle();
+    else if (a === 'tower') {
+      // Full → compact → hidden → full.
+      const next = ({ full: 'compact', compact: 'off', off: 'full' } as const)[this.tower.mode];
+      this.tower.mode = next;
+      updateSettings({ tower: next });
+      this.towerIn = 0;
+    }
   }
 
   /** R puts the car back on the road; in practice, R twice quickly restarts the lap from the grid. */
@@ -624,6 +650,13 @@ export class RaceScreen implements Screen {
     for (const o of this.opponents) {
       this.aiEvents.length = 0;
       o.ai.session.step(o.prev, this.progress(o.ai.car), this.aiEvents);
+    }
+    // Timing: when each car passes each mark of the race distance.
+    const gaps = this.gaps;
+    if (gaps) {
+      const now = session.time();
+      gaps.update(0, session.raceDistance(car.state.s), now);
+      this.opponents.forEach((o, k) => gaps.update(k + 1, o.ai.session.raceDistance(o.ai.car.state.s), now));
     }
     if (session.lapStart !== null && session.phase === 'racing') {
       this.recorder.push(car.state.x, car.state.z, car.state.heading);
@@ -768,6 +801,7 @@ export class RaceScreen implements Screen {
    */
   private standings(): Entry[] {
     const you: Entry = {
+      idx: 0,
       name: STR.results.you,
       you: true,
       paint: currentPaintHex(),
@@ -776,7 +810,8 @@ export class RaceScreen implements Screen {
       end: this.session!.runEnd,
       dist: this.session!.raceDistance(this.car!.state.s),
     };
-    const ai = this.opponents.map((o): Entry => ({
+    const ai = this.opponents.map((o, k): Entry => ({
+      idx: k + 1,
       name: o.ai.name,
       you: false,
       paint: o.ai.paint,
@@ -849,6 +884,65 @@ export class RaceScreen implements Screen {
     }
     this.lineOverlay.mesh.visible = true;
     this.lineOverlay.update(this.view.trackIndex, this.view.speed, mode);
+  }
+
+  /**
+   * The timing tower: everyone in race order with the gap to you, their tyres
+   * and stops, and (with tyre wear) where you'd rejoin if you stopped now.
+   */
+  private updateTower(): void {
+    const gaps = this.gaps;
+    const s = this.session;
+    const car = this.car;
+    if (!gaps || !s || !car || this.stage !== 'run') {
+      this.tower.hide();
+      return;
+    }
+    const T = STR.tower;
+    const order = this.standings();
+    const you = order.find((e) => e.you);
+    if (!you) return;
+    const now = s.time();
+    const L = s.length;
+    const gapTo = (e: Entry) => (e.end !== null && you.end !== null ? e.end - you.end : gaps.gap(e.idx, e.dist, 0, you.dist, now));
+    const rows: TowerRow[] = order.map((e, i) => {
+      const o = e.idx > 0 ? this.opponents[e.idx - 1] : null;
+      const phys = o ? o.ai.car : car;
+      return {
+        pos: i + 1,
+        name: e.name,
+        paint: e.paint,
+        you: e.you,
+        gap: e.you ? '' : formatGap(gapTo(e), you.dist - e.dist, L, T.lap, T.laps),
+        tyre: phys.wear ? phys.compound : null,
+        tyreAge: phys.tyreAge,
+        tyreLeft: phys.tyreLeft,
+        stops: (o ? o.ai.crew?.stops : this.crew?.stops) ?? 0,
+        pit: o ? o.ai.pitting : !!this.crew?.busy,
+        finished: e.end !== null,
+      };
+    });
+    // With tyre wear: where a stop now would put you (the cars behind you by less than a stop costs get by).
+    let footer: string | null = null;
+    if (car.wear && s.phase === 'racing' && s.lapStart !== null && you.end === null) {
+      const loss = pitLoss(this.game.track);
+      let passed = 0;
+      let behind: Entry | null = null;
+      let most = -1;
+      for (const e of order) {
+        if (e.you || e.end !== null || you.dist - e.dist >= L) continue;
+        const g = gapTo(e);
+        if (g === null || g < 0 || g >= loss) continue;
+        passed++;
+        if (g > most) {
+          most = g;
+          behind = e;
+        }
+      }
+      const pos = order.indexOf(you) + 1;
+      footer = behind ? fmt(T.rejoin, { pos: `P${pos + passed}`, name: behind.name }) : fmt(T.rejoinKeep, { pos: `P${pos}` });
+    }
+    this.tower.update(rows, footer);
   }
 
   /** Advances the bot's timed lap a little; when done, the medal times are saved and shown. */
@@ -949,6 +1043,11 @@ export class RaceScreen implements Screen {
     this.touch.setManualGears(assists.gears === 'manual');
     this.updateLine(assists.line);
     this.hud.setSlipstream(car.draft, SLIPSTREAM.show);
+    this.towerIn -= dt;
+    if (this.towerIn <= 0) {
+      this.towerIn = 0.25;
+      this.updateTower();
+    }
     this.hud.setTyres(car.wear ? car.compound : null, car.tyreLeft, this.crew?.service ?? 0);
     this.updateHud(alpha);
     this.hud.tick(dt);

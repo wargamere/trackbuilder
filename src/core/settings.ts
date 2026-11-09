@@ -44,6 +44,8 @@ export interface Settings {
   assists: Assists;
   /** Keyboard keys for driving (see car/bindings.ts). */
   keys: KeyBindings;
+  /** The timing tower in races with AI cars: every car, just the cars near you (and the leaders), or hidden. */
+  tower: 'full' | 'compact' | 'off';
   /** Race setup choices (laps come from each track). */
   raceSetup: Omit<RaceSetup, 'laps'>;
 }
@@ -67,6 +69,7 @@ const DEFAULTS: Settings = {
   sidebarSection: 0,
   assists: DEFAULT_ASSISTS,
   keys: DEFAULT_BINDINGS,
+  tower: 'full',
   raceSetup: { mode: 'race', ghost: true, opponents: 3, difficulty: 50, grid: 'pick', startSlot: 4, weather: 'dry', time: 'track', tyreWear: false, tyres: 'medium' },
 };
 const KEY = 'settings';
