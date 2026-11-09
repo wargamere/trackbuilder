@@ -19,7 +19,7 @@ import { PreviewCar } from './previewCar.ts';
 import { repairTrack, type Fix } from './repair.ts';
 import { clampHeight, fitCrossings, pathPositions, rollingHeights, smoothHeights, softWeights, withHeights } from './heights.ts';
 import { LazyPen } from './pen.ts';
-import { dotsFromStroke, getSampleTrack, SAMPLE_COUNT, trackFromControl, type BuildResult } from './pipeline.ts';
+import { builtInTracks, dotsFromStroke, getSampleTrack, SAMPLE_COUNT, trackFromCode, trackFromControl, type BuildResult } from './pipeline.ts';
 import { drawProfile, inRect, profileDotAt, profileMetresPerPx, profileS, type Rect } from './profile.ts';
 import {
   confettiBurst,
@@ -44,7 +44,8 @@ import {
   toScreen,
   type Confetto,
 } from './render2d.ts';
-import { relaxTightCorners, quantizeBank, reverseDots, rotateDots, snapDot } from './smoothing.ts';
+import { quantizeControl, relaxTightCorners, quantizeBank, reverseDots, rotateDots, snapDot } from './smoothing.ts';
+import { generateTrack, type GenStyle } from './generate.ts';
 import { nearestSample, planSection, spliceSection } from './splice.ts';
 import { crossingKind, crossingsOf, type TrackIssue } from './validation.ts';
 import { Viewport, ZOOM } from './viewport.ts';
@@ -172,6 +173,10 @@ export class EditorScreen implements Screen {
   private keepState = false;
   /** State before a slider drag started (undone as one step). */
   private liveBefore: Snapshot | null = null;
+  /** The dots a shape slider (length, climb, corner smoothing) started from, with their length, height pattern (0..1) and climb. */
+  private shapeBase: { dots: Dot[]; length: number; pattern: number[]; climb: number } | null = null;
+  /** An image to trace over (it stays in this tab: never uploaded or saved), and how it's shown. */
+  private trace: { img: HTMLImageElement; url: string; opacity: number; size: number } | null = null;
   /** The corner whose bank slider is being dragged, its dots, and its bank = a0 + slope × override. */
   private cornerEdit: { corner: number; dots: number[]; a0: number; slope: number } | null = null;
   /** Track position highlighted by the profile cursor (Height mode). */
@@ -228,6 +233,16 @@ export class EditorScreen implements Screen {
         commitLive: () => this.commitLive(),
         cornerBank: (i, deg) => this.setCornerBank(i, deg),
         moveStart: (m) => this.moveStartBy(m),
+        generate: (style) => this.generate(style),
+        trackList: (group) => this.trackList(group),
+        loadTrack: (group, id) => this.loadListed(group, id),
+        loadCode: (text) => this.loadCode(text),
+        traceImage: (file) => this.traceImage(file),
+        traceLook: (look) => this.traceLook(look),
+        setLength: (m) => this.setLength(m),
+        setClimb: (m) => this.setClimb(m),
+        setCornerSmoothing: (r) => this.setCornerSmoothing(r),
+        bankAll: (deg) => this.bankAll(deg),
       },
       Array.from({ length: SAMPLE_COUNT }, (_, i) => getSampleTrack(i).def.name),
       settings().sidebarSection,
@@ -1264,6 +1279,7 @@ export class EditorScreen implements Screen {
   /** Ends a slider drag: records the undo step. */
   private commitLive(): void {
     this.cornerEdit = null;
+    this.shapeBase = null;
     if (!this.liveBefore) return;
     this.commit(this.liveBefore);
     this.liveBefore = null;
@@ -1310,6 +1326,134 @@ export class EditorScreen implements Screen {
       const r = { ...d };
       if (b === undefined) delete r.b;
       else r.b = b;
+      return r;
+    });
+    this.dirty = true;
+  }
+
+  // ---------------------------------------------------------- new tracks
+
+  /** A made-up track in `style` (see editor/generate.ts). */
+  private generate(style: GenStyle): void {
+    const name = STR.editorPlus.genNames[style];
+    const def = generateTrack(style, (Date.now() ^ Math.floor(Math.random() * 0x7fffffff)) >>> 0, name);
+    if (!def) {
+      this.note = { text: STR.editorPlus.genFailed, kind: 'warn' };
+      return;
+    }
+    this.loadLayout(def);
+  }
+
+  /** The tracks in a list (your saved ones, the game's or the real circuits), for the picker. */
+  private trackList(group: 'saved' | 'builtIn' | 'world'): { id: string; name: string; note: string }[] {
+    if (group === 'saved') return this.game.library.list().map((e) => ({ id: e.def.id, name: e.def.name, note: '' }));
+    return builtInTracks()
+      .filter((b) => b.group === group)
+      .map((b) => ({ id: b.def.id, name: b.def.name, note: b.def.place ?? '' }));
+  }
+
+  /** Loads a listed track to edit: a copy (editing a built-in makes a track of your own). */
+  private loadListed(group: 'saved' | 'builtIn' | 'world', id: string): void {
+    const def = group === 'saved' ? this.game.library.list().find((e) => e.def.id === id)?.def : builtInTracks().find((b) => b.def.id === id)?.def;
+    if (!def) return;
+    this.loadLayout({ ...def, id: 'editing', builtIn: false, control: def.control.map((p) => ({ ...p })), options: { ...def.options } });
+  }
+
+  /** Loads a pasted track code; returns the problem, or null when it loaded. */
+  private loadCode(text: string): string | null {
+    const res = trackFromCode(text);
+    if (!res.ok) return res.error === 'format' ? STR.editorPlus.codeBad : STR.editorPlus.codeDamaged;
+    const def = res.track.def;
+    this.loadLayout({ ...def, id: 'editing', builtIn: false, control: def.control.map((p) => ({ ...p })), options: { ...res.track.options } });
+    return null;
+  }
+
+  /** An image to trace over (null removes it). It's only read into this tab: never uploaded, saved or shared. */
+  private traceImage(file: File | null): void {
+    if (this.trace) URL.revokeObjectURL(this.trace.url);
+    this.trace = null;
+    if (!file) return;
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      this.trace = { img, url, opacity: 0.45, size: 1 };
+      this.note = { text: STR.editorPlus.traceLoaded, kind: 'ok' };
+      if (this.mode !== 'draw') this.setMode('draw');
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      this.note = { text: STR.editorPlus.traceBad, kind: 'warn' };
+    };
+    img.src = url;
+  }
+
+  private traceLook(look: { opacity?: number; size?: number }): void {
+    if (this.trace) Object.assign(this.trace, look);
+  }
+
+  // ---------------------------------------------------------- shape sliders
+
+  /** Starts (or continues) a shape slider's drag: the dots it works from. */
+  private shapeEdit(): NonNullable<EditorScreen['shapeBase']> | null {
+    if (this.shapeBase) return this.shapeBase;
+    this.rebuild();
+    if (!this.closed || this.dots.length < 3) return null;
+    this.liveBefore ??= this.snapshot();
+    const hs = this.dots.map((d) => d.h ?? 0);
+    const lo = Math.min(...hs);
+    const climb = Math.max(...hs) - lo;
+    let pattern = hs.map((h) => (climb > 0 ? (h - lo) / climb : 0));
+    if (climb < TRACK.heightStep) {
+      // A flat track: the climb slider raises a fresh set of rolling hills.
+      const pos = pathPositions([...this.dots, this.dots[0]]);
+      const hills = rollingHeights(pos.slice(0, this.dots.length), pos[this.dots.length], rng((Math.random() * 2 ** 31) | 0), [10, 10]);
+      const top = Math.max(...hills, 1e-6);
+      pattern = hills.map((h) => h / top);
+    }
+    this.shapeBase = { dots: this.dots.map((d) => ({ ...d })), length: this.trackLength(), pattern, climb };
+    return this.shapeBase;
+  }
+
+  /** Track length slider: the whole track scaled about its middle to `metres` (as far as the drawing area allows). */
+  private setLength(metres: number): void {
+    const b = this.shapeEdit();
+    if (!b || b.length < 1) return;
+    const xs = b.dots.map((d) => d.x);
+    const ys = b.dots.map((d) => d.y);
+    const cx = (Math.min(...xs) + Math.max(...xs)) / 2;
+    const cy = (Math.min(...ys) + Math.max(...ys)) / 2;
+    const w = Math.max(...xs) - Math.min(...xs);
+    const hgt = Math.max(...ys) - Math.min(...ys);
+    const s = Math.min(metres / b.length, (WORLD.width - 20) / Math.max(1, w), (WORLD.height - 20) / Math.max(1, hgt));
+    this.dots = quantizeControl(b.dots.map((d) => ({ ...d, x: (d.x - cx) * s, y: (d.y - cy) * s })));
+    this.dirty = true;
+  }
+
+  /** Terrain slider: the climb (lowest to highest point, m), the hills' shape kept (a flat track gets new ones). */
+  private setClimb(metres: number): void {
+    const b = this.shapeEdit();
+    if (!b) return;
+    const top = Math.min(TRACK.maxHeight, metres);
+    this.dots = withHeights(b.dots, b.pattern.map((p) => Math.round((p * top) / TRACK.heightStep) * TRACK.heightStep));
+    this.dirty = true;
+  }
+
+  /** Corner smoothing slider: corners opened up to at least `radius` m (0: as they were). */
+  private setCornerSmoothing(radius: number): void {
+    const b = this.shapeEdit();
+    if (!b) return;
+    this.dots = radius <= 0 ? b.dots.map((d) => ({ ...d })) : relaxTightCorners(b.dots, radius);
+    this.dirty = true;
+  }
+
+  /** Banking, every corner: every dot's bank set to `deg` (as the banking level's angle; null: back to the level, 0: flat). */
+  private bankAll(deg: number | null): void {
+    if (!this.dots.length) return;
+    this.liveBefore ??= this.snapshot();
+    this.dots = this.dots.map((d) => {
+      const r = { ...d };
+      if (deg === null) delete r.b;
+      else r.b = quantizeBank(deg);
       return r;
     });
     this.dirty = true;
@@ -1507,6 +1651,9 @@ export class EditorScreen implements Screen {
       corners: this.closed && t ? this.cornerInfo() : [],
       pitsNoRoom: !!t && this.closed && this.options.pits && !pitLayout(t),
       saved: this.closed && !!t && this.game.library.has(contentId(this.dots, this.options)),
+      climb: this.dots.length ? Math.max(...this.dots.map((d) => d.h ?? 0)) - Math.min(...this.dots.map((d) => d.h ?? 0)) : 0,
+      bankAll: this.bankAllState(),
+      tracing: !!this.trace,
     });
 
     if (this.stroke && !this.section) {
@@ -1534,6 +1681,13 @@ export class EditorScreen implements Screen {
       ui.setMessage(fmt(STR.editor.ready, { len: (t.center.length / 1000).toFixed(2), corners: t.kerbs.length, crossings }), 'ok');
     } else if (this.dots.length) ui.setMessage(fmt(STR.editor.openPath, { n: this.dots.length }), 'info');
     else ui.setMessage(this.mode === 'draw' ? STR.editor.hintDraw : STR.editor.hintDots, 'info');
+  }
+
+  /** Every dot's bank if they're all set the same (degrees), 'mixed', or null (all on the track's level). */
+  private bankAllState(): number | 'mixed' | null {
+    const bs = this.dots.map((d) => d.b);
+    if (bs.every((b) => b === undefined)) return null;
+    return bs.every((b) => b === bs[0]) ? (bs[0] as number) : 'mixed';
   }
 
   /** Typical distance between neighbouring dots on screen (px). */
@@ -1573,6 +1727,17 @@ export class EditorScreen implements Screen {
     const ctx = s.begin();
     const v = this.view;
     drawPaper(ctx, v, s.w, s.h);
+    if (this.trace) {
+      // The image to trace, fitted to the drawing area (× its size), under everything else.
+      const { img, opacity, size } = this.trace;
+      const fitS = Math.min(WORLD.width / img.width, WORLD.height / img.height) * size;
+      const w = img.width * fitS;
+      const hh = img.height * fitS;
+      ctx.save();
+      ctx.globalAlpha = opacity;
+      ctx.drawImage(img, v.ox - (w / 2) * v.scale, v.oy - (hh / 2) * v.scale, w * v.scale, hh * v.scale);
+      ctx.restore();
+    }
     if (this.celebrate) {
       this.celebrate = false;
       if (good && !reducedMotion()) {

@@ -2,6 +2,7 @@ import { STR, fmt } from '../config/strings.ts';
 import { TRACK, type SmoothingLevel, type TrackOptions } from '../config/track.ts';
 import type { Settings } from '../core/settings.ts';
 import { STARTERS, starterTrack, type StarterId } from '../editor/starters.ts';
+import { GEN_STYLES, type GenStyle } from '../editor/generate.ts';
 import type { TrackStats } from '../track/stats.ts';
 import { button, h, segmented, slider, type Choice, type Slider } from './dom.ts';
 import { drawThumbnail } from './thumbnail.ts';
@@ -58,6 +59,22 @@ export interface EditorActions {
   cornerBank(i: number, deg: number | null): void;
   /** Slides the start line along the road (metres; negative = back). */
   moveStart(metres: number): void;
+  /** A made-up track of a style. */
+  generate(style: GenStyle): void;
+  /** Tracks to pick from, and loading one (a copy) to edit. */
+  trackList(group: 'saved' | 'builtIn' | 'world'): { id: string; name: string; note: string }[];
+  loadTrack(group: 'saved' | 'builtIn' | 'world', id: string): void;
+  /** Loads a pasted code; the problem, or null when it loaded. */
+  loadCode(text: string): string | null;
+  /** An image to trace over (null removes it), and how it's shown. */
+  traceImage(file: File | null): void;
+  traceLook(look: { opacity?: number; size?: number }): void;
+  /** Shape sliders (live; commitLive on release): lap length (m), climb (m), corner smoothing (min radius, m). */
+  setLength(metres: number): void;
+  setClimb(metres: number): void;
+  setCornerSmoothing(radius: number): void;
+  /** Every corner's bank (degrees, as the banking level's; null: back to the level). */
+  bankAll(deg: number | null): void;
 }
 
 /** One numbered corner, for the Corners section. */
@@ -102,6 +119,12 @@ export interface EditorViewState {
   pitsNoRoom: boolean;
   /** The track as it is now is in My tracks. */
   saved: boolean;
+  /** Highest minus lowest dot (m). */
+  climb: number;
+  /** Every corner's bank if they're all the same (degrees), 'mixed', or null (the track's level). */
+  bankAll: number | 'mixed' | null;
+  /** An image is being traced. */
+  tracing: boolean;
 }
 
 function checkbox(label: string, onChange: (on: boolean) => void): { el: HTMLElement; input: HTMLInputElement } {
@@ -191,7 +214,15 @@ export class EditorUI {
     minimap: HTMLInputElement;
     cornerLabels: HTMLInputElement;
     car: HTMLInputElement;
+    drawHow: Choice<'draw' | 'dots'>;
+    length: Slider;
+    climb: Slider;
+    bankAll: Slider;
+    bankAllState: HTMLElement;
+    traceTools: HTMLElement;
   };
+  private readonly picker: HTMLDialogElement;
+  private cornerSel = -1;
   private cornerKey = '';
   private cornerActions: EditorActions | null = null;
   private cornerRows: { slider: Slider; auto: HTMLElement; label: HTMLElement }[] = [];
@@ -335,6 +366,78 @@ export class EditorUI {
       (['kmh', 'mph'] as const).map((v) => [v, S.unitNames[v]] as [string, string]),
       (v) => actions.setDisplay({ units: v as Settings['units'] }),
     );
+    // ---- new tools (Draw, Size & shape, Corners)
+    const P = STR.editorPlus;
+    this.picker = h('dialog', { class: 'track-picker' }) as HTMLDialogElement;
+    const pick = (group: 'saved' | 'builtIn' | 'world' | 'code') => this.openPicker(actions, group);
+    const pickRow = h(
+      'div',
+      { class: 'row wrap' },
+      button(P.saved, () => pick('saved'), { icon: '💾', class: 'compact' }),
+      button(P.builtIn, () => pick('builtIn'), { icon: '★', class: 'compact' }),
+      button(P.world, () => pick('world'), { icon: '🌍', class: 'compact' }),
+      button(P.code, () => pick('code'), { icon: '⌨', class: 'compact' }),
+    );
+    const drawHow = segmented<'draw' | 'dots'>(
+      [
+        ['draw', P.freehand, '✎'],
+        ['dots', P.dots, '◇'],
+      ],
+      (m) => actions.setMode(m),
+    );
+    const genGrid = h(
+      'div',
+      { class: 'gen-grid' },
+      ...GEN_STYLES.map((g) => button(P.gen[g], () => actions.generate(g), { class: 'compact', title: P.genHints[g] })),
+    );
+    const traceInput = h('input', { class: 'visually-hidden' }) as HTMLInputElement;
+    traceInput.type = 'file';
+    traceInput.accept = 'image/*';
+    traceInput.addEventListener('change', () => {
+      const f = traceInput.files?.[0] ?? null;
+      if (f) actions.traceImage(f);
+      traceInput.value = '';
+    });
+    const traceOpacity = slider(0.1, 1, 0.05, (v) => actions.traceLook({ opacity: v }), () => {}, (v) => `${Math.round(v * 100)}%`);
+    traceOpacity.set(0.45);
+    const traceSize = slider(0.3, 3, 0.05, (v) => actions.traceLook({ size: v }), () => {}, (v) => `${Math.round(v * 100)}%`);
+    traceSize.set(1);
+    const traceTools = h(
+      'div',
+      { class: 'trace-tools' },
+      field(P.traceOpacity, traceOpacity.el),
+      field(P.traceSize, traceSize.el),
+      button(P.traceRemove, () => actions.traceImage(null), { icon: '×', class: 'compact' }),
+    );
+    const traceRow = h(
+      'div',
+      {},
+      traceInput,
+      button(P.traceChoose, () => traceInput.click(), { icon: '🖼', class: 'compact' }),
+      traceTools,
+      h('p', { class: 'help', text: P.traceNote }),
+    );
+    const lengthSl = slider(TRACK.minLength, 2400, 10, (m) => actions.setLength(m), actions.commitLive, (m) => fmt(P.lengthValue, { km: (m / 1000).toFixed(2) }));
+    const climbSl = slider(0, TRACK.maxHeight, 0.5, (m) => actions.setClimb(m), actions.commitLive, (m) => (m < 0.5 ? P.climbFlat : fmt(P.climbValue, { m: Math.round(m) })));
+    const smoothSl = slider(0, 40, 1, (r) => actions.setCornerSmoothing(r), actions.commitLive, (r) => (r < 1 ? P.smoothingAsDrawn : fmt(P.smoothingValue, { r })));
+    smoothSl.set(0);
+    const bankAllSl = slider(0, 20, 0.5, (d) => actions.bankAll(d), actions.commitLive, (d) => fmt(P.bankValue, { d }));
+    const bankAllState = h('span', { class: 'bank-all-state' });
+    const cornerNav = h(
+      'div',
+      { class: 'row wrap' },
+      button('', () => this.stepCorner(actions, -1), { icon: '‹', class: 'compact', title: P.prevCorner }),
+      button('', () => this.stepCorner(actions, 1), { icon: '›', class: 'compact', title: P.nextCorner }),
+      button(P.flattenAll, () => {
+        actions.bankAll(0);
+        actions.commitLive();
+      }, { icon: '▬', class: 'compact' }),
+      button(P.levelAll, () => {
+        actions.bankAll(null);
+        actions.commitLive();
+      }, { icon: '↺', class: 'compact' }),
+    );
+
     const minimap = checkbox(S.minimap, (on) => actions.setDisplay({ minimap: on }));
     const cornerLabels = checkbox(S.cornerLabels, (on) => actions.setDisplay({ cornerLabels: on }));
     const car = checkbox(T.carToggle, (on) => actions.setDisplay({ editorCar: on }));
@@ -361,6 +464,12 @@ export class EditorUI {
       minimap: minimap.input,
       cornerLabels: cornerLabels.input,
       car: car.input,
+      drawHow,
+      length: lengthSl,
+      climb: climbSl,
+      bankAll: bankAllSl,
+      bankAllState,
+      traceTools,
     };
 
     this.pointLabel = h('p', { class: 'studio-point-label', text: T.pointNone });
@@ -382,18 +491,19 @@ export class EditorUI {
       [
         S.sections.draw,
         [
-          h('div', { class: 'studio-section-intro' },
-            h('span', { class: 'label', text: T.starterLabel }),
-            h('p', { class: 'help', text: T.starterHelp })),
-          this.starterCards(actions, false),
+          field(P.pickTrack, pickRow),
+          field(P.howDraw, drawHow.el),
+          field(P.generate, genGrid),
           h('div', { class: 'row wrap' },
             button(T.surprise, actions.surprise, { icon: '🎲', class: 'studio-surprise', title: T.surpriseHint }),
             button(T.blank, actions.clear, { icon: '+', class: 'studio-new', title: T.blank })),
+          field(P.trace, traceRow),
           heightTools,
           field(STR.editor.optSmoothing, smoothing.el),
           snap.el,
           soft.el,
-          h('details', { class: 'studio-details' }, h('summary', { text: STR.editor.optSamples }), samples),
+          h('details', { class: 'studio-details' }, h('summary', { text: P.moreStarts }),
+            h('p', { class: 'help', text: T.starterHelp }), this.starterCards(actions, false), samples),
           pointInspector,
           h('details', { class: 'studio-details' }, h('summary', { text: T.moreTips }), h('p', { class: 'help', text: STR.editor.optHelp })),
         ],
@@ -401,7 +511,7 @@ export class EditorUI {
       [
         S.sections.shape,
         [
-          button(T.soften, actions.soften, { icon: '∿', class: 'compact' }),
+          field(P.length, lengthSl.el),
           field(S.roadWidth, width.el),
           h('div', { class: 'row wrap' }, ...[10, 12, 15].map((w) => button(fmt(S.widthValue, { w }), () => opt({ width: w }), { class: 'compact' }))),
           field(
@@ -415,11 +525,20 @@ export class EditorUI {
               button(S.mirror, () => actions.transform('mirror'), { icon: '⇋' }),
             ),
           ),
-          field(S.terrain, terrain.el, h('div', { class: 'row wrap' }, button(STR.editor.smoothHeights, actions.smoothHeights, { icon: '∿' }))),
-          h('p', { class: 'help', text: S.terrainHelp }),
+          field(P.climb, climbSl.el, terrain.el, h('div', { class: 'row wrap' }, button(STR.editor.smoothHeights, actions.smoothHeights, { icon: '∿' }))),
+          h('p', { class: 'help', text: `${P.climbHelp} ${S.terrainHelp}` }),
+          field(P.cornerSmoothing, smoothSl.el, h('div', { class: 'row wrap' }, button(T.soften, actions.soften, { icon: '∿', class: 'compact' }))),
         ],
       ],
-      [S.sections.corners, [field(STR.editor.optBanking, banking.el), field(S.cornerListLabel, cornerList)]],
+      [
+        S.sections.corners,
+        [
+          field(STR.editor.optBanking, banking.el),
+          field(P.bankAll, bankAllState, bankAllSl.el),
+          cornerNav,
+          field(S.cornerListLabel, cornerList),
+        ],
+      ],
       [
         S.sections.start,
         [
@@ -644,6 +763,64 @@ export class EditorUI {
     if (this.message.className !== cls) this.message.className = cls;
   }
 
+  /** The track picker: a list of saved, built-in or real tracks, or a box to paste a code into. */
+  private openPicker(actions: EditorActions, group: 'saved' | 'builtIn' | 'world' | 'code'): void {
+    const P = STR.editorPlus;
+    const d = this.picker;
+    const close = button(P.close, () => d.close(), { icon: '×', class: 'compact' });
+    let body: HTMLElement;
+    if (group === 'code') {
+      const input = h('input', { class: 'text-input' }) as HTMLInputElement;
+      input.type = 'text';
+      input.placeholder = P.codePlaceholder;
+      input.setAttribute('aria-label', P.codePlaceholder);
+      input.addEventListener('keydown', (e) => e.stopPropagation());
+      const err = h('p', { class: 'help warn' });
+      err.hidden = true;
+      const load = () => {
+        const problem = actions.loadCode(input.value);
+        err.textContent = problem ?? '';
+        err.hidden = !problem;
+        if (!problem) d.close();
+      };
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') load();
+      });
+      body = h('div', { class: 'picker-code' }, input, button(P.codeLoad, load, { icon: '⤓', class: 'primary compact' }), err);
+      setTimeout(() => input.focus(), 0);
+    } else {
+      const items = actions.trackList(group);
+      body = items.length
+        ? h(
+            'div',
+            { class: 'picker-list' },
+            ...items.map((it) =>
+              button(it.note ? `${it.name} · ${it.note}` : it.name, () => {
+                actions.loadTrack(group, it.id);
+                d.close();
+              }, { class: 'picker-item' }),
+            ),
+          )
+        : h('p', { class: 'help', text: P.pickerEmpty });
+    }
+    d.replaceChildren(
+      h('div', { class: 'picker-head' }, h('h3', { text: P.pickerTitles[group] }), close),
+      group === 'code' ? h('span', {}) : h('p', { class: 'help', text: P.pickerHelp }),
+      body,
+    );
+    if (!d.isConnected) this.root.append(d);
+    if (!d.open) d.showModal();
+  }
+
+  /** ‹ › in Corners: the previous or next numbered corner, zoomed in on. */
+  private stepCorner(actions: EditorActions, dir: number): void {
+    const n = this.cornerRows.length;
+    if (!n) return;
+    this.cornerSel = (((this.cornerSel < 0 ? (dir > 0 ? -1 : 0) : this.cornerSel) + dir) % n + n) % n;
+    actions.focusCorner(this.cornerSel);
+    this.cornerRows.forEach((r, i) => r.label.closest('.corner-row')?.classList.toggle('picked', i === this.cornerSel));
+  }
+
   setState(s: EditorViewState): void {
     const S = STR.sidebar;
     const T = STR.studio;
@@ -680,6 +857,13 @@ export class EditorUI {
     c.snap.checked = s.snap;
     c.soft.checked = s.soft;
     c.width.set(o.width);
+    c.drawHow.set(s.mode === 'draw' || s.mode === 'dots' ? s.mode : ('' as 'draw'));
+    if (s.stats) c.length.set(s.stats.length);
+    c.climb.set(s.climb);
+    c.traceTools.hidden = !s.tracing;
+    const bankState = s.bankAll === 'mixed' ? STR.editorPlus.bankMixed : s.bankAll === null ? STR.editorPlus.bankLevel : '';
+    if (c.bankAllState.textContent !== bankState) c.bankAllState.textContent = bankState;
+    if (typeof s.bankAll === 'number') c.bankAll.set(s.bankAll);
     c.terrain.set(s.stats?.terrain ?? 'flat');
     c.banking.set(o.banking);
     c.laps.set(o.laps);

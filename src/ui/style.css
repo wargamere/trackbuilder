@@ -3181,3 +3181,109 @@ html:not([data-screen="race"]) .rotate-prompt { display: none; }
 .hud-weather[hidden] {
   display: none;
 }
+
+/* ------------------------------------------------ editor: newer tools */
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* Generate one: three a row. */
+.gen-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.35rem;
+}
+
+.gen-grid .btn {
+  justify-content: center;
+}
+
+.trace-tools {
+  margin-top: 0.4rem;
+}
+
+.trace-tools[hidden] {
+  display: none;
+}
+
+.bank-all-state {
+  font-weight: 800;
+  font-size: 0.8rem;
+  color: var(--highlight-ink, #b07d00);
+}
+
+.corner-row.picked {
+  outline: 2px solid var(--highlight);
+  border-radius: 0.5rem;
+}
+
+/* The track picker: the game's panel look, a scrolling list of tracks. */
+.track-picker {
+  width: min(28rem, calc(100vw - 24px));
+  max-height: 85dvh;
+  overflow: auto;
+  padding: 1rem 1.2rem 1.1rem;
+  border: 0;
+  border-radius: 1rem;
+  background: var(--panel);
+  color: #2a3150;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.35);
+  pointer-events: auto;
+}
+
+.track-picker::backdrop {
+  background: rgba(10, 14, 24, 0.55);
+}
+
+.picker-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.picker-head h3 {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 900;
+  color: var(--ink);
+}
+
+.track-picker .help {
+  margin: 0.35rem 0 0.6rem;
+  font-size: 0.82rem;
+  color: #4a5270;
+}
+
+.picker-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.picker-list .picker-item {
+  justify-content: flex-start;
+  text-align: left;
+}
+
+.picker-code {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.6rem;
+}
+
+.picker-code .text-input {
+  flex: 1;
+  min-width: 12rem;
+}
+
+.picker-code .help {
+  flex-basis: 100%;
+}

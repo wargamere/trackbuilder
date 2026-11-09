@@ -168,6 +168,89 @@ test('Pan moves the map without editing the track, and tool buttons keep native 
   assert.equal(game.track.def.control.length, 16);
 });
 
+const message = () => ui.querySelector('.message')?.textContent ?? '';
+const slide = (label: string, value: number) => {
+  frame();
+  const input = ui.querySelector<TestInput>(`input[type="range"][aria-label="${label}"]`);
+  assert.ok(input, `slider ${label} exists`);
+  input.value = String(value);
+  input.dispatchEvent(new win.Event('input', { bubbles: true }));
+  input.dispatchEvent(new win.Event('change', { bubbles: true }));
+  frame();
+};
+const built = () => {
+  click('Test drive');
+  return game.track;
+};
+
+test('Generate makes a fresh track of each style, one undo step each', () => {
+  click('Easy oval: Wide turns. Find your flow.');
+  for (const style of ['Grand Prix', 'Flowing', 'Technical', 'Street', 'Oval', 'Kart']) {
+    click(style);
+    assert.match(message(), /is yours to change/, style);
+    assert.equal(built().def.name.length > 0, true);
+  }
+  assert.equal(game.track.def.name, 'Kart track');
+  click('Undo (Z)');
+  assert.equal(built().def.name, 'Speedway');
+});
+
+test('Pick a track loads a real circuit or a pasted code as a copy of your own', async () => {
+  const { encodeTrack } = await import('../src/track/code.ts');
+  click('Real circuits');
+  const monza = [...ui.querySelectorAll<TestButton>('.track-picker button')].find((b) => b.textContent?.startsWith('Monza'));
+  assert.ok(monza, 'Monza is listed');
+  monza.click();
+  frame();
+  const t = built();
+  assert.equal(t.def.name, 'Monza');
+  assert.notEqual(t.def.builtIn, true, 'a copy of your own');
+  const easy = getSampleTrack(0);
+  click('Paste a code');
+  const box = ui.querySelector<TestInput>('.track-picker input[type="text"]');
+  assert.ok(box);
+  box.value = 'not a code';
+  click('Load');
+  assert.equal(ui.querySelector('.track-picker .help.warn')?.textContent, 'That isn’t a track code.');
+  // (A built-in's own code loads under its own name, so this one is changed a little.)
+  const moved = easy.def.control.map((d, i) => (i === 0 ? { ...d, x: d.x + 2 } : d));
+  box.value = encodeTrack('Pasted', moved, easy.def.options);
+  click('Load');
+  assert.equal(built().def.name, 'Pasted');
+  assert.equal(game.track.def.control.length, easy.def.control.length);
+});
+
+test('Size & shape sliders: length, terrain climb and corner smoothing, each one undo step', () => {
+  click('Grand Prix');
+  const before = built().center.length;
+  slide('Track length', 1000);
+  const after = built().center.length;
+  assert.ok(Math.abs(after - 1000) < 80, `about 1 km: ${after.toFixed(0)} m (was ${before.toFixed(0)} m)`);
+  click('Undo (Z)');
+  assert.ok(Math.abs(built().center.length - before) < 1, 'undo puts the length back');
+  slide('Terrain', 0);
+  assert.equal(Math.max(...built().def.control.map((d) => d.h ?? 0)), 0, 'flat');
+  slide('Terrain', 20);
+  const hs = built().def.control.map((d) => d.h ?? 0);
+  assert.equal(Math.max(...hs) - Math.min(...hs), 20, '20 m from lowest to highest');
+  const tight = built().center.curvature.reduce((m, k) => Math.max(m, Math.abs(k)), 0);
+  slide('Corner smoothing', 30);
+  const eased = built().center.curvature.reduce((m, k) => Math.max(m, Math.abs(k)), 0);
+  assert.ok(eased < tight, `corners opened up: tightest radius ${(1 / tight).toFixed(0)} → ${(1 / eased).toFixed(0)} m`);
+});
+
+test('Banking, every corner sets and clears every bank at once', () => {
+  click('Grand Prix');
+  slide('Banking, every corner', 12);
+  assert.ok(built().def.control.every((d) => d.b === 12));
+  click('Flatten all');
+  assert.ok(built().def.control.every((d) => d.b === 0));
+  click('Back to the level');
+  assert.ok(built().def.control.every((d) => d.b === undefined));
+  click('Undo (Z)');
+  assert.ok(built().def.control.every((d) => d.b === 0), 'undo brings back the flat corners');
+});
+
 test('small screens expose sidebar sections by name with expansion state', () => {
   Object.assign(game.surface, { w: 600, h: 380 });
   editor.resize(); frame();

@@ -140,13 +140,24 @@ A track is a closed loop of **dots** with a smooth spline through them (`TrackDe
 
 | Section | What's in it |
 |---|---|
-| 1 Draw | Four visual starter layouts, Surprise me remixes, a blank page, smoothing, snap, soft editing, sample tracks and precise point controls |
-| 2 Size & shape | Road width slider (8–20 m, with 10 / 12 / 15 m shortcuts), smaller / bigger / rotate / mirror the whole track, terrain (flat / rolling / hilly random hills, smooth) |
-| 3 Corners | Banking level for the whole track (off / normal / steep), and a bank slider (0–30°) for every numbered corner, with Auto to go back to the level; tap a corner's number to zoom to it |
+| 1 Draw | **Pick a track** to edit (your saved ones, the game's, the real circuits, or paste a code), how you draw (Freehand / Dots), **generate one** (Grand Prix / Flowing / Technical / Street / Oval / Kart), Surprise me, a blank page, **trace an image**, smoothing, snap, soft editing, the starters and samples, and precise point controls |
+| 2 Size & shape | **Track length** slider, road width slider (8–20 m, with 10 / 12 / 15 m shortcuts), **terrain climb** slider (flat to 40 m) and flat / rolling / hilly presets, smooth heights, **corner smoothing** slider, smaller / bigger / rotate / mirror the whole track |
+| 3 Corners | Banking level for the whole track (off / normal / steep), **banking for every corner at once** (shows Mixed when they differ), ‹ › to step from corner to corner, Flatten all, Back to the level, and a bank slider (0–30°) for every numbered corner, with Auto to go back to the level; tap a corner's number to zoom to it |
 | 4 Start & pits | Laps per race (1 / 3 / 5), pit building on/off, move the start/finish line 10 m back or on, reverse direction |
 | 5 Track edges | Kerbs (raised / flat / none), run-off (grass / gravel / tarmac), barriers (none / concrete / tyres) |
 | 6 Scenery & world | Meadow / Desert / Snow, day / sunset, few / normal / lots of trees |
 | 7 Display | Graphics full / fast, km/h or mph, minimap in the race, corner numbers on the map, the preview car (player settings, not part of the track) |
+
+**New tools in Draw, Size & shape and Corners.**
+- **Pick a track** opens a list (your saved tracks, the game's tracks, the real circuits) or a box to paste a track code or link into. Whatever you pick loads as a copy of your own, one undo step.
+- **Generate one** (`editor/generate.ts`) makes up a new track in a style, checked to build, not cross itself and fit the paper (it tries the next seed if not):
+  - *Grand Prix*, *Flowing*, *Technical* and *Kart*: the hull of random points, its edges bent in and out, points too close pushed apart, then smoothed with the corners opened up to the style's tightest radius (Kart: small, 8 m wide, tight hairpins, no pits; Flowing: nothing under 32 m).
+  - *Street*: the outline of a random block of city squares, so straights and right-angle corners, with walls.
+  - *Oval*: two long straights and two big banked ends, sometimes a tri-oval.
+  - Each starts a little way along its longest straight, gets options to suit, and some get rolling hills.
+- **Trace an image**: load a picture (a map, a sketch) under the paper and draw over it, with see-through and size sliders. It's only read into the open tab: never uploaded, saved or shared.
+- **Track length** scales the whole track about its middle (as far as the paper allows); **Terrain** sets the climb from the lowest to the highest point and keeps the hills' shape (a flat track gets new rolling hills); **Corner smoothing** opens up every corner tighter than the radius you pick. Each slider drag is one undo step.
+- **Banking, every corner** sets every corner's bank at once; Flatten all sets them all to 0°, and Back to the level clears them.
 
 **Fast starts and accessible editing.** Starter cards show the real layout before loading it. Surprise me uses the tested generated-track catalog, with mirrored and reversed variants, and creates an editable copy. Every layout change is undoable. Reshape is the initial tool for an existing track; a new blank page switches to Freehand.
 
@@ -521,7 +532,8 @@ Tested against the real SDK in its `local` mode (localhost): the SDK's own log s
 - [x] Car setup: wing, gears, brake balance; the AI teams pick the quickest wing for each track
 - [x] Changing weather: rain that comes and goes, a road that dries on the racing line first, and wet/slick calls for you and the AI
 - [x] Kinds of tyre (soft / medium / hard / wet) with a life that depends on the track (4–6 laps for mediums) and a heavy drop-off once they go; choose them at the start and at each stop; races up to 50 laps
+- [x] Editor: pick any track to edit, six track generators, trace an image, track length / terrain climb / corner smoothing sliders, banking for every corner at once
 
 ## Validation for the track editor
 
-`npm test` includes starter/remix validity, draft recovery and corruption handling, the former length-limit regression, score migration, Fix it on each kind of problem, the preview car's lap against the gold medal time, and DOM interaction tests for keyboard editing, undo/redo, Fix it and narrow layouts. `npm run build` typechecks and packages both web and CrazyGames variants. `.github/workflows/checks.yml` runs these checks on pull requests, then exercises the editor in Chromium and uploads desktop and mobile screenshots (`npm run test:browser`; set `PW_CHROMIUM` to use a Chromium that's already installed).
+`npm test` includes starter/remix validity, every generator style (valid, no crossings, on the paper, reproducible), draft recovery and corruption handling, the former length-limit regression, score migration, Fix it on each kind of problem, the preview car's lap against the gold medal time, and DOM interaction tests for keyboard editing, undo/redo, Fix it, generating, picking and pasting tracks, the shape sliders, banking every corner and narrow layouts. `npm run build` typechecks and packages both web and CrazyGames variants. `.github/workflows/checks.yml` runs these checks on pull requests, then exercises the editor in Chromium and uploads desktop and mobile screenshots (`npm run test:browser`; set `PW_CHROMIUM` to use a Chromium that's already installed).
