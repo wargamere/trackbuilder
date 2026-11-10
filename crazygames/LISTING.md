@@ -6,10 +6,10 @@ Everything for submitting the game on the [CrazyGames Developer Portal](https://
 
 | Launch | Command | Upload |
 |---|---|---|
-| **Basic Launch** (first; no ads) | `npm run package:cg` | `dist/track-builder-3d-crazygames-basic.zip` |
-| **Full Launch** (when CrazyGames invites you; ads on) | `npm run package:cg:ads` | `dist/track-builder-3d-crazygames-full.zip` |
+| **Basic Launch** (first; no ads) | `npm run package:cg` | `dist/crazygames/index.html` |
+| **Full Launch** (when CrazyGames invites you; ads on) | `npm run package:cg:ads` | `dist/crazygames/index.html` (rebuilt with ads on) |
 
-Each command builds the game, checks it against CrazyGames' limits and zips it with `index.html` at the top. The build is about 1 MB in 3 files, against limits of 50 MB initial download, 250 MB total and 1,500 files. That's small enough for the mobile homepage (20 MB). Before packaging, put the Supabase project details in `.env` (see [`../supabase/README.md`](../supabase/README.md)) so the zip includes cloud saves.
+Each command builds the game as **one self-contained `index.html`**: the game's code is inline in it, and the third-party notices are in a comment at the top. It also checks it against CrazyGames' limits, and writes a zip of it (`dist/track-builder-3d-crazygames-basic.zip` / `-full.zip`) in case the portal asks for one. The build is about 1 MB in one file, against limits of 50 MB initial download, 250 MB total and 1,500 files. That's small enough for the mobile homepage (20 MB). Before packaging, put the Supabase project details in `.env` (see [`../supabase/README.md`](../supabase/README.md)) so the zip includes cloud saves.
 
 ## 2. Store text (copy and paste)
 
@@ -55,7 +55,7 @@ Each command builds the game, checks it against CrazyGames' limits and zips it w
 | Ads | Basic Launch: none. Full Launch: midgame ads at natural breaks ("Race again" on the results screen) and an optional rewarded ad to unlock a paint colour early (paints also unlock by playing). |
 | Language | English |
 | Content | Racing, no violence; suitable for PEGI 12 |
-| Third-party content | Circuit outlines from bacinger/f1-circuits (MIT licence); the notice ships as `THIRD_PARTY_NOTICES.txt` in the zip. Tracks are named after places only, with no series or circuit brands. |
+| Third-party content | Circuit outlines from bacinger/f1-circuits and the three.js library (both MIT licence); their notices ship in a comment at the top of `index.html`. Tracks are named after places only, with no series or circuit brands. |
 
 ## 4. Covers and videos
 
@@ -73,7 +73,7 @@ The covers show real in-game footage plus the title only: no other text, icons, 
 
 | Requirement (CrazyGames docs) | Status |
 |---|---|
-| Initial download ≤ 50 MB (≤ 20 MB for the mobile homepage), total ≤ 250 MB, ≤ 1,500 files | ✅ about 1 MB, 3 files |
+| Initial download ≤ 50 MB (≤ 20 MB for the mobile homepage), total ≤ 250 MB, ≤ 1,500 files | ✅ about 1 MB, one file |
 | `index.html` at the zip's root, relative paths | ✅ checked by `scripts/size.mjs` |
 | Gameplay start / stop events | ✅ start when driving begins or resumes; stop on pause, menus, editor and results (checked against the SDK in local mode) |
 | Loading start / stop | ✅ from SDK init to the first rendered frame |
@@ -91,9 +91,9 @@ The covers show real in-game footage plus the title only: no other text, icons, 
 
 1. **Sign up** at developer.crazygames.com and finish onboarding. You can choose "hold payments" for now.
 2. **Supabase:** follow [`../supabase/README.md`](../supabase/README.md) (the project's URL and publishable key are already in `.env`), then run `npm run package:cg`.
-3. **Submit a game:** upload `dist/track-builder-3d-crazygames-basic.zip`, then fill in the text and answers above.
+3. **Submit a game:** upload `dist/crazygames/index.html`, then fill in the text and answers above.
 4. **Preview / QA tool** (in the portal): play a race to the end, try "Race again", pause and resume, open the editor, draw and race a track, mute from the CrazyGames bar, and try on a phone in landscape.
 5. **Upload** the three covers and the two videos, then **submit for Basic Launch**.
 6. **When invited to Full Launch:**
    - Set the Supabase function secret to the game's id: `supabase secrets set CG_GAME_ID=<id>`.
-   - Run `npm run package:cg:ads` and upload `dist/track-builder-3d-crazygames-full.zip` as the new version.
+   - Run `npm run package:cg:ads` and upload the new `dist/crazygames/index.html` as the new version.

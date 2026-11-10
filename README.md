@@ -18,7 +18,7 @@ npm run build:cg     # -> dist/crazygames, prints the build size (ads off: Basic
 npm run build:cg:ads # same with video ads enabled (Full Launch)
 ```
 
-Each build is `index.html` at the root plus one JS file. All paths are relative (`base: './'`). `scripts/size.mjs` fails the build if any asset path is absolute or the total is over 20 MB.
+The web build is `index.html` at the root plus one JS file. The CrazyGames build is a single self-contained `index.html`: the game's code is inline (the `single-file` step in `vite.config.ts`), and the third-party notices are in a comment at the top. All paths are relative (`base: './'`). `scripts/size.mjs` fails the build if any asset path is absolute or the total is over 20 MB.
 
 ## Web deploy (GitHub Pages)
 
@@ -617,7 +617,7 @@ The code follows https://docs.crazygames.com/sdk/intro/. It lives in `src/platfo
 
 Tested against the real SDK in its `local` mode (localhost): the SDK's own log showed loading start/stop, gameplay start/stop, happytime, rewarded and midgame ads, a username, and data reads in the expected order.
 
-**Submitting:** `npm run package:cg` (Basic Launch) or `npm run package:cg:ads` (Full Launch) builds, checks the CrazyGames limits and writes `dist/track-builder-3d-crazygames-basic.zip` / `-full.zip`, with `index.html` at the root and the third-party notices beside it. Upload that in the CrazyGames Developer Portal, and choose "Yes, using the Data Module" for Progress Save. The store listing, covers and checklist are in [`crazygames/`](crazygames/).
+**Submitting:** `npm run package:cg` (Basic Launch) or `npm run package:cg:ads` (Full Launch) builds, checks the CrazyGames limits and leaves one self-contained file to upload in the CrazyGames Developer Portal: `dist/crazygames/index.html`. It also writes a zip of it (`dist/track-builder-3d-crazygames-basic.zip` / `-full.zip`). Upload it in the portal, and choose "Yes, using the Data Module" for Progress Save. The store listing, covers and checklist are in [`crazygames/`](crazygames/).
 
 ## Status
 

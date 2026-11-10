@@ -15,4 +15,6 @@ try {
   console.error(`✗ couldn't run "zip": install it, or zip the contents of ${dir} by hand (index.html at the top level).`);
   process.exit(1);
 }
-console.log(`✓ ${out} (${(statSync(out).size / 1024).toFixed(0)} KB): upload this in the CrazyGames Developer Portal`);
+const page = resolve(dir, 'index.html');
+console.log(`✓ upload ${page} (${(statSync(page).size / 1024).toFixed(0)} KB, the whole game in one file) in the CrazyGames Developer Portal`);
+console.log(`  (or this zip of it: ${out}, ${(statSync(out).size / 1024).toFixed(0)} KB)`);

@@ -28,6 +28,36 @@ function thirdPartyNotices(): Plugin {
 }
 
 /**
+ * CrazyGames build: one self-contained index.html, as the Developer Portal
+ * takes a single file. The game's code goes inline in it (as a module script,
+ * so it still runs after the SDK, which loads first in <head>), and the
+ * third-party notices in a comment at the top, so they ship in every copy.
+ */
+function singleFile(): Plugin {
+  return {
+    name: 'single-file',
+    enforce: 'post',
+    generateBundle(_, bundle) {
+      const page = bundle['index.html'];
+      if (!page || page.type !== 'asset') throw new Error('single-file: no index.html');
+      let html = String(page.source);
+      for (const [name, file] of Object.entries(bundle)) {
+        if (file.type !== 'chunk') continue;
+        const tag = new RegExp(`<script[^>]*src="\\./${file.fileName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"[^>]*></script>`);
+        if (!tag.test(html)) throw new Error(`single-file: no script tag for ${file.fileName}`);
+        // (A "</script" inside the code would end the tag early; written "<\/script" it means the same.)
+        const code = file.code.replace(/<\/script/gi, '<\\/script');
+        html = html.replace(tag, () => `<script type="module">${code}</script>`);
+        delete bundle[name];
+      }
+      const notices = readFileSync('THIRD_PARTY_NOTICES.md', 'utf8').replace(/-->/g, '- ->');
+      html = html.replace(/^(<!doctype html>\s*)/i, `$1<!--\n${notices}\n-->\n`);
+      page.source = html;
+    },
+  };
+}
+
+/**
  * Build modes:
  *   vite build --mode web          -> dist/web
  *   vite build --mode crazygames   -> dist/crazygames
@@ -41,7 +71,8 @@ export default defineConfig(({ mode }) => {
   const platform = mode === 'crazygames' ? 'crazygames' : 'web';
   return {
     base: './',
-    plugins: platform === 'crazygames' ? [crazyGamesSdk(), thirdPartyNotices()] : [thirdPartyNotices()],
+    // (The CrazyGames build is one file: its notices go inside it.)
+    plugins: platform === 'crazygames' ? [crazyGamesSdk(), singleFile()] : [thirdPartyNotices()],
     define: {
       __PLATFORM__: JSON.stringify(platform),
       __ADS__: JSON.stringify(platform === 'crazygames' && process.env.ADS === '1'),
@@ -50,7 +81,7 @@ export default defineConfig(({ mode }) => {
       outDir: `dist/${platform}`,
       emptyOutDir: true,
       target: 'es2020',
-      // Inline every small asset so the build stays at index.html + one JS file.
+      // Inline every asset: the web build is index.html + one JS file, the CrazyGames build index.html alone.
       assetsInlineLimit: 1024 * 1024,
       modulePreload: { polyfill: false },
       // The CSS minifier drops the -moz-/-ms- user-select prefixes CrazyGames asks for.
