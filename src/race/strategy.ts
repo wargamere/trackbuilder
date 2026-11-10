@@ -53,14 +53,17 @@ export function preferredCompound(slot: number): Compound {
   return (['medium', 'hard', 'soft'] as const)[slot % 3];
 }
 
+/** From this wet (0..1) the wets are the quicker tyres (about where slicks and wets cross; see TYRES.compounds). */
+export const WET_FROM = 0.35;
+
 /**
- * The tyres to fit for `lapsLeft` laps: wets on a wet road (more than half
+ * The tyres to fit for `lapsLeft` laps: wets on a wet road (from WET_FROM
  * wet); in the dry the quickest kind that lasts to the finish (going off at
  * most CONDITIONS.pitEndSlack laps before it), else `preference` (there will
  * be another stop anyway).
  */
 export function pickCompound(lapsLeft: number, mediumLife: number, wetness: number, preference: Compound): Compound {
-  if (wetness >= 0.5) return 'wet';
+  if (wetness >= WET_FROM) return 'wet';
   for (const c of ['soft', 'medium', 'hard'] as const) if (compoundLife(c, 0, mediumLife) + CONDITIONS.pitEndSlack >= lapsLeft) return c;
   return preference;
 }

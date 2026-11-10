@@ -125,6 +125,8 @@ export const HANDLING = {
   /** Speed lost per m/s of impact, and the least speed kept. */
   wallScrub: 0.04,
   wallMinKeep: 0.55,
+  /** Into the barrier faster than this (m/s) is a knock that checks the car's rotation; slower is a scrape, which only checks a turn into it. */
+  wallKnock: 2,
   /** Half the car's body width (keeps the body, not the centre, off the barrier). */
   halfWidth: 1.0,
 

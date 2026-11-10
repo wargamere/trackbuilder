@@ -172,3 +172,25 @@ test('trees stop the car instead of letting it drive through', () => {
   assert.ok(minDist >= HANDLING.carRadius + 0.5 * tree.scale - 0.01, `got within ${minDist} m of the trunk`);
   assert.ok(car.state.x < tree.x + 5, 'did not pass through');
 });
+
+test('a car leaning on a barrier at an angle can steer away from it and drive off (scraping only checks a turn into it)', () => {
+  const t = getSampleTrack(0);
+  const car = new CarPhysics(t);
+  const c = t.center;
+  // On a straight, nose 25° into the left barrier and pressed against it, crawling.
+  const s = 60;
+  car.placeAt(s, c.wallOffset - HANDLING.halfWidth - 0.05);
+  const st = car.state;
+  st.heading -= 0.45; // (heading grows clockwise, to the right)
+  st.vx = Math.cos(st.heading) * 4;
+  st.vz = Math.sin(st.heading) * 4;
+  let scraped = false;
+  for (let k = 0; k < 4 * HANDLING.tickRate; k++) {
+    // Steering right (away from it), on the throttle. (The old rule held it there, turned in, for good.)
+    car.step({ throttle: 0.7, brake: 0, steer: 1, handbrake: false });
+    scraped ||= st.wallHit > 0;
+  }
+  assert.ok(scraped, 'it was against the barrier');
+  assert.ok(st.lateral < c.wallOffset - HANDLING.halfWidth - 2, `away from it: ${st.lateral.toFixed(2)} m left of the centre`);
+  assert.ok(st.speed > 6, `and driving off: ${st.speed.toFixed(1)} m/s`);
+});

@@ -86,8 +86,9 @@ export const DAMAGE = {
  * race (not in its pit stop), or hit harder than `crashSpeed` m/s, is an
  * incident: yellow flags from `yellowBefore` m before it to `yellowAfter` m
  * past it, until `yellowHold` s after it's gone. AI cars ease to `yellowPace`
- * there. With the safety car on, a car stopped for `safetyCarAfter` s brings
- * it out. It runs at `scSpeed` m/s; cars may close up to `scGap` m behind the
+ * there. With the safety car on, a car stranded on the track (slower than
+ * `strandedSpeed` m/s for `safetyCarAfter` s: long enough for an AI that's
+ * spun or been knocked to set off again by itself) brings it out. It runs at `scSpeed` m/s; cars may close up to `scGap` m behind the
  * car ahead (catching up at `scCatchUp` m/s more per metre of gap, up to
  * `scMaxCatch` m/s). It stays out at least `scMin` s, then comes in at the
  * end of that lap. No safety car in the last `scLastLaps` laps.
@@ -100,7 +101,8 @@ export const FLAGS = {
   yellowAfter: 30,
   yellowHold: 6,
   yellowPace: 0.85,
-  safetyCarAfter: 2,
+  strandedSpeed: 1.5,
+  safetyCarAfter: 6,
   scSpeed: 24,
   scGap: 16,
   scCatchUp: 0.2,
@@ -170,8 +172,8 @@ export const WEATHER = {
    * to slicks once it's dried to this, by grid slot (some gamble early, some
    * late; the gap stops them flip-flopping).
    */
-  aiToWets: [0.4, 0.5, 0.62],
-  aiToSlicks: [0.42, 0.33, 0.25],
+  aiToWets: [0.28, 0.34, 0.42],
+  aiToSlicks: [0.3, 0.24, 0.18],
 } as const;
 
 /** The car's setup (see SETUP). */
@@ -251,15 +253,19 @@ export const TYRES = {
   /** The HUD calls them worn past this share of their life. */
   wornAt: 0.8,
   /**
-   * Each kind: its grip (a share of the road's) in the dry and in the rain,
-   * its brakes in the rain, and its life (× the medium's) in the dry and in
-   * the rain. Softs are quicker and go off sooner, hards are slower and last;
-   * wets are the tyres for the rain, slow in the dry and wearing out fast there.
+   * Each kind: its grip (a share of the road's) in the dry and on a soaked
+   * road (between the two, by how wet it is), its brakes on a soaked road,
+   * and its life (× the medium's) in the dry and in the rain. Softs are
+   * quicker and go off sooner, hards are slower and last. Slicks lose 40 % of
+   * their grip on a soaked road. Wets are the tyres for the rain, slow in the
+   * dry and wearing out fast there: they're quicker once the road is about a
+   * third wet. On Sunday Loop at 90 % wet, fresh wets beat worn softs by about
+   * 5 s a lap (tests/conditions.test.ts).
    */
   compounds: {
-    soft: { grip: 1.05, rainGrip: 0.84, rainBrake: 0.78, life: 0.65, rainLife: 0.65 },
-    medium: { grip: 1, rainGrip: 0.8, rainBrake: 0.78, life: 1, rainLife: 1 },
-    hard: { grip: 0.95, rainGrip: 0.76, rainBrake: 0.78, life: 1.6, rainLife: 1.6 },
+    soft: { grip: 1.05, rainGrip: 0.63, rainBrake: 0.65, life: 0.65, rainLife: 0.65 },
+    medium: { grip: 1, rainGrip: 0.6, rainBrake: 0.65, life: 1, rainLife: 1 },
+    hard: { grip: 0.95, rainGrip: 0.57, rainBrake: 0.65, life: 1.6, rainLife: 1.6 },
     wet: { grip: 0.86, rainGrip: 0.95, rainBrake: 0.9, life: 0.4, rainLife: 1.3 },
   },
   /** Quickest first (in the dry). */
@@ -382,6 +388,19 @@ export const RACING_LINE = {
 
 /** How the AI drives the racing line (race/driver.ts). */
 export const DRIVER = {
+  /**
+   * Running wide: at full lock, more than `wideFrom` m off its path and
+   * drifting further off at more than `wideDrift` m/s, the car is too fast to
+   * make the turn (the lock shrinks as the car speeds up). It lifts, and
+   * brakes `lockBrake` per m/s of drift over that (at most `lockBrakeMax`):
+   * flooring it would only widen the arc into the barrier. Not at a crawl
+   * (`lockCrawl` m/s), where it has to roll to turn at all.
+   */
+  wideFrom: 0.5,
+  wideDrift: 2,
+  lockCrawl: 5,
+  lockBrake: 0.12,
+  lockBrakeMax: 0.5,
   /** Steering aims at the line this far ahead: base + per m/s of speed (m). */
   lookBase: 3,
   lookPerSpeed: 0.2,

@@ -65,7 +65,8 @@ const progressOf = (car: CarPhysics, track: Track): Progress => {
 
 test('in changing weather the AI pits for wets as the road gets wet, and back to slicks as it dries', () => {
   const t = getSampleTrack(0);
-  const laps = 7;
+  // (Long enough for the line to dry back past where it goes back to slicks, with a lap to go.)
+  const laps = 8;
   // Rain from 20 % of ~245 s, stopping at 55 %.
   const weather = new Weather('changing', 245, () => 0);
   const ai = new AiDriver(t, { name: 'a', paint: 0, difficulty: 0.75, laps, slot: 1, tyreWear: true });

@@ -1,11 +1,13 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { collideCars } from '../src/car/contact.ts';
 import { CarPhysics, CarState } from '../src/car/physics.ts';
+import { carriedTow, slipstream } from '../src/car/slipstream.ts';
 import { HANDLING } from '../src/config/handling.ts';
 import { CONDITIONS, DAMAGE, FLAGS } from '../src/config/race.ts';
 import type { Dot } from '../src/core/math.ts';
-import { getSampleTrack } from '../src/editor/pipeline.ts';
-import { AiDriver } from '../src/race/ai.ts';
+import { builtInTracks, getSampleTrack } from '../src/editor/pipeline.ts';
+import { AiDriver, aiField } from '../src/race/ai.ts';
 import { PitCrew, pitBox } from '../src/race/pitStop.ts';
 import { RaceControl, type ControlCar, type ControlEvent } from '../src/race/raceControl.ts';
 import type { Progress } from '../src/race/session.ts';
@@ -177,8 +179,8 @@ test('in a race: a stuck car brings out the safety car, the AI field closes up b
   let stuckTicks = 0;
   for (let tick = 0; tick < 420 * HANDLING.tickRate && ais.some((a) => a.session.phase !== 'finished'); tick++) {
     const time = tick * DT;
-    // From 50 s the slowest car stops dead for 4 s (stuck after a spin).
-    const stuck = time > 50 && stuckTicks < 4 * HANDLING.tickRate;
+    // From 50 s the slowest car stops dead (stranded after a spin) for long enough to bring out the safety car.
+    const stuck = time > 50 && stuckTicks < (FLAGS.safetyCarAfter + 2) * HANDLING.tickRate;
     const prev = ais.map((a) => progressOf(a.car, t));
     ais.forEach((a, k) => {
       if (k === 3 && stuck) {
@@ -225,4 +227,53 @@ test('a badly damaged AI car pits for repairs and comes out mended', () => {
   assert.equal(ai.session.phase, 'finished');
   assert.ok((ai.crew?.stops ?? 0) >= 1, 'it stopped');
   assert.equal(ai.car.damage, 0, 'mended');
+});
+
+test('a full field at the Nürburgring with damage and the safety car on: through the first-lap hairpin and on without bringing it out', () => {
+  // (Its tight first corner used to send cars wide into the barrier, where they stuck.)
+  const t = builtInTracks().find((b) => b.def.name === 'Nürburg')!.track();
+  const laps = 4;
+  const n = 12;
+  const field = aiField(n, 70, [0], ['a']);
+  const ais = field.map((f, k) => new AiDriver(t, { ...f, laps, slot: k, box: k, tyreWear: true, damage: true }));
+  const states = ais.map((a) => a.car.state);
+  const drafts = new Float32Array(n);
+  const rc = new RaceControl(t.center.length, laps, true);
+  const ev: ControlEvent[] = [];
+  const control: ControlCar[] = [];
+  let knocks = 0;
+  for (let tick = 0; tick < 400 * HANDLING.tickRate && ais.some((a) => a.session.phase !== 'finished'); tick++) {
+    slipstream(states, t.center.length, drafts);
+    ais.forEach((a, k) => (a.car.draft = carriedTow(a.car.draft, drafts[k], DT)));
+    const prev = ais.map((a) => progressOf(a.car, t));
+    const hits = ais.map((a) => {
+      a.car.step(a.drive(states, DT));
+      if (a.car.state.wallHit > 2) knocks++;
+      return a.car.state.wallHit;
+    });
+    for (let pass = 0; pass < 3; pass++) {
+      for (let i = 0; i < n; i++) {
+        for (let j = i + 1; j < n; j++) {
+          const hit = collideCars(states[i], states[j]);
+          if (pass === 0 && hit > 0) {
+            hits[i] = Math.max(hits[i], hit);
+            hits[j] = Math.max(hits[j], hit);
+            ais[i].car.addDamage(hit);
+            ais[j].car.addDamage(hit);
+          }
+        }
+      }
+    }
+    ais.forEach((a, k) => a.session.step(prev[k], progressOf(a.car, t), []));
+    control.length = 0;
+    ais.forEach((a, k) => control.push({ st: a.car.state, dist: a.session.raceDistance(a.car.state.s), racing: a.session.phase === 'racing' && a.session.lapStart !== null && !(a.pitting || a.car.state.inPits), hit: hits[k] }));
+    rc.step(DT, control, ev);
+    ais.forEach((a, k) => {
+      a.raceCap = rc.cap(k, control);
+      a.yellow = rc.yellowAt(a.car.state.s);
+    });
+  }
+  assert.ok(ais.every((a) => a.session.phase === 'finished'), 'everyone finished');
+  assert.equal(rc.scCount, 0, `no safety car (${ev.map((e) => e.type).join(', ')})`);
+  assert.ok(knocks < 5, `${knocks} knocks into the barriers`);
 });

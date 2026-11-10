@@ -54,7 +54,8 @@ test('the kinds of tyre: softs grip more and go off soonest, hards the other way
   const life = (c: Compound, wet = false) => compoundLife(c, wet ? 1 : 0, 5);
   assert.ok(compoundGrip('soft', 0) > compoundGrip('medium', 0) && compoundGrip('medium', 0) > compoundGrip('hard', 0));
   assert.ok(life('soft') < life('medium') && life('medium') < life('hard'));
-  assert.equal(compoundGrip('medium', 1), CONDITIONS.rainGrip, 'mediums in the rain are the standard set');
+  // Slicks on a soaked road: far worse than the standard (all-weather) set everyone's on with tyre wear off.
+  assert.ok(compoundGrip('medium', 1) < CONDITIONS.rainGrip && compoundGrip('wet', 1) > CONDITIONS.rainGrip);
   for (const c of ['soft', 'medium', 'hard'] as const) {
     assert.ok(compoundGrip('wet', 1) > compoundGrip(c, 1), `in the rain wets beat ${c}s`);
     assert.ok(compoundGrip('wet', 0) < compoundGrip(c, 0), `in the dry ${c}s beat wets`);
@@ -343,4 +344,30 @@ test('the conditions panel: each choice changes the setup and shows on its butto
   done.click();
   assert.equal(panel.isOpen, false);
   assert.equal(closed, true);
+});
+
+/** A lap (s) by an AI on `c` tyres `use` worn, the road `wetness` wet throughout (no stops). */
+function wetLap(t: Track, wetness: number, c: Compound, use: number): number {
+  // (No pit crew: the tyres stay on, worn as set.)
+  const ai = new AiDriver(t, { name: 'a', paint: 0, difficulty: 0.9, laps: 3, slot: 0, wet: true });
+  ai.car.wear = true;
+  ai.car.newTyres(c);
+  for (let tick = 0; tick < 200 * HANDLING.tickRate && ai.session.laps.length < 2; tick++) {
+    ai.car.wetness = wetness;
+    ai.car.tyreUse = use;
+    const prev = progressOf(ai.car, t);
+    ai.car.step(ai.drive([ai.car.state], DT));
+    ai.session.step(prev, progressOf(ai.car, t), []);
+  }
+  return ai.session.laps[1];
+}
+
+test('in the rain the wets are far quicker than slicks, the more so the wetter: about 5 s a lap at 90 % wet on Sunday Loop', () => {
+  const t = getSampleTrack(0);
+  const gap = (w: number) => wetLap(t, w, 'soft', 0.9) - wetLap(t, w, 'wet', 0.05);
+  const [g30, g50, g90] = [0.3, 0.5, 0.9].map(gap);
+  assert.ok(Math.abs(g30) < 1, `a third wet: about even (${g30.toFixed(2)} s)`);
+  assert.ok(g50 > 0.7 && g50 < 2.5, `half wet: worn softs ${g50.toFixed(2)} s slower`);
+  assert.ok(g90 > 4 && g90 < 6.5, `90 % wet: worn softs ${g90.toFixed(2)} s slower`);
+  assert.ok(g30 < g50 && g50 < g90);
 });

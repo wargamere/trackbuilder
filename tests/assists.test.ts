@@ -191,26 +191,31 @@ test('the racing line goes red where you would have to brake at your speed, and 
   line.dispose();
 });
 
-/** 60 s of `drive` with assists `a`: metres covered. */
-function distanceIn60s(t: Track, a: Assists, drive: (st: CarState) => DriveInput): number {
+/** 60 s of `drive` with assists `a`: metres covered (`each` sees the car after every tick). */
+function distanceIn60s(t: Track, a: Assists, drive: (st: CarState) => DriveInput, each: (st: CarState) => void = () => {}): number {
   const car = new CarPhysics(t);
   car.gearbox = 'auto';
   let dist = 0;
   for (let k = 0; k < HANDLING.tickRate * 60; k++) {
     car.step(applyAssists(t, car.state, drive(car.state), a));
     dist += Math.max(0, car.state.speed) / HANDLING.tickRate;
+    each(car.state);
   }
   return dist;
 }
 
-test('the assists help, they don’t drive: hands off at full throttle the car doesn’t get round, but each assist gets a weak driver further', () => {
+test('the assists help, they don’t drive: hands off at full throttle the car hits the barriers and gets nowhere near as far, but each assist gets a weak driver further', () => {
   for (let i = 0; i < 3; i++) {
     const t = getSampleTrack(i);
     const d = assistDriver(t);
     const all = { ...DEFAULT_ASSISTS, brake: true, steer: true };
-    // An AI laps in under 40 s, so 60 s is one and a half laps or more.
-    const handsOff = distanceIn60s(t, all, () => ({ throttle: 1, brake: 0, steer: 0, handbrake: false }));
-    assert.ok(handsOff < t.center.length, `${t.def.name}: hands off, ${handsOff.toFixed(0)} m in 60 s`);
+    // Driven (by the assists' own line), and hands off with both assists on.
+    const driven = distanceIn60s(t, DEFAULT_ASSISTS, (st) => d.drive(st));
+    let knocks = 0;
+    const handsOff = distanceIn60s(t, all, () => ({ throttle: 1, brake: 0, steer: 0, handbrake: false }), (st) => (knocks += st.wallHit > 2 ? 1 : 0));
+    // (It bounces off the barriers and carries on, but well behind.)
+    assert.ok(handsOff < driven * 0.8, `${t.def.name}: hands off, ${handsOff.toFixed(0)} m in 60 s (driven ${driven.toFixed(0)} m)`);
+    assert.ok(knocks > 0, `${t.def.name}: hands off, it hits the barriers`);
     // Someone who steers well but never brakes, and someone who brakes well but never steers.
     const noBrakes = (st: CarState): DriveInput => ({ throttle: 1, brake: 0, steer: d.drive(st).steer, handbrake: false });
     const noSteering = (st: CarState): DriveInput => ({ ...d.drive(st), steer: 0 });

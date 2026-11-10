@@ -43,6 +43,7 @@ export class RaceControl {
   private scSince = 0;
   private scInLap = 0;
   private stopped: number[] = [];
+  private stranded: number[] = [];
 
   constructor(length: number, lapsToRun: number, safetyCarOn: boolean) {
     this.length = length;
@@ -58,8 +59,11 @@ export class RaceControl {
     cars.forEach((c, i) => {
       const slow = c.racing && Math.abs(c.st.speed) < F.stoppedSpeed;
       this.stopped[i] = slow ? (this.stopped[i] ?? 0) + dt : 0;
+      // (Stranded: all but stopped, for longer: not just slow past an incident, or about to set off.)
+      const still = c.racing && Math.abs(c.st.speed) < F.strandedSpeed;
+      this.stranded[i] = still ? (this.stranded[i] ?? 0) + dt : 0;
       if ((slow && this.stopped[i] >= F.stoppedTime) || (c.racing && c.hit >= F.crashSpeed)) this.flag(c.st.s, out);
-      if (this.stopped[i] >= F.safetyCarAfter) stuck = true;
+      if (this.stranded[i] >= F.safetyCarAfter) stuck = true;
     });
     for (let k = this.yellows.length - 1; k >= 0; k--) if (this.yellows[k].clearAt <= this.time) this.yellows.splice(k, 1);
 

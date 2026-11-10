@@ -50,7 +50,7 @@ export function applyAssists(track: Track, st: CarState, inp: DriveInput, a: Ass
   const lane = pitLane(track);
   if (lane && onLane(lane, st.s, st.lateral)) return inp;
   const d = assistDriver(track, wet);
-  const ai = d.drive(st, 0, scratch);
+  const ai = d.drive(st, 0, scratch, { lockGuard: false });
   if (a.brake && ai.brake > inp.brake) {
     const help = inp.brake > 0.05 ? inp.brake + ASSISTS.brakeTopUp : ASSISTS.brakeTouch;
     inp.brake = Math.max(inp.brake, Math.min(ai.brake, help));

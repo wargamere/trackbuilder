@@ -475,19 +475,27 @@ The race setup's **Conditions** row (🌦, key C) opens a panel with three switc
   - *The road* gets wet as it rains (over about 40 s) and dries out after. The racing line dries first, in about 75 s, because the cars clear it; the rest takes about 4 minutes. So for a while there's a dry line on a damp track, and running off it means more water.
   - *Grip and brakes* blend between dry and wet by how wet the road is under each car, and so does tyre life. Slicks and wets cross over at about half wet, so the call is when to change.
   - *The HUD* shows the weather under the minimap: "🌧 Rain · track 41% wet", how wet the line is once it's drying, and a forecast 90 s ahead ("Rain in ~30 s"). It also flashes when the rain starts and stops. The sky, mist, rain, road and sound all blend with it.
-  - *The AI* drives a dry plan and scales it by the grip and the brakes there are, so it brakes earlier as the road gets wet. With tyre wear on it pits for wets once the road is wet enough and back to slicks once it has dried enough. Each car makes its own call, by grid slot: some go early, some late, with a gap so none flip-flops. A test checks one car makes both changes in a 7-lap race.
+  - *The AI* drives a dry plan and scales it by the grip and the brakes there are, so it brakes earlier as the road gets wet. With tyre wear on it pits for wets once the road is 28–42 % wet and back to slicks once it has dried to 30–18 %. Each car makes its own call, by grid slot: some go early, some late, with a gap so none flip-flops. A test checks one car makes both changes in an 8-lap race.
   - Without tyre wear nobody can change tyres: every car is on standard tyres that blend between dry and wet.
   - Tyre wear is counted as the share of their life used (`tyreUse`), so a set's life can change with the weather without its wear jumping.
 - **Time of day: Track / Day / Sunset / Night.** "Track" keeps the track's own time of day. The others override it for this race only (the track itself doesn't change). The race setup's background shows the choice.
 - **Tyre wear & pit stops: Off / On**, with the **starting tyres** (shown when tyre wear is on).
   - *Kinds of tyre* (`TYRES.compounds` in `config/race.ts`, `car/tyres.ts`):
 
-    | | Grip (dry) | Grip (rain) | Lasts (× medium) |
+    | | Grip (dry) | Grip (soaked) | Lasts (× medium) |
     |---|---|---|---|
-    | **Soft** (S, red) | 105 % | 84 % | 0.65 |
-    | **Medium** (M, yellow) | 100 % | 80 % | 1 |
-    | **Hard** (H, white) | 95 % | 76 % | 1.6 |
-    | **Wet** (W, blue) | 86 % | 95 %, and better brakes | 0.4 in the dry, 1.3 in the rain |
+    | **Soft** (S, red) | 105 % | 63 % | 0.65 |
+    | **Medium** (M, yellow) | 100 % | 60 % | 1 |
+    | **Hard** (H, white) | 95 % | 57 % | 1.6 |
+    | **Wet** (W, blue) | 86 % | 95 %, and much better brakes (90 % against slicks' 65 %) | 0.4 in the dry, 1.3 in the rain |
+
+    Grip goes from the dry figure to the soaked one by how wet the road is. Slicks lose 40 % of their grip on a soaked road, so wets are the quicker tyres from about a third wet. Worn softs against fresh wets on Sunday Loop, a lap (tested in `tests/conditions.test.ts`):
+
+    | Road wet | 30 % | 50 % | 70 % | 90 % | 100 % |
+    |---|---|---|---|---|---|
+    | Wets quicker by | 0.2 s | 1.4 s | 2.8 s | 4.8 s | 6.5 s |
+
+    With tyre wear off, everyone is on a standard all-weather set (80 % grip on a soaked road).
 
     Switching the weather to rain puts wets on, and back to dry puts mediums on.
   - *How long they last depends on the track* (`race/strategy.ts`). Mediums last 6 laps on the easiest track and 4 on the hardest, by how hard a lap works the tyres. That's the speed turned through in the bends plus the speed shed under braking, on the racing line flat out. Monza gets 6 laps, Sakhir (Bahrain) about 4.7, Shanghai 4.3. The Conditions panel shows each kind's life on the track you're racing.
@@ -541,12 +549,16 @@ Two more switches in Conditions (both off by default, saved with the rest). Race
   - The HUD shows *YELLOW FLAG* when you're in the zone or within 250 m of it.
   - The AI eases to 85 % of its pace in the zone.
 - **Safety car: Off / On.**
-  - A car stuck on the track for 2 s brings out the safety car, except in the last lap.
+  - A car stranded on the track (under 1.5 m/s for 6 s) brings out the safety car, except in the last lap. That's long enough for an AI that has spun or been knocked to set off again by itself: a car that's merely slow past an incident doesn't count.
   - A white safety car leads the field round on the racing line. The leader is held to 24 m/s.
   - The cars behind may close up to 16 m behind the car ahead: faster when further back (up to +14 m/s), slower when closer.
   - Your throttle is cut above that speed and the brakes help a little.
   - After 25 s it comes in at the end of the leader's lap ("SAFETY CAR IN THIS LAP"), and it's green when the leader starts the next one.
   - Tests check a stuck car brings it out and the AI field bunches up behind it and races on afterwards (`tests/raceControl.test.ts`).
+  - **Fewer crashes.** Two fixes stopped the AI piling into the barrier out of tight hairpins, which in a 12-lap race at the Nürburgring brought out 6 safety cars.
+    - *The AI lifts when it's running wide at full lock* (`DRIVER.wideFrom` / `wideDrift`). If it's more than 0.5 m off its path and drifting further off at over 2 m/s, it lifts and brakes, rather than flooring it and widening its arc into the barrier.
+    - *A car leaning on a barrier can turn its nose away.* A scrape (under 2 m/s into the barrier, `HANDLING.wallKnock`) only checks a turn *into* it; before, every touch killed the car's rotation, so a car turned in against the wall could never drive off.
+    - The same 12 laps now: no safety car, no yellow flags, 18 → 1 barrier knocks and 11 → 3 car-to-car hits (none hard). Spa, Baku, Monaco, Montréal and Sunday Loop show no safety car either. A test runs a full field round the Nürburgring.
 
 ### Saving, sharing and sound
 

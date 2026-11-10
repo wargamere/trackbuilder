@@ -28,6 +28,8 @@ export interface DriveOptions {
   route?: ((s: number) => number) | null;
   /** The route may leave the road (the way through the pit lane): it isn't kept within the room beside the line. */
   offRoad?: boolean;
+  /** Lift and brake when the path needs more steering lock than the car has at this speed (on by default; the assists, which only advise, leave it off). */
+  lockGuard?: boolean;
   /** The tyres' grip as a share of what the plan was made for (worn tyres: slower through the bends; softer or rain tyres: quicker). */
   grip?: number;
   /** The brakes' bite as a share of what the plan was made for (a road getting wet: less, so it brakes earlier). */
@@ -314,7 +316,7 @@ export class RacingDriver {
   drive(st: CarState, lane = 0, out?: DriveInput, opts: DriveOptions = {}): DriveInput {
     const H = HANDLING;
     const o = out ?? { throttle: 0, brake: 0, steer: 0, handbrake: false };
-    const { pace = 1, cap = Infinity, tow = 0, keep = null, late = false, route = null, offRoad = false, grip = 1, brake: bite = 1 } = opts;
+    const { pace = 1, cap = Infinity, tow = 0, keep = null, late = false, route = null, offRoad = false, grip = 1, brake: bite = 1, lockGuard = true } = opts;
     const v = Math.max(0, st.speed);
     const kept = keep;
     const base = route ? (offRoad ? route : (x: number) => this.clampLat(x, route(x))) : (x: number) => this.lateralAt(x, lane);
@@ -391,6 +393,22 @@ export class RacingDriver {
     o.throttle = clamp(0.5 + err * 2, 0, 1);
     o.brake = err < -DRIVER.brakeDeadband ? clamp(-err * DRIVER.brakeGain, 0, 1) : 0;
     o.handbrake = false;
+    // Running wide at full lock (too fast to make the turn: flooring it would only widen the arc
+    // into the barrier): lift, and brake the harder the faster it's drifting off its path.
+    // (Not just at full lock: in the tightest hairpins that's how the line is driven.)
+    if (lockGuard && v > DRIVER.lockCrawl && Math.abs(o.steer) >= 1) {
+      const c = this.track.center;
+      const i = Math.max(0, st.trackIndex);
+      const l = leftOf(c.tangents[i]);
+      const t = c.tangents[i];
+      const err = st.lateral - path(st.s);
+      // How fast it's moving off the path, across it (m/s; + = further off).
+      const across = (st.vx * l.x + st.vz * l.y - ((path(st.s + 1) - path(st.s - 1)) / 2) * (st.vx * t.x + st.vz * t.y)) * Math.sign(err);
+      if (Math.abs(err) > DRIVER.wideFrom && across > DRIVER.wideDrift) {
+        o.throttle = 0;
+        o.brake = Math.max(o.brake, Math.min(DRIVER.lockBrakeMax, (across - DRIVER.wideDrift) * DRIVER.lockBrake));
+      }
+    }
     return o;
   }
 }

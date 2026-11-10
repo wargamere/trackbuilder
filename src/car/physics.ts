@@ -528,7 +528,10 @@ export class CarPhysics {
       const scrub = Math.max(H.wallMinKeep, 1 - H.wallScrub * vn);
       st.vx *= scrub;
       st.vz *= scrub;
-      st.yawRate *= 0.6;
+      // A real knock checks the car's rotation. A scrape checks only a turn into the barrier: a car
+      // leaning on it can always turn its nose away (else it could never drive off).
+      const into = st.yawRate * (-Math.sin(st.heading) * nx + Math.cos(st.heading) * nz);
+      if (vn > H.wallKnock || into > 0) st.yawRate *= 0.6;
       st.wallHit = Math.max(st.wallHit, vn);
     }
     return lateral - dir * excess;
