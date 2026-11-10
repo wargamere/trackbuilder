@@ -117,8 +117,7 @@ export const FLAGS = {
  * behind a pit wall past them and rejoins over another ramp after. The wall
  * starts `wallAt` of the way along the entry ramp and ends as far from the
  * end of the exit one. Between the ends of the wall there's a speed limit of
- * `limit` m/s (60 km/h): the limiter holds you to it, but cross the line
- * faster than `limit` + `tolerance` and it's a `penalty` s penalty. Each car
+ * `limit` m/s (60 km/h): the limiter holds you to it from the line. Each car
  * has a box (`boxLength` × `boxWidth` m) in front of a garage, cars sharing
  * a garage when there are more cars than garages. The AI aims to be down to
  * the limit `brakeMargin` m before the line.
@@ -129,8 +128,6 @@ export const PIT_LANE = {
   /** The pit wall's thickness (m): the lane starts this far beyond the barrier line. */
   wallThick: 0.6,
   limit: 60 / 3.6,
-  tolerance: 0.6,
-  penalty: 5,
   boxLength: 6,
   boxWidth: 3.6,
   brakeMargin: 6,

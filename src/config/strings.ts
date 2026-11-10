@@ -756,9 +756,6 @@ export const STR = {
     repairing: 'Repairs…',
     repaired: 'Repaired: go, go, go!',
     pitLimiter: 'PIT LIMITER · {n} km/h',
-    pitSpeeding: 'Too fast into the pit lane: +{n} s penalty',
-    pitTooFast: 'Too fast into the pit lane (slow to {n} km/h before the line)',
-    penalty: '+{n} s penalty',
   },
 
   paint: {

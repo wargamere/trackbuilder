@@ -520,8 +520,7 @@ On every track with pits (`track/pitLane.ts`, `PIT_LANE` in `config/race.ts`).
   - The track's own barrier makes way for the lane on that side. The pit wall, the ramps' barrier and the garages keep cars in the lane and the track's traffic out of it (`CarPhysics.collideWalls`).
   - The lane and its ramps are tarmac and count as track (no track limits there), on dirt and snow tracks too.
 - **The speed limit: 60 km/h** between the lines at each end of the pit wall.
-  - The limiter comes on at the line: the HUD shows *PIT LIMITER · 60 km/h*, the throttle is cut above the limit and the brakes help.
-  - Cross the line faster than the limit (+2 km/h) and it's a **5 s penalty**, added to your race time and shown in the results. In practice it's just a warning.
+  - The limiter comes on at the line: the HUD shows *PIT LIMITER · 60 km/h*, the throttle is cut above the limit and the brakes help. There's no penalty for coming in fast: the limiter slows you.
 - **The boxes.** You get the one nearest the middle; the AI cars take the others in turn, sharing round when there are more cars than garages.
   - Stop with your car's middle within 2.5 m of the box's middle and the crew gets to work.
   - The box is highlighted (yellow, with PIT) when there's something to stop for: tyre wear or damage on.
@@ -646,7 +645,7 @@ Tested against the real SDK in its `local` mode (localhost): the SDK's own log s
 - [x] Editor: tap-to-place scenery, run-off per corner and painted with a brush, bump kerbs (per corner and on every chicane)
 - [x] Editor: bridges or tunnels where the track crosses itself, and lifting every level crossing
 - [x] Damage (wing and bodywork, mended in the pit box), yellow flags and the safety car
-- [x] A real pit lane: ramps off and back on, a pit wall, a box for each car, a 60 km/h limiter and a penalty for speeding into it
+- [x] A real pit lane: ramps off and back on, a pit wall, a box for each car, and a 60 km/h limiter
 
 ## Validation for the track editor
 

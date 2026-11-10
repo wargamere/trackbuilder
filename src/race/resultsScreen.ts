@@ -188,7 +188,7 @@ export class ResultsScreen implements Screen {
           h('span', { class: 'standing-pos', text: ord(i) }),
           dot,
           h('span', { class: 'standing-name', text: e.name }),
-          h('span', { class: 'standing-time', text: [time, e.estimated ? STR.results.estimated : '', e.penalty ? fmt(STR.race.penalty, { n: e.penalty }) : ''].filter(Boolean).join(' · ') }),
+          h('span', { class: 'standing-time', text: e.estimated ? `${time} · ${STR.results.estimated}` : time }),
         ),
       );
     });

@@ -166,7 +166,7 @@ test('an AI stop through the pit lane: in over the ramp, down to the limit by th
   const box = pitBox(t, 1);
   assert.ok(stop.stoppedAt !== null && Math.abs(stop.stoppedAt - box.s) < box.length / 2, `stopped at ${stop.stoppedAt?.toFixed(1)} m, its box at ${box.s.toFixed(1)} m`);
   assert.ok(inBox(box, t.center.length, stop.ai.car.state) === false, 'and drove on');
-  assert.ok(stop.maxInPits <= PIT_LANE.limit + PIT_LANE.tolerance, `${(stop.maxInPits * 3.6).toFixed(1)} km/h in the pit lane`);
+  assert.ok(stop.maxInPits <= PIT_LANE.limit + 0.6, `${(stop.maxInPits * 3.6).toFixed(1)} km/h in the pit lane`);
   assert.equal(stop.straddled, 0, 'never across the pit wall');
   assert.equal(stop.off, 0, 'never off the track (the lane counts as track)');
   assert.equal(stop.ai.boxCall, null, 'the call is done with');
@@ -203,7 +203,7 @@ test('a full field all in on the same lap, on a track with 4 boxes: everyone sto
   }
   assert.ok(ais.every((a) => a.session.phase === 'finished'), 'everyone finished');
   assert.deepEqual(ais.map((a) => a.crew?.stops), ais.map(() => 1), 'one stop each');
-  assert.ok(fastest <= PIT_LANE.limit + PIT_LANE.tolerance, `${(fastest * 3.6).toFixed(1)} km/h in the pit lane`);
+  assert.ok(fastest <= PIT_LANE.limit + 0.6, `${(fastest * 3.6).toFixed(1)} km/h in the pit lane`);
   assert.equal(straddled, 0, 'nobody across the pit wall');
 });
 
