@@ -82,8 +82,28 @@ try {
   await phone.locator('.sidebar.open #studio-section-0 button[title="New blank track"]').click();
   await phone.locator('.studio-welcome:not([hidden])').waitFor();
   await phone.screenshot({ path: 'test-results/studio-phone.png' });
+  // Career: start one, qualify (skipped: no time, the back of the grid), and the grid of twenty is kept in the paddock.
+  const career = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  career.on('pageerror', (error) => errors.push(error.message));
+  await career.goto('http://127.0.0.1:5178');
+  await career.waitForFunction(() => window.__game);
+  await career.keyboard.press('k');
+  await career.locator('.career').waitFor();
+  await career.locator('.career-name').fill('Tester');
+  await career.getByRole('button', { name: /Start career/ }).click();
+  await career.getByRole('button', { name: /Qualifying/ }).click();
+  await career.waitForFunction(() => document.documentElement.dataset.screen === 'race');
+  await career.keyboard.press('Escape');
+  await career.getByRole('button', { name: /Skip qualifying/ }).click();
+  await career.locator('.grid-overlay:not([hidden])').waitFor();
+  assert.equal(await career.locator('.grid-overlay .standings li').count(), 20, 'a full grid of twenty');
+  await career.getByRole('button', { name: /Back to the paddock/ }).click();
+  await career.locator('.career-grid').waitFor();
+  assert.equal(await career.locator('.career-grid li').count(), 20, 'the grid is kept in the paddock');
+  assert.ok((await career.locator('.career-status').textContent())?.includes('You start 20th of 20'));
+  await career.screenshot({ path: 'test-results/career-paddock.png' });
   assert.deepEqual(errors, [], 'no browser runtime errors');
-  console.log('Browser checks passed: templates, keyboard editing, heights, guide, practice, draft recovery, mobile layout.');
+  console.log('Browser checks passed: templates, keyboard editing, heights, guide, practice, draft recovery, mobile layout, career.');
 } catch (error) {
   if (page) {
     await page.screenshot({ path: 'test-results/studio-failure.png' });

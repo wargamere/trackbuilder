@@ -2,6 +2,7 @@ import { collideCars } from '../../src/car/contact.ts';
 import { carriedTow, slipstream } from '../../src/car/slipstream.ts';
 import { CarPhysics, NO_INPUT, type CarState } from '../../src/car/physics.ts';
 import { HANDLING } from '../../src/config/handling.ts';
+import { DAMAGE } from '../../src/config/race.ts';
 import { AiDriver, aiPace, gridPlace } from '../../src/race/ai.ts';
 import { aiCars } from '../../src/race/traffic.ts';
 import { RacingDriver } from '../../src/race/driver.ts';
@@ -42,7 +43,10 @@ export interface TrafficResult {
 
 /**
  * Runs a race of `specs` (in grid order, pole first) the way the race screen
- * does: drive, step, contact (three passes), lap counting.
+ * does: drive, step, contact (three passes, with damage where it's on), lap
+ * counting; a car that breaks down retires, stands where it stopped for
+ * DAMAGE.recoverAfter s and is then taken off the track; and once a car has
+ * finished, the chequered flag is out for the rest (`flag`).
  */
 export function race(
   track: Track,
@@ -53,12 +57,15 @@ export function race(
   log: string[] | null = null,
   onHard: ((tick: number, i: number, j: number, hit: number) => void) | null = null,
   onTick: ((tick: number, cars: { car: CarPhysics; ai: AiDriver | null; session: RaceSession; human: boolean }[]) => void) | null = null,
+  flag = false,
+  /** Race conditions for the AI cars (and their pit crews): tyre wear, damage. */
+  conditions: { tyreWear?: boolean; damage?: boolean; mediumLife?: number } = {},
 ): TrafficResult {
   const L = track.center.length;
   type Car = { car: CarPhysics; session: RaceSession; ai: AiDriver | null; aggression: number; line?: RacingDriver | null; human: boolean };
   const cars: Car[] = specs.map((sp, k) => {
     if (sp.kind === 'ai' || sp.kind === 'human') {
-      const ai = new AiDriver(track, { name: `ai${k}`, paint: 0, difficulty: sp.difficulty, laps, slot: k });
+      const ai = new AiDriver(track, { name: `ai${k}`, paint: 0, difficulty: sp.difficulty, laps, slot: k, ...conditions });
       // A clean-racing player: driven like an AI, but the AI cars see it as you.
       if (sp.kind === 'human') aiCars.delete(ai.car.state);
       return { car: ai.car, session: ai.session, ai, aggression: 0, line: null, human: sp.kind === 'human' };
@@ -72,6 +79,11 @@ export function race(
   });
   const states: CarState[] = cars.map((c) => c.car.state);
   const drafts = new Float32Array(cars.length);
+  // The cars on the track (indices into `cars`, and their states): all of them until one retires and is taken away.
+  let live = cars.map((_, k) => k);
+  let liveStates = states;
+  const outFor = cars.map(() => 0);
+  const gone = cars.map(() => false);
   const progress = (c: CarPhysics): Progress => {
     const st = c.state;
     const t = track.center.tangents[Math.max(0, st.trackIndex)];
@@ -92,14 +104,15 @@ export function race(
   for (let tick = 0; tick < maxSeconds * HANDLING.tickRate; tick++) {
     const prev = cars.map((c) => progress(c.car));
     if (drafting) {
-      slipstream(states, L, drafts);
-      cars.forEach((c, k) => (c.car.draft = carriedTow(c.car.draft, drafts[k], dt)));
+      slipstream(liveStates, L, drafts);
+      live.forEach((k, i) => (cars[k].car.draft = carriedTow(cars[k].car.draft, drafts[i], dt)));
     }
-    for (const c of cars) {
+    for (const k of live) {
+      const c = cars[k];
       if (c.ai) {
         const x0 = c.car.state.x;
         const z0 = c.car.state.z;
-        c.car.step(c.ai.drive(states, dt));
+        c.car.step(c.ai.drive(liveStates, dt));
         if (Math.hypot(c.car.state.x - x0, c.car.state.z - z0) > 3) resets++;
       } else {
         const go = c.session.canDrive && c.session.phase !== 'finished';
@@ -108,10 +121,16 @@ export function race(
     }
     const now = new Set<string>();
     for (let pass = 0; pass < 3; pass++) {
-      for (let i = 0; i < states.length; i++) {
-        for (let j = i + 1; j < states.length; j++) {
+      for (let a = 0; a < live.length; a++) {
+        for (let b = a + 1; b < live.length; b++) {
+          const i = live[a];
+          const j = live[b];
           const hit = collideCars(states[i], states[j]);
           if (hit > 0) now.add(`${i}-${j}`);
+          if (pass === 0 && hit > 0) {
+            cars[i].car.addDamage(hit);
+            cars[j].car.addDamage(hit);
+          }
           if (pass === 0 && hit > 2 && !touching.has(`${i}-${j}`)) {
             firm++;
             {
@@ -153,6 +172,7 @@ export function race(
     touching.clear();
     for (const k of now) touching.add(k);
     cars.forEach((c, k) => {
+      if (gone[k]) return;
       c.session.step(prev[k], progress(c.car), events);
       if (c.car.state.slip > 3 && c.session.phase === 'racing') slideTicks++;
       if (c.car.state.offTrack && c.session.phase === 'racing') {
@@ -172,6 +192,24 @@ export function race(
       }
       lastOrder = order;
     }
+    // Breakdowns: retired where it stops, and taken off the track a while after.
+    let changed = false;
+    cars.forEach((c, k) => {
+      if (gone[k]) return;
+      if (c.car.broken && c.session.phase === 'racing') c.session.retire(c.car.state.s);
+      if (!c.session.retired) return;
+      outFor[k] += Math.abs(c.car.state.speed) < 1 ? dt : dt / 4;
+      if (outFor[k] >= DAMAGE.recoverAfter) {
+        gone[k] = true;
+        changed = true;
+      }
+    });
+    if (changed) {
+      live = live.filter((k) => !gone[k]);
+      liveStates = live.map((k) => states[k]);
+    }
+    // The chequered flag: once anyone has finished, the rest finish at the end of their lap.
+    if (flag && cars.some((c) => c.session.phase === 'finished' && !c.session.retired)) for (const c of cars) c.session.flagged = true;
     onTick?.(tick, cars);
     if (cars.every((c) => c.session.phase === 'finished')) break;
   }

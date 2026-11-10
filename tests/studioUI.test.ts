@@ -15,6 +15,7 @@ const { TrackLibrary } = await import('../src/track/library.ts');
 const { readDraft } = await import('../src/editor/draft.ts');
 const { storage } = await import('../src/platform/storage.ts');
 const { settings } = await import('../src/core/settings.ts');
+const { CareerStore } = await import('../src/career/career.ts');
 
 const canvas = win.document.createElement('canvas');
 const ctx = new Proxy({}, { get: (_target, key) => key === 'measureText' ? (text: string) => ({ width: text.length * 7 }) : () => {} });
@@ -32,6 +33,7 @@ const game: GameContext = {
   view3d: null, records: new RecordBook(), library: new TrackLibrary(), setup: settings().raceSetup as GameContext['setup'],
   mode: 'practice', lastResult: null, interrupted: false, preview: null,
   drive(mode) { drove = mode; }, go() {}, start() {}, openSetup() {}, closeSetup() {}, refreshPaint() {},
+  event: null, startEvent() {}, career: new CareerStore(),
 };
 const editor = new EditorScreen(game);
 editor.enter();

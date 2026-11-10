@@ -20,12 +20,14 @@ export class GridOverlay {
   private readonly note: HTMLElement;
   private readonly list: HTMLElement;
   private abort: AbortController | null = null;
+  private readonly back: HTMLButtonElement;
   private readonly actions: { start(): void; settings(): void };
 
   constructor(actions: { start(): void; settings(): void }) {
     this.actions = actions;
     this.note = h('p', { class: 'grid-note' });
     this.list = h('ol', { class: 'standings' });
+    this.back = button(STR.buttons.raceSettings, () => this.actions.settings(), { icon: '🏁' });
     this.root = h(
       'div',
       { class: 'screen overlay grid-overlay' },
@@ -38,7 +40,7 @@ export class GridOverlay {
         h(
           'div',
           { class: 'menu row setup-buttons' },
-          button(STR.buttons.raceSettings, () => this.actions.settings(), { icon: '🏁' }),
+          this.back,
           button(STR.grid.start, () => this.actions.start(), { icon: '▶', class: 'primary', key: 'Enter' }),
         ),
       ),
@@ -80,6 +82,14 @@ export class GridOverlay {
       },
       { signal: this.abort.signal },
     );
+  }
+
+  /** A championship round: the other button goes back to the paddock (the grid is kept) instead of to the race settings. */
+  setCareer(on: boolean): void {
+    const l = this.back.querySelector('.btn-label');
+    if (l) l.textContent = on ? STR.career.paddock : STR.buttons.raceSettings;
+    const i = this.back.querySelector('.btn-icon');
+    if (i) i.textContent = on ? '🏆' : '🏁';
   }
 
   hide(): void {

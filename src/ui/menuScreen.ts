@@ -3,6 +3,7 @@ import { STR, fmt } from '../config/strings.ts';
 import type { GameContext, Screen } from '../core/screen.ts';
 import { settings, updateSettings } from '../core/settings.ts';
 import { builtInTracks } from '../editor/pipeline.ts';
+import { nextRound, team as careerTeam } from '../career/career.ts';
 import { medalFor, medalTimes } from '../race/medals.ts';
 import { formatTime } from '../race/session.ts';
 import { TrackOrbit } from '../render/orbit.ts';
@@ -44,6 +45,7 @@ export class MenuScreen implements Screen {
   private readonly groupChoice: Choice<TrackGroup>;
   private readonly trackPos: HTMLElement;
   private readonly orbit = new TrackOrbit();
+  private readonly careerHint: HTMLElement;
 
   constructor(game: GameContext) {
     this.game = game;
@@ -52,6 +54,7 @@ export class MenuScreen implements Screen {
     this.trackInfo = h('div', { class: 'menu-track-info' });
     this.trackBest = h('div', { class: 'menu-track-best' });
     this.trackPos = h('div', { class: 'menu-track-pos' });
+    this.careerHint = h('span', { class: 'menu-hint' });
     this.groupChoice = segmented<TrackGroup>(
       GROUPS.map((g) => [g, STR.groups[g]]),
       (g) => this.pickGroup(g),
@@ -81,6 +84,7 @@ export class MenuScreen implements Screen {
           'div',
           { class: 'menu' },
           h('div', { class: 'menu-choice' }, button(M.race, () => this.game.openSetup(), { icon: '🏁', class: 'primary', key: 'Enter' }), h('span', { class: 'menu-hint', text: M.raceHint })),
+          h('div', { class: 'menu-choice' }, button(M.career, () => this.game.go('career'), { icon: '🏆', key: 'K' }), this.careerHint),
           h(
             'div',
             { class: 'menu row' },
@@ -139,6 +143,7 @@ export class MenuScreen implements Screen {
           Enter: () => this.game.openSetup(),
           NumpadEnter: () => this.game.openSetup(),
           KeyE: () => this.game.go('editor'),
+          KeyK: () => this.game.go('career'),
           KeyL: () => this.game.go('library'),
           KeyM: () => this.toggleSound(),
           ArrowLeft: () => this.step(-1),
@@ -225,6 +230,15 @@ export class MenuScreen implements Screen {
       b.title = this.lists[g].length ? `${STR.groups[g]} (${this.lists[g].length})` : STR.menu.noMine;
     }
     this.trackPos.textContent = fmt(STR.menu.position, { i: this.index + 1, n: this.lists[this.group].length });
+    // The career under way, in a line.
+    const career = this.game.career.save;
+    if (!career) this.careerHint.textContent = STR.menu.careerHint;
+    else {
+      const round = nextRound(career);
+      const name = careerTeam(career.team).name;
+      this.careerHint.textContent =
+        round === null ? fmt(STR.menu.careerOver, { season: career.season, team: name }) : fmt(STR.menu.careerOn, { season: career.season, round: round + 1, rounds: career.calendar.length, team: name });
+    }
     this.trackBest.replaceChildren();
     const medal = rec.best && rec.author ? medalFor(rec.best.time, medalTimes(rec.author)) : null;
     if (medal) this.trackBest.append(h('i', { class: `medal ${medal}`, title: STR.medals[medal] }));

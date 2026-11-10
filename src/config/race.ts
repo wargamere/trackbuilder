@@ -68,6 +68,10 @@ export const CONDITIONS = {
  * more drag (a lower top speed). The pit crew mends it all in a stop, which
  * takes `repairTime` s longer per unit of damage. AI cars pit for repairs
  * above `aiPitAt`. The HUD warns as it passes each of `warnAt`.
+ * At `breakAt` (100 %) the car breaks down on the spot: no drive, it stops
+ * where it is, and in a race it has retired (DNF). A retired AI car stands
+ * where it stopped for `recoverAfter` s (yellow flags, and the safety car if
+ * it's on), then the marshals take it away.
  */
 export const DAMAGE = {
   from: 5,
@@ -78,6 +82,10 @@ export const DAMAGE = {
   repairTime: 8,
   aiPitAt: 0.45,
   warnAt: [0.15, 0.5],
+  breakAt: 1,
+  recoverAfter: 9,
+  /** After you break down in a race, the results come up this long (s) after. */
+  resultsDelay: 3.5,
 } as const;
 
 /**
@@ -305,8 +313,10 @@ export const ASSISTS = {
 } as const;
 
 export const AI = {
-  /** Up to this many AI cars (12 cars with you). */
+  /** Up to this many AI cars in a single race (12 cars with you). */
   maxOpponents: 11,
+  /** The most AI cars the race screen can run: a championship's full grid of twenty with you. */
+  maxField: 19,
   /** Timed laps in qualifying (the best clean one sets your grid slot). */
   qualifyingLaps: 2,
   /** AI qualifying times vary by up to this share either way, so equal cars don't always line up the same. */

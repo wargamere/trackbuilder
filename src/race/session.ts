@@ -60,6 +60,13 @@ export class RaceSession {
   runStart: number | null = null;
   /** Session time the run ended. */
   runEnd: number | null = null;
+  /**
+   * The chequered flag is out (someone has finished the race): this car's
+   * race ends the next time it crosses the line, however many laps it has done.
+   */
+  flagged = false;
+  /** Retired from the race (broken down): how far round it had got (m, see raceDistance), else null. */
+  retiredAt: number | null = null;
   readonly laps: number[] = [];
   /** Per completed lap: false if track limits were broken or a checkpoint missed on it. */
   readonly lapValid: boolean[] = [];
@@ -114,6 +121,7 @@ export class RaceSession {
    * on the grid, before the line). Driving backwards never adds.
    */
   raceDistance(s: number): number {
+    if (this.retiredAt !== null) return this.retiredAt;
     const L = this.length;
     let d = ((s % L) + L) % L;
     if (this.lapStart === null) {
@@ -127,6 +135,23 @@ export class RaceSession {
     if (d > L / 2) d -= L;
     if (d <= -L / 2) d += L;
     return this.laps.length * L + from + clamp(d, 0, L - from);
+  }
+
+  /** Out of the race: it broke down before the finish (a DNF). */
+  get retired(): boolean {
+    return this.retiredAt !== null;
+  }
+
+  /**
+   * The car at track position `s` has broken down: its race is over where it
+   * is, unfinished (no total time; it keeps the distance it had covered).
+   * Nothing happens before the start or after the finish.
+   */
+  retire(s: number): void {
+    if (this.phase !== 'racing') return;
+    this.retiredAt = this.raceDistance(s);
+    this.phase = 'finished';
+    this.wrongWay = false;
   }
 
   get canDrive(): boolean {
@@ -147,7 +172,7 @@ export class RaceSession {
   /** Current lap time for display, or null before the first crossing. */
   lapTime(alpha = 1): number | null {
     if (this.lapStart === null) return null;
-    if (this.phase === 'finished' && this.runEnd !== null) return this.lastLap;
+    if (this.phase === 'finished') return this.lastLap;
     return Math.max(0, this.time(alpha) - this.lapStart);
   }
 
@@ -244,7 +269,7 @@ export class RaceSession {
       this.newBest = true;
     }
     out.push({ type: 'lap', lap: this.laps.length, time: lapTime, best: isBest, valid, missed });
-    if (this.laps.length >= this.lapsToRun) {
+    if (this.laps.length >= this.lapsToRun || this.flagged) {
       this.phase = 'finished';
       this.runEnd = tf;
       out.push({ type: 'finished' });

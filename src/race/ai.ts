@@ -192,7 +192,7 @@ export class AiDriver {
    * `slot`: its place on the grid; `box`: whose pit box it uses (see pitBox:
    * 0 is yours; by default slot + 1).
    */
-  constructor(track: Track, opts: { name: string; paint: number; difficulty: number; laps: number; slot: number; box?: number; wet?: boolean; tyreWear?: boolean; damage?: boolean }) {
+  constructor(track: Track, opts: { name: string; paint: number; difficulty: number; laps: number; slot: number; box?: number; wet?: boolean; tyreWear?: boolean; damage?: boolean; mediumLife?: number }) {
     const wet = !!opts.wet;
     this.name = opts.name;
     this.paint = opts.paint;
@@ -217,7 +217,8 @@ export class AiDriver {
     this.pitEarly = CONDITIONS.pitEarly[opts.slot % CONDITIONS.pitEarly.length];
     this.preference = preferredCompound(opts.slot);
     if (opts.tyreWear) {
-      this.car.mediumLife = trackTyreLife(track);
+      // (How long the tyres last: the track's own figure, unless the race says otherwise.)
+      this.car.mediumLife = opts.mediumLife ?? trackTyreLife(track);
       // The quickest tyres that last the race, else its own choice.
       this.car.newTyres(pickCompound(opts.laps, this.car.mediumLife, wet ? 1 : 0, this.preference));
     }
@@ -436,6 +437,8 @@ export class AiDriver {
     const st = this.car.state;
     const s = this.session;
     if (!s.canDrive) return NO_INPUT;
+    // Retired (broken down): it's out of the race, stopped where it is (the car itself sees to that).
+    if (s.retired) return NO_INPUT;
     const finished = s.phase === 'finished';
     const pit = this.pitPlan(st, finished, dt);
     if (pit === 'hold') return HOLD;

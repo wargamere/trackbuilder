@@ -7,14 +7,14 @@ import { keyboardHint } from '../car/bindings.ts';
 import { InputManager, type InputAction } from '../car/input.ts';
 import { CarModel } from '../car/model.ts';
 import { currentPaintHex, recordFinishedRun } from '../car/paint.ts';
-import { CarPhysics, CarState, lerpState, NO_INPUT, type DriveInput } from '../car/physics.ts';
+import { CarPhysics, CarState, lerpState, NO_INPUT, STANDARD_CAR, type DriveInput } from '../car/physics.ts';
 import { HANDLING } from '../config/handling.ts';
 import { AI_PAINTS, PAINTS } from '../config/paint.ts';
 import { AI, CONDITIONS, DAMAGE, PIT_LANE, RACE, SLIPSTREAM, TYRES, type Compound } from '../config/race.ts';
 import { compoundLife } from '../car/tyres.ts';
 import { STR, fmt } from '../config/strings.ts';
 import { FixedStep } from '../core/fixedStep.ts';
-import type { GameContext, Screen } from '../core/screen.ts';
+import type { EventCar, GameContext, Screen } from '../core/screen.ts';
 import { settings, updateSettings } from '../core/settings.ts';
 import { CAPS, prefersTouchControls } from '../platform/platform.ts';
 import { platform } from '../platform/services.ts';
@@ -29,13 +29,14 @@ import { RacingLineOverlay } from '../render/racingLineOverlay.ts';
 import { AssistsPanel } from '../ui/assistsPanel.ts';
 import { timeFor } from '../ui/conditionsPanel.ts';
 import { ControlsPanel } from '../ui/controlsPanel.ts';
-import { h } from '../ui/dom.ts';
+import { button, h } from '../ui/dom.ts';
 import { Hud } from '../ui/hud.ts';
 import { PauseMenu } from '../ui/pauseMenu.ts';
 import { TouchControls } from '../ui/touchControls.ts';
 import { GridOverlay, type GridEntry } from '../ui/gridOverlay.ts';
 import { AiDriver, aiField, aiPace, gridOrder, gridPlace, qualifyingOrder, YOU } from './ai.ts';
 import { RacingDriver } from './driver.ts';
+import { raceOrder } from './classify.ts';
 import { RaceControl, type ControlCar, type ControlEvent } from './raceControl.ts';
 import { sampleAt, leftOf } from '../track/spline.ts';
 import { GhostRecorder, ghostPose, type GhostLap } from './ghost.ts';
@@ -47,7 +48,7 @@ import { Weather } from './weather.ts';
 import type { TimeOfDay } from '../config/track.ts';
 import { formatGap, GapTracker } from './timing.ts';
 import { TimingTower, type TowerRow } from '../ui/timingTower.ts';
-import { scoreFor, type RunResult } from './records.ts';
+import { scoreFor, type Standing } from './records.ts';
 import { formatDelta, formatTime, RaceSession, type Progress, type RaceEvent } from './session.ts';
 
 const BRAKE: DriveInput = { throttle: 0, brake: 1, steer: 0, handbrake: false };
@@ -57,14 +58,30 @@ const HOLD: DriveInput = { throttle: 0, brake: 0, steer: 0, handbrake: true };
 /** Two presses of R (or gamepad Back) this close together restart the lap in practice. */
 const DOUBLE_TAP = 0.5;
 
+/**
+ * Watching the rest of a race once yours is over (a championship round, where
+ * every car's result counts): fast-forward, at most this many physics ticks a
+ * frame and this long (ms) spent on them, so a slow device just watches slower.
+ */
+const WATCH = { ticks: 24, budget: 9 } as const;
+
 /** An AI car in the race: its driver, what's drawn, and its name tag. */
 interface Opponent {
+  /** Who it is (a championship's driver id; else its number in the field). */
+  id: string;
   ai: AiDriver;
   model: CarModel;
   view: CarState;
   label: HTMLElement;
   prev: Progress;
+  /** A mechanical failure to come: the race distance (m) it breaks down at, or null. */
+  failAt: number | null;
+  /** Retired: how long it has stood where it stopped (s). */
+  outFor: number;
 }
+
+/** A car of the field: an AI's name, colour and pace, and in a championship who it is, its pit box and its luck. */
+type FieldCar = { name: string; paint: number; difficulty: number } & Partial<Pick<EventCar, 'id' | 'box' | 'failAt'>>;
 
 /** A car in the race order. */
 interface Entry {
@@ -80,6 +97,8 @@ interface Entry {
   end: number | null;
   /** How far round the race it is (see RaceSession.raceDistance). */
   dist: number;
+  /** Retired (broken down): out of the race, behind everyone still in it. */
+  out: boolean;
 }
 
 const hexColour = (hex: number) => `#${hex.toString(16).padStart(6, '0')}`;
@@ -120,7 +139,20 @@ export class RaceScreen implements Screen {
   private states: CarState[] = [];
   private readonly aiEvents: RaceEvent[] = [];
   /** Slipstream for each car in `states` this tick. */
-  private readonly drafts = new Float32Array(AI.maxOpponents + 1);
+  private readonly drafts = new Float32Array(AI.maxField + 1);
+  /** The cars on the track, as indices (0 = you, k + 1 = AI car k), in step with `states`. */
+  private live: number[] = [0];
+  /** Cars taken off the track, by the same index: retired ones once the marshals have them, and yours while the rest of the race is watched. */
+  private gone: boolean[] = [];
+  /** The chequered flag is out: somebody has finished, so everyone else finishes at the end of the lap they're on. */
+  private flagOut = false;
+  /** Your race is over and the rest of it is being watched, fast-forward (championship rounds); for how long (s of race time), and the car followed. */
+  private watching = false;
+  private watchTime = 0;
+  private watchIdx = -1;
+  private readonly watchBar: HTMLElement;
+  /** In practice: you've been told the car has broken down. */
+  private brokenTold = false;
   private lastResetPress = -Infinity;
   /** What's being driven: qualifying (alone, for the grid), the grid on show after it, or the run itself. */
   private stage: 'qualifying' | 'grid' | 'run' = 'run';
@@ -161,6 +193,7 @@ export class RaceScreen implements Screen {
   private crew: PitCrew | null = null;
   private pitMesh: Mesh | null = null;
   private pitMeshTrack: Track | null = null;
+  private pitMeshBox = 0;
   /** Tyre warnings shown for this set: 1 = going off soon, 2 = gone off. */
   private tyreWarned = 0;
   /** The tyres to fit at the pit stop under way (picked with 1–4 or a tap). */
@@ -210,11 +243,14 @@ export class RaceScreen implements Screen {
       drawTrack: () => this.game.go('editor'),
       myTracks: () => this.game.go('library'),
       toggleSound: () => this.toggleSound(),
+      paddock: () => this.leaveEvent(),
     });
     this.gridOverlay = new GridOverlay({
       start: () => this.startRace(this.grid),
-      settings: () => this.game.openSetup(),
+      settings: () => (this.game.event ? this.game.event.leave() : this.game.openSetup()),
     });
+    this.watchBar = h('div', { class: 'watch-bar' }, h('span', { class: 'watch-text', text: STR.race.watching }), button(STR.race.watchSkip, () => this.endWatching(), { icon: '⏭', class: 'compact', key: 'Enter' }));
+    this.watchBar.hidden = true;
     this.touch = new TouchControls(this.input.touch);
     this.input.onAction = (a) => this.onAction(a);
     this.model = game.view3d ? new CarModel(currentPaintHex()) : null;
@@ -226,7 +262,7 @@ export class RaceScreen implements Screen {
     }
     this.ghostLabel = h('div', { class: 'ghost-label', text: STR.race.ghostYou });
     this.ghostLabel.hidden = true;
-    this.hud.root.append(this.ghostLabel, this.tower.root);
+    this.hud.root.append(this.ghostLabel, this.tower.root, this.watchBar);
     this.tower.onToggle = (mode) => {
       updateSettings({ tower: mode });
       this.towerIn = 0;
@@ -239,7 +275,7 @@ export class RaceScreen implements Screen {
     if (this.model && this.ghostModel) {
       this.ghostModel.root.visible = false;
       game.view3d?.scene.add(this.model.root, this.ghostModel.root);
-      for (let k = 0; k < AI.maxOpponents; k++) {
+      for (let k = 0; k < AI.maxField; k++) {
         const m = new CarModel(PAINTS[(k + 1) % PAINTS.length].hex);
         m.root.visible = false;
         this.aiModels.push(m);
@@ -257,9 +293,12 @@ export class RaceScreen implements Screen {
     this.game.ui.append(this.hud.root, this.gridOverlay.root, this.pauseMenu.root);
     this.hud.showMinimap(settings().minimap);
     this.game.view3d?.setQuality(settings().graphics);
-    this.hud.setTrackInfo(
-      fmt(STR.race.trackInfo, { name: t.def.name, len: Math.round(t.center.length) }),
-    );
+    const ev = this.game.event;
+    const info = fmt(STR.race.trackInfo, { name: t.def.name, len: Math.round(t.center.length) });
+    this.hud.setTrackInfo(ev ? `${ev.title} · ${info}` : info);
+    this.hud.setCareer(!!ev);
+    this.pauseMenu.setCareer(!!ev);
+    this.gridOverlay.setCareer(!!ev);
     const v = this.game.view3d;
     if (!v) {
       this.hud.showHint(STR.errors.webgl, 1e9);
@@ -293,6 +332,16 @@ export class RaceScreen implements Screen {
       },
       { signal: this.abort.signal },
     );
+    // Watching the rest of the race: Enter skips to the results.
+    window.addEventListener(
+      'keydown',
+      (e) => {
+        if (!this.watching || this.paused || e.repeat || (e.code !== 'Enter' && e.code !== 'NumpadEnter')) return;
+        e.preventDefault();
+        this.endWatching();
+      },
+      { signal: this.abort.signal },
+    );
     this.startRun();
     this.hud.showHint(this.controlsText());
   }
@@ -307,6 +356,10 @@ export class RaceScreen implements Screen {
     this.gridOverlay.hide();
     this.gridOverlay.root.remove();
     this.qualSims = [];
+    this.watching = false;
+    this.watchBar.hidden = true;
+    this.hud.root.classList.remove('watching');
+    if (this.model) this.model.root.visible = true;
     this.touch.root.remove();
     this.hud.clearFlash();
     this.assistsPanel.close();
@@ -337,13 +390,15 @@ export class RaceScreen implements Screen {
     // (A real light costs on slow GPUs: with fast graphics only the lamps glow.)
     for (const m of [this.model, ...this.aiModels]) m?.setLights(v.night, settings().graphics === 'full');
     const pitting = setup.tyreWear || (setup.damage && setup.mode === 'race');
-    if (pitting && this.pitMeshTrack !== t) {
+    const box = this.myBox;
+    if (pitting && (this.pitMeshTrack !== t || this.pitMeshBox !== box)) {
       if (this.pitMesh) {
         v.scene.remove(this.pitMesh);
         this.pitMesh.geometry.dispose();
       }
-      this.pitMesh = buildPitBoxMesh(t, pitBox(t));
+      this.pitMesh = buildPitBoxMesh(t, pitBox(t, box));
       this.pitMeshTrack = t;
+      this.pitMeshBox = box;
       v.scene.add(this.pitMesh);
     }
     if (this.pitMesh) this.pitMesh.visible = pitting && this.pitMeshTrack === t;
@@ -360,10 +415,55 @@ export class RaceScreen implements Screen {
    * picked, drawn at random, or set by a qualifying session first.
    */
   startRun(): void {
+    const ev = this.game.event;
+    if (ev) {
+      // A championship round: practice alone, qualifying first, or (qualifying done) the race from its grid.
+      if (ev.session === 'practice') this.startRace([YOU]);
+      else if (ev.session === 'qualifying' && !ev.grid) this.startQualifying();
+      else this.startRace(this.eventOrder(ev.grid ?? []));
+      return;
+    }
     const setup = this.game.setup;
     const ai = setup.mode === 'race' ? Math.min(setup.opponents, this.aiModels.length) : 0;
     if (ai > 0 && setup.grid === 'qualifying') this.startQualifying();
     else this.startRace(ai > 0 ? gridOrder(setup.grid, ai, setup.startSlot) : [YOU]);
+  }
+
+  /** A championship grid (driver ids, pole first) as car ids by slot; anyone it leaves out starts at the back, you last. */
+  private eventOrder(grid: readonly string[]): number[] {
+    const ev = this.game.event;
+    if (!ev) return [YOU];
+    const field = ev.field.slice(0, this.aiModels.length);
+    const order: number[] = [];
+    for (const id of grid) {
+      const k = id === ev.you.id ? YOU : field.findIndex((f) => f.id === id);
+      if ((k === YOU || k >= 0) && !order.includes(k)) order.push(k);
+    }
+    field.forEach((_, k) => !order.includes(k) && order.push(k));
+    if (!order.includes(YOU)) order.push(YOU);
+    return order;
+  }
+
+  /** Your colour and name: your team's in a championship, else the paint you picked and "You". */
+  private get myPaint(): number {
+    return this.game.event?.you.paint ?? currentPaintHex();
+  }
+
+  private get myName(): string {
+    return this.game.event?.you.name ?? STR.results.you;
+  }
+
+  /** Whose pit box is yours (see pitBox). */
+  private get myBox(): number {
+    return this.game.event?.you.box ?? 0;
+  }
+
+  /** Leaves a championship round for the paddock: unfinished, unless the race is only being watched to its end (then it counts as it stands). */
+  private leaveEvent(): void {
+    const ev = this.game.event;
+    if (!ev) return;
+    if (this.watching) this.endWatching();
+    else ev.leave();
   }
 
   /** Restart from the pause menu: qualifying again, or the same race from the same grid. */
@@ -385,6 +485,15 @@ export class RaceScreen implements Screen {
     this.ghostIndex = -1;
     this.hit = 0;
     this.finishedFor = -1;
+    this.gone = [];
+    this.flagOut = false;
+    this.watching = false;
+    this.watchTime = 0;
+    this.watchIdx = -1;
+    this.watchBar.hidden = true;
+    this.hud.root.classList.remove('watching');
+    this.brokenTold = false;
+    if (this.model) this.model.root.visible = true;
     this.fixed.reset();
     this.paused = false;
     this.pauseMenu.hide();
@@ -405,12 +514,15 @@ export class RaceScreen implements Screen {
     car.wear = wear;
     car.damageOn = damage;
     car.repair();
+    car.failed = false;
+    // (In a championship your team's car: a little down on the best one, or not.)
+    car.tune = this.game.event?.car ?? STANDARD_CAR;
     this.damageWarned = 0;
     car.setup = settings().carSetup;
-    car.mediumLife = trackTyreLife(this.game.track);
+    car.mediumLife = this.game.event?.tyreLife ?? trackTyreLife(this.game.track);
     car.newTyres(wear ? this.game.setup.tyres : 'medium');
     // (A pit crew for new tyres, or for repairs.)
-    this.crew = wear || damage ? new PitCrew(this.game.track) : null;
+    this.crew = wear || damage ? new PitCrew(this.game.track, this.myBox) : null;
     this.crew?.reset(car.state);
     this.hud.showTyrePicker(null);
   }
@@ -452,7 +564,7 @@ export class RaceScreen implements Screen {
     if (this.scModel) this.scModel.root.visible = false;
     this.hud.setFlag(null);
     this.autopilot = import.meta.env.DEV && new URLSearchParams(location.search).has('autopilot') ? new RacingDriver(t, aiPace(0.8, t)) : null;
-    this.states = [car.state, ...this.opponents.map((o) => o.ai.car.state)];
+    this.syncLive();
     this.gaps = this.opponents.length ? new GapTracker(1 + this.opponents.length) : null;
     this.tower.mode = settings().tower;
     this.tower.hide();
@@ -484,7 +596,7 @@ export class RaceScreen implements Screen {
     this.prepareCar(car, false);
     this.gaps = null;
     this.tower.hide();
-    this.states = [car.state];
+    this.syncLive();
     this.qualSims = this.field(setup.opponents).map((f) => new AuthorLap(t, f.difficulty, false, this.wet, suggestedSetup(t)));
     this.hud.setMode('race');
     this.pauseMenu.setMode('qualifying');
@@ -513,9 +625,15 @@ export class RaceScreen implements Screen {
     audio.setEngine(false);
     const entries: GridEntry[] = order.map((id) =>
       id === YOU
-        ? { name: STR.results.you, paint: currentPaintHex(), time: times.get(YOU) ?? null, you: true }
+        ? { name: this.myName, paint: this.myPaint, time: times.get(YOU) ?? null, you: true }
         : { name: field[id].name, paint: field[id].paint, time: times.get(id) ?? null, you: false },
     );
+    // A championship keeps the grid (so the race can be run later, or again).
+    const ev = this.game.event;
+    if (ev) {
+      const idOf = (k: number) => (k === YOU ? ev.you.id : (field[k].id ?? String(k)));
+      ev.qualified(order.map(idOf), Object.fromEntries(order.map((k) => [idOf(k), times.get(k) ?? null])));
+    }
     this.gridOverlay.show(entries);
   }
 
@@ -531,7 +649,10 @@ export class RaceScreen implements Screen {
   }
 
   /** The AI cars' names, colours and difficulties, fastest first (never your colour). */
-  private field(count: number): { name: string; paint: number; difficulty: number }[] {
+  private field(count: number): FieldCar[] {
+    // A championship round brings its own field.
+    const ev = this.game.event;
+    if (ev) return ev.field.slice(0, Math.min(count, this.aiModels.length));
     const mine = currentPaintHex();
     const paints = [...PAINTS.map((p) => p.hex), ...AI_PAINTS].filter((hex) => hex !== mine);
     return aiField(Math.min(count, this.aiModels.length), this.game.setup.difficulty, paints, STR.ai.names);
@@ -542,14 +663,16 @@ export class RaceScreen implements Screen {
     this.clearOpponents();
     const t = this.game.track;
     const field = this.field(order.length - 1);
+    const laps = this.game.setup.laps;
     field.forEach((f, k) => {
-      const ai = new AiDriver(t, { ...f, laps: this.game.setup.laps, slot: order.indexOf(k), box: k + 1, wet: this.wet, tyreWear: this.game.setup.tyreWear, damage: this.game.setup.damage });
+      const ai = new AiDriver(t, { name: f.name, paint: f.paint, difficulty: f.difficulty, laps, slot: order.indexOf(k), box: f.box ?? k + 1, wet: this.wet, tyreWear: this.game.setup.tyreWear, damage: this.game.setup.damage, mediumLife: this.game.event?.tyreLife });
       const model = this.aiModels[k];
       model.setPaint(f.paint);
       model.root.visible = true;
       const label = this.aiLabels[k];
       label.textContent = f.name;
-      this.opponents.push({ ai, model, view: new CarState(), label, prev: { s: 0, lateral: 0, along: 0 } });
+      const failAt = f.failAt === undefined ? null : f.failAt * laps * t.center.length;
+      this.opponents.push({ id: f.id ?? String(k), ai, model, view: new CarState(), label, prev: { s: 0, lateral: 0, along: 0 }, failAt, outFor: 0 });
     });
   }
 
@@ -559,9 +682,36 @@ export class RaceScreen implements Screen {
     for (const l of this.aiLabels) l.hidden = true;
   }
 
+  /** The cars on the track (`live`, and their states for traffic, slipstream and contact): everyone not taken off it. */
+  private syncLive(): void {
+    this.live = [];
+    this.states = [];
+    if (!this.gone[0] && this.car) {
+      this.live.push(0);
+      this.states.push(this.car.state);
+    }
+    this.opponents.forEach((o, k) => {
+      if (this.gone[k + 1]) return;
+      this.live.push(k + 1);
+      this.states.push(o.ai.car.state);
+    });
+  }
+
+  /** Takes car `idx` (0 = you) off the track: not drawn, not driven, in nobody's way. */
+  private takeOff(idx: number): void {
+    if (this.gone[idx]) return;
+    this.gone[idx] = true;
+    const o = idx > 0 ? this.opponents[idx - 1] : null;
+    if (o) {
+      o.model.root.visible = false;
+      o.label.hidden = true;
+    } else if (this.model) this.model.root.visible = false;
+    this.syncLive();
+  }
+
   /** Puts the selected paint on the car and its ghost. */
   applyPaint(): void {
-    const hex = currentPaintHex();
+    const hex = this.myPaint;
     this.model?.setPaint(hex);
     this.ghostModel?.setPaint(hex);
   }
@@ -619,7 +769,13 @@ export class RaceScreen implements Screen {
   }
 
   private resetCar(): void {
-    if (!this.car || !this.session?.canDrive) return;
+    if (!this.car || !this.session?.canDrive || this.session.retired || this.watching) return;
+    // (Broken down in practice: a fresh car.)
+    if (this.car.broken) {
+      this.car.repair();
+      this.brokenTold = false;
+      this.hud.clearFlash();
+    }
     this.car.resetToRoad();
     this.crew?.reset(this.car.state); // (a stop under way is off)
     this.hud.showTyrePicker(null);
@@ -655,13 +811,19 @@ export class RaceScreen implements Screen {
   private tick(): void {
     const car = this.car!;
     const session = this.session!;
-    if (this.opponents.length) {
-      slipstream(this.states, this.game.track.center.length, this.drafts);
-      const dt = 1 / HANDLING.tickRate;
-      car.draft = carriedTow(car.draft, this.drafts[0], dt);
-      this.opponents.forEach((o, k) => (o.ai.car.draft = carriedTow(o.ai.car.draft, this.drafts[k + 1], dt)));
+    const dt = car.dt;
+    const st = this.states;
+    const live = this.live;
+    /** Your car is on the track (not once your race is over and the rest is being watched). */
+    const mine = !this.gone[0];
+    if (st.length > 1) {
+      slipstream(st, this.game.track.center.length, this.drafts);
+      live.forEach((idx, i) => {
+        const c = this.carAt(idx);
+        if (c) c.draft = carriedTow(c.draft, this.drafts[i], dt);
+      });
     } else car.draft = 0;
-    if (session.phase === 'racing' && this.weather.kind === 'changing') this.updateWeather(car.dt);
+    if ((session.phase === 'racing' || this.watching) && this.weather.kind === 'changing') this.updateWeather(dt);
     const assists = settings().assists;
     car.gearbox = assists.gears;
     let inp = session.phase === 'racing' ? this.input.sample(this.tickInput) : session.phase === 'finished' ? BRAKE : NO_INPUT;
@@ -679,44 +841,50 @@ export class RaceScreen implements Screen {
     // In the pit box the crew holds the car while it works.
     if (this.crew?.busy) inp = HOLD;
     const prev = this.progress();
-    car.step(inp);
-    this.hit = Math.max(this.hit, car.state.wallHit);
     const hits = this.hits;
     hits.length = 1 + this.opponents.length;
     hits.fill(0);
-    hits[0] = car.state.wallHit;
-    if (this.crew && session.phase === 'racing') this.pitTick(car);
+    if (mine) {
+      car.step(inp);
+      this.hit = Math.max(this.hit, car.state.wallHit);
+      hits[0] = car.state.wallHit;
+      if (this.crew && session.phase === 'racing') this.pitTick(car);
+    }
     this.opponents.forEach((o, k) => {
+      if (this.gone[k + 1]) return;
       this.progress(o.ai.car, o.prev);
-      o.ai.car.step(o.ai.drive(this.states, car.dt));
+      o.ai.car.step(o.ai.drive(st, dt));
       hits[k + 1] = o.ai.car.state.wallHit;
     });
-    // Cars bump into each other (the player is states[0]). A few times over, so a car pushed
-    // out of one car and into another in a pack is pushed out of that one too.
-    const st = this.states;
+    // Cars bump into each other. A few times over, so a car pushed out of one car and into
+    // another in a pack is pushed out of that one too.
     for (let pass = 0; pass < 3; pass++) {
       for (let i = 0; i < st.length; i++) {
         for (let j = i + 1; j < st.length; j++) {
           const hit = collideCars(st[i], st[j]);
-          if (i === 0) this.hit = Math.max(this.hit, hit);
+          if (live[i] === 0) this.hit = Math.max(this.hit, hit);
           // (Damage from the first push only: the others just separate the cars.)
           if (pass === 0 && hit > 0) {
-            hits[i] = Math.max(hits[i], hit);
-            hits[j] = Math.max(hits[j], hit);
-            this.carAt(i)?.addDamage(hit);
-            this.carAt(j)?.addDamage(hit);
+            hits[live[i]] = Math.max(hits[live[i]], hit);
+            hits[live[j]] = Math.max(hits[live[j]], hit);
+            this.carAt(live[i])?.addDamage(hit);
+            this.carAt(live[j])?.addDamage(hit);
           }
         }
       }
     }
     this.events.length = 0;
+    // (Your session's clock is the race's: it keeps running when your own race is over.)
     session.step(prev, this.progress(), this.events);
     for (const e of this.events) this.onRaceEvent(e);
-    for (const o of this.opponents) {
+    this.opponents.forEach((o, k) => {
+      if (this.gone[k + 1]) return;
       this.aiEvents.length = 0;
       o.ai.session.step(o.prev, this.progress(o.ai.car), this.aiEvents);
-    }
-    if (this.control) this.raceControl(car.dt);
+    });
+    this.retirements(dt);
+    this.chequeredFlag();
+    if (this.control) this.raceControl(dt);
     // Timing: when each car passes each mark of the race distance.
     const gaps = this.gaps;
     if (gaps) {
@@ -724,9 +892,71 @@ export class RaceScreen implements Screen {
       gaps.update(0, session.raceDistance(car.state.s), now);
       this.opponents.forEach((o, k) => gaps.update(k + 1, o.ai.session.raceDistance(o.ai.car.state.s), now));
     }
-    if (session.lapStart !== null && session.phase === 'racing') {
+    if (mine && session.lapStart !== null && session.phase === 'racing') {
       this.recorder.push(car.state.x, car.state.z, car.state.heading);
     }
+  }
+
+  /**
+   * Cars that break down (damaged all the way, or in a championship a
+   * mechanical failure): in a race they have retired. Yours ends your race;
+   * an AI's stands where it stopped (yellow flags, maybe the safety car) until
+   * the marshals have taken it away. In practice you're told to reset.
+   */
+  private retirements(dt: number): void {
+    const car = this.car!;
+    const session = this.session!;
+    const R = STR.race;
+    if (car.broken && session.phase === 'racing' && !this.gone[0]) {
+      if (this.stage === 'run' && this.game.mode === 'race') {
+        session.retire(car.state.s);
+        this.crew?.reset(car.state);
+        this.hud.showTyrePicker(null);
+        this.hud.flash(R.brokenDown, 'bad', 0);
+        audio.beep(220, 0.5, 0.25);
+        audio.beep(150, 0.6, 0.25, 0.3);
+        this.finishedFor = 0;
+      } else if (!this.brokenTold) {
+        this.brokenTold = true;
+        this.hud.flash(R.brokenPractice, 'bad', 0);
+        audio.beep(220, 0.4, 0.25);
+      }
+    }
+    this.opponents.forEach((o, k) => {
+      if (this.gone[k + 1]) return;
+      const s = o.ai.session;
+      const c = o.ai.car;
+      if (o.failAt !== null && s.phase === 'racing' && s.raceDistance(c.state.s) >= o.failAt) {
+        o.failAt = null;
+        c.failed = true;
+      }
+      if (c.broken && s.phase === 'racing') {
+        s.retire(c.state.s);
+        o.outFor = 0;
+        if (session.phase === 'racing') this.hud.flash(fmt(R.carOut, { name: o.ai.name }), 'info', 2.5);
+      }
+      if (!s.retired) return;
+      // (Still rolling counts a little, so one that never quite stops goes too.)
+      o.outFor += Math.abs(c.state.speed) < 1 ? dt : dt / 4;
+      if (o.outFor >= DAMAGE.recoverAfter) this.takeOff(k + 1);
+    });
+  }
+
+  /**
+   * The chequered flag: once anyone has finished the race, every other car
+   * finishes the next time it crosses the line, however many laps it has done
+   * (so a lapped car is classified a lap down, not left to drive them all).
+   */
+  private chequeredFlag(): void {
+    if (this.flagOut || this.stage !== 'run' || !this.opponents.length) return;
+    const s = this.session!;
+    const done = (x: RaceSession) => x.phase === 'finished' && !x.retired;
+    if (!done(s) && !this.opponents.some((o) => done(o.ai.session))) return;
+    this.flagOut = true;
+    s.flagged = true;
+    for (const o of this.opponents) o.ai.session.flagged = true;
+    // (Lapped: this lap is your last.)
+    if (s.phase === 'racing' && s.laps.length < s.lapsToRun - 1) this.hud.flash(STR.race.flagOut, 'info', 3);
   }
 
   /** Car `i` of `states` (0 = you). */
@@ -744,15 +974,17 @@ export class RaceScreen implements Screen {
     const session = this.session!;
     const cars = this.controlCars;
     cars.length = 0;
-    const entry = (st: CarState, s: typeof session, pitting: boolean, hit: number): ControlCar => ({
+    // (A retired car still standing on the track is an incident, until it's been taken away.)
+    const entry = (idx: number, st: CarState, s: typeof session, pitting: boolean, hit: number): ControlCar => ({
       st,
       dist: s.raceDistance(st.s),
-      racing: s.phase === 'racing' && s.lapStart !== null && !pitting,
+      racing: !this.gone[idx] && (s.retired || (s.phase === 'racing' && s.lapStart !== null && !pitting)),
       hit,
+      out: s.retired || !!this.gone[idx],
     });
     // (A car in the pit lane isn't stuck on the track, however slow it goes.)
-    cars.push(entry(this.car!.state, session, !!this.crew?.busy || this.car!.state.inPits, this.hits[0] ?? 0));
-    this.opponents.forEach((o, k) => cars.push(entry(o.ai.car.state, o.ai.session, o.ai.pitting || o.ai.car.state.inPits || o.ai.session.phase === 'finished', this.hits[k + 1] ?? 0)));
+    cars.push(entry(0, this.car!.state, session, !!this.crew?.busy || this.car!.state.inPits, this.hits[0] ?? 0));
+    this.opponents.forEach((o, k) => cars.push(entry(k + 1, o.ai.car.state, o.ai.session, o.ai.pitting || o.ai.car.state.inPits || (o.ai.session.phase === 'finished' && !o.ai.session.retired), this.hits[k + 1] ?? 0)));
     const ev = this.controlEvents;
     ev.length = 0;
     control.step(dt, cars, ev);
@@ -773,7 +1005,7 @@ export class RaceScreen implements Screen {
     }
     // Your damage, as it gets worse.
     const car = this.car!;
-    if (car.damageOn) {
+    if (car.damageOn && !car.broken) {
       const warn = DAMAGE.warnAt.filter((x) => car.damage >= x).length;
       if (warn > this.damageWarned) {
         this.damageWarned = warn;
@@ -893,6 +1125,7 @@ export class RaceScreen implements Screen {
         else audio.beep(e.valid ? 880 : 300, 0.18);
         if (s.phase === 'finished') {
           const pos = this.opponents.length ? this.standings().findIndex((x) => x.you) : -1;
+          this.hud.setFlag(null);
           if (this.stage === 'qualifying') this.hud.flash(STR.race.qualifyingDone, 'big', 0);
           else this.hud.flash(pos >= 0 ? fmt(STR.race.finishedPos, { pos: STR.results.ordinals[pos] }) : STR.race.finished, 'big', 0);
         }
@@ -939,6 +1172,7 @@ export class RaceScreen implements Screen {
     // Celebrate a personal best, at most once per run.
     if (s.newBest || newBestScore) platform.happytime();
     const unlockedPaints = recordFinishedRun();
+    const order = this.finishingOrder();
     this.game.lastResult = {
       trackId: t.def.id,
       trackName: t.def.name,
@@ -956,25 +1190,95 @@ export class RaceScreen implements Screen {
       carZ: this.car!.state.z,
       unlockedPaints,
       author: rec.author ?? null,
-      ...this.finishingOrder(),
+      dnf: s.retired,
+      standings: order.standings,
+      position: order.position,
     };
+    // A championship round reports to the career (which shows the result and the standings).
+    const ev = this.game.event;
+    if (ev && order.standings) {
+      const rows = order.standings;
+      const clean = rows.filter((r) => r.best !== null && r.best !== undefined);
+      const fastest = clean.length ? clean.reduce((a, b) => ((b.best as number) < (a.best as number) ? b : a)) : null;
+      ev.finished({
+        order: rows.map((r) => r.id ?? ''),
+        dnf: rows.filter((r) => r.dnf).map((r) => r.id ?? ''),
+        fastest: fastest?.id ?? null,
+        times: rows.map((r) => (r.dnf || r.estimated ? null : r.time)),
+        laps: rows.map((r) => r.laps ?? 0),
+        estimated: rows.some((r) => r.estimated),
+      });
+      return;
+    }
     this.game.go('results');
   }
 
+  /** Your race is over in a championship round: the rest of it runs on, fast-forward, seen from the car in front, until everyone has finished. */
+  private startWatching(): void {
+    this.watching = true;
+    this.watchTime = 0;
+    this.watchIdx = -1;
+    // (Your car is cleared away: nobody is driving it.)
+    this.takeOff(0);
+    this.crew?.reset(this.car!.state);
+    this.hud.showTyrePicker(null);
+    this.input.clear();
+    this.touch.release();
+    audio.setEngine(false);
+    this.hud.clearFlash();
+    this.hud.setFlag(null);
+    this.watchBar.hidden = false;
+    this.hud.root.classList.add('watching');
+    if (this.ghostModel) this.ghostModel.root.visible = false;
+  }
+
+  /** Stops watching and shows the results (cars still racing are placed as they stand). */
+  private endWatching(): void {
+    if (!this.watching) return;
+    this.watching = false;
+    this.watchBar.hidden = true;
+    this.hud.root.classList.remove('watching');
+    this.paused = false;
+    this.pauseMenu.hide();
+    this.showResults();
+  }
+
+  /** AI cars still racing (not finished, not retired). */
+  private stillRacing(): boolean {
+    return this.opponents.some((o) => o.ai.session.phase !== 'finished');
+  }
+
+  /** While watching: the car the camera follows: the first one still racing (kept until it has finished), else the winner. */
+  private watched(): Opponent | null {
+    const cur = this.watchIdx > 0 ? this.opponents[this.watchIdx - 1] : null;
+    if (cur && !this.gone[this.watchIdx] && cur.ai.session.phase === 'racing') return cur;
+    const order = this.standings().filter((e) => e.idx > 0 && !this.gone[e.idx]);
+    const next = order.find((e) => e.session.phase !== 'finished') ?? order[0];
+    if (!next) return null;
+    if (next.idx !== this.watchIdx) {
+      this.watchIdx = next.idx;
+      this.rig.snap(this.opponents[next.idx - 1].ai.car.state);
+    }
+    return this.opponents[next.idx - 1];
+  }
+
   /**
-   * Everyone in race order: cars that have finished by when they crossed the
-   * line, then the rest by how far round the race they are.
+   * Everyone in race order: by how far round the race they are (a car that
+   * has finished has done its laps; of two that finished on the same lap, the
+   * one that crossed the line first), then the cars that retired, the one
+   * that got furthest first.
    */
   private standings(): Entry[] {
     const you: Entry = {
       idx: 0,
-      name: STR.results.you,
+      name: this.myName,
       you: true,
-      paint: currentPaintHex(),
+      paint: this.myPaint,
       session: this.session!,
       start: this.playerStart,
       end: this.session!.runEnd,
       dist: this.session!.raceDistance(this.car!.state.s),
+      out: this.session!.retired,
     };
     const ai = this.opponents.map((o, k): Entry => ({
       idx: k + 1,
@@ -985,39 +1289,51 @@ export class RaceScreen implements Screen {
       start: o.ai.start,
       end: o.ai.session.runEnd,
       dist: o.ai.session.raceDistance(o.ai.car.state.s),
+      out: o.ai.session.retired,
     }));
-    return [you, ...ai].sort((a, b) => (a.end !== null && b.end !== null ? a.end - b.end : a.end !== null ? -1 : b.end !== null ? 1 : b.dist - a.dist));
+    return raceOrder([you, ...ai]);
   }
 
   /**
    * The finishing order for the results (races with AI cars only). Times run
-   * from GO; a car still racing when you finish gets an estimate from its
-   * average speed so far.
+   * from GO; a car still racing when the results are shown gets an estimate
+   * from its average speed so far, to the end of the lap it's on if the flag
+   * is out. Retired cars have no time.
    */
-  private finishingOrder(): Pick<RunResult, 'standings' | 'position'> {
+  private finishingOrder(): { standings: Standing[] | null; position: number | null } {
     if (!this.opponents.length) return { standings: null, position: null };
     const s = this.session!;
-    const total = s.lapsToRun * s.length;
+    const L = s.length;
+    const total = s.lapsToRun * L;
     const now = s.time();
     let last = 0;
-    const standings = this.standings().map((e) => {
+    const order = this.standings();
+    const winnerLaps = order[0].session.laps.length;
+    const ev = this.game.event;
+    const standings = order.map((e): Standing => {
+      const laps = e.session.laps;
+      const clean = laps.filter((_, i) => e.session.lapValid[i]);
+      const row = { id: e.you ? (ev?.you.id ?? 'you') : (this.opponents[e.idx - 1]?.id ?? ''), name: e.name, you: e.you, paint: e.paint, laps: laps.length, best: clean.length ? Math.min(...clean) : null };
+      if (e.out) return { ...row, time: 0, estimated: false, dnf: true, lapsDown: 0 };
       let time: number;
       if (e.end !== null) time = e.end - e.session.goTime;
       else {
         const elapsed = Math.max(0.1, now - e.session.goTime);
         const speed = Math.max(1, (e.dist - e.start) / elapsed);
-        time = elapsed + Math.max(0, total - e.dist) / speed;
+        const to = this.flagOut ? Math.min(total, (Math.floor(Math.max(0, e.dist) / L) + 1) * L) : total;
+        time = elapsed + Math.max(0, to - e.dist) / speed;
       }
       time = Math.max(time, last + 0.01);
       last = time;
-      return { name: e.name, you: e.you, paint: e.paint, time, estimated: e.end === null };
+      return { ...row, time, estimated: e.end === null, dnf: false, lapsDown: e.end !== null ? Math.max(0, winnerLaps - laps.length) : 0 };
     });
-    return { standings, position: standings.findIndex((x) => x.you) + 1 };
+    const mine = standings.findIndex((x) => x.you);
+    return { standings, position: standings[mine]?.dnf ? null : mine + 1 };
   }
 
   /** Keeps a name tag above a car on screen (hidden when off-screen or far away). */
-  private placeLabel(el: HTMLElement, pose: { x: number; z: number } | null, y: number, cam: PerspectiveCamera): void {
-    const near = pose && Math.hypot(pose.x - this.view.x, pose.z - this.view.z) < 120;
+  private placeLabel(el: HTMLElement, pose: { x: number; z: number } | null, y: number, cam: PerspectiveCamera, from: { x: number; z: number } = this.view): void {
+    const near = pose && Math.hypot(pose.x - from.x, pose.z - from.z) < 120;
     if (!pose || !near) {
       el.hidden = true;
       return;
@@ -1070,7 +1386,9 @@ export class RaceScreen implements Screen {
     if (!you) return;
     const now = s.time();
     const L = s.length;
-    const gapTo = (e: Entry) => (e.end !== null && you.end !== null ? e.end - you.end : gaps.gap(e.idx, e.dist, 0, you.dist, now));
+    // Gaps are to you; once you're out of the race (retired, or watching the rest of it), to the leader.
+    const ref = you.out || this.watching ? order[0] : you;
+    const gapTo = (e: Entry) => (e.end !== null && ref.end !== null ? e.end - ref.end : gaps.gap(e.idx, e.dist, ref.idx, ref.dist, now));
     const rows: TowerRow[] = order.map((e, i) => {
       const o = e.idx > 0 ? this.opponents[e.idx - 1] : null;
       const phys = o ? o.ai.car : car;
@@ -1079,7 +1397,8 @@ export class RaceScreen implements Screen {
         name: e.name,
         paint: e.paint,
         you: e.you,
-        gap: e.you ? '' : formatGap(gapTo(e), you.dist - e.dist, L, T.lap, T.laps),
+        out: e.out,
+        gap: e === ref || e.out ? '' : formatGap(gapTo(e), ref.dist - e.dist, L, T.lap, T.laps),
         tyre: phys.wear ? phys.compound : null,
         tyreAge: phys.tyreAge,
         tyreLeft: phys.tyreLeft,
@@ -1135,7 +1454,11 @@ export class RaceScreen implements Screen {
     } else if (this.game.mode === 'practice') {
       this.hud.setLap(s.lapStart === null ? STR.race.practice : fmt(STR.race.practiceLap, { n: s.laps.length + 1 }));
     } else if (s.lapStart === null && !this.opponents.length) this.hud.setLap(s.phase === 'countdown' ? '' : STR.race.warmup);
-    else this.hud.setLap(fmt(STR.race.lap, { n: Math.min(s.laps.length + 1, s.lapsToRun), total: s.lapsToRun }));
+    else {
+      // (Watching: the lap the car being followed is on.)
+      const ws = (this.watching ? this.watched()?.ai.session : null) ?? s;
+      this.hud.setLap(fmt(STR.race.lap, { n: Math.min(ws.laps.length + 1, ws.lapsToRun), total: ws.lapsToRun }));
+    }
     this.hud.setTime(formatTime(s.lapTime(alpha) ?? 0));
     this.hud.setCut(s.lapSpoilt && s.lapStart !== null && s.phase === 'racing');
     const parts: string[] = [];
@@ -1145,10 +1468,11 @@ export class RaceScreen implements Screen {
     // Flags: the safety car, the pit limiter, or yellow flags here or just ahead.
     const control = this.control;
     const car = this.car;
-    if (car && s.phase === 'racing') {
+    if (car && (s.phase === 'racing' || this.watching)) {
       const R = STR.race;
       if (control?.sc === 'out') this.hud.setFlag('sc', R.safetyCar);
       else if (control?.sc === 'in') this.hud.setFlag('sc', R.safetyCarInBanner);
+      else if (this.watching) this.hud.setFlag(null);
       else if (car.state.inPits) this.hud.setFlag('pit', fmt(R.pitLimiter, { n: Math.round(PIT_LANE.limit * 3.6) }));
       else if (control && (control.yellowAt(car.state.s) || control.yellowAhead(car.state.s, 250) !== null)) this.hud.setFlag('yellow', R.yellowFlag);
       else this.hud.setFlag(null);
@@ -1164,10 +1488,14 @@ export class RaceScreen implements Screen {
     const show = !!control && control.sc !== 'none' && this.controlCars.length > 0;
     m.root.visible = show;
     if (!show) return;
-    let lead = 0;
+    let lead = -1;
     this.controlCars.forEach((c, i) => {
-      if (c.dist > this.controlCars[lead].dist) lead = i;
+      if (!c.out && (lead < 0 || c.dist > this.controlCars[lead].dist)) lead = i;
     });
+    if (lead < 0) {
+      m.root.visible = false;
+      return;
+    }
     const t = this.game.track;
     const c = t.center;
     const L = c.length;
@@ -1193,15 +1521,36 @@ export class RaceScreen implements Screen {
     platform.setGameplay(session.phase === 'racing' && this.stage !== 'grid' && !this.paused && !this.game.interrupted);
     this.input.pollGamepad();
     let alpha = 1;
+    /** Race time gone by this frame (s): more than the frame's own while fast-forwarding. */
+    let raced = dt;
+    if (this.watching && !this.paused) {
+      // Fast-forward: as many ticks as fit in a few milliseconds.
+      const t0 = performance.now();
+      let n = 0;
+      do {
+        this.tick();
+        n++;
+      } while (n < WATCH.ticks && performance.now() - t0 < WATCH.budget);
+      raced = n * car.dt;
+      this.watchTime += raced;
+      // Everyone has finished (or it has gone on far too long): the results.
+      if (!this.stillRacing() || this.watchTime > this.game.setup.laps * trackLapTime(this.game.track) * 3 + 120) {
+        this.endWatching();
+        return;
+      }
+    }
     // Nothing moves while the qualifying grid is on show.
-    if (!this.paused && this.stage !== 'grid') alpha = this.fixed.advance(dt, () => this.tick());
+    else if (!this.paused && this.stage !== 'grid') alpha = this.fixed.advance(dt, () => this.tick());
     lerpState(car.prev, car.state, alpha, this.view);
     this.model.update(this.view, dt);
-    for (const o of this.opponents) {
+    this.opponents.forEach((o, k) => {
+      if (this.gone[k + 1]) return;
       lerpState(o.ai.car.prev, o.ai.car.state, alpha, o.view);
-      o.model.update(o.view, dt);
-    }
-    if (!this.paused) {
+      o.model.update(o.view, raced);
+    });
+    // What the camera, the minimap and the speedometer follow: your car, or the one being watched.
+    const focus = (this.watching ? this.watched()?.view : null) ?? this.view;
+    if (!this.paused && !this.watching) {
       const st = car.state;
       audio.update({ speed: this.view.speed, rpm: st.rpm, throttle: session.phase === 'racing' ? this.tickInput.throttle : 0, slip: st.slip, grass: st.grass });
     }
@@ -1226,27 +1575,27 @@ export class RaceScreen implements Screen {
     }
     this.hit = 0;
 
-    this.rig.update(v.camera, this.view, dt);
-    this.placeLabel(this.ghostLabel, pose, this.ghostGround.y, v.camera);
+    this.rig.update(v.camera, focus, raced);
+    this.placeLabel(this.ghostLabel, pose, this.ghostGround.y, v.camera, focus);
     this.placeSafetyCar();
-    for (const o of this.opponents) this.placeLabel(o.label, o.view, o.view.y, v.camera);
+    this.opponents.forEach((o, k) => !this.gone[k + 1] && this.placeLabel(o.label, o.view, o.view.y, v.camera, focus));
     if (this.opponents.length) {
       const order = this.standings();
       this.position = order.findIndex((e) => e.you) + 1;
       this.hud.setPosition(this.position, order.length);
     }
     if (settings().minimap) {
-      const others = this.opponents.map((o) => ({ x: o.view.x, z: o.view.z, color: hexColour(o.ai.paint) }));
-      this.hud.minimap.draw(this.game.track, this.view, pose, others);
+      const others = this.opponents.filter((_, k) => !this.gone[k + 1]).map((o) => ({ x: o.view.x, z: o.view.z, color: hexColour(o.ai.paint) }));
+      this.hud.minimap.draw(this.game.track, focus, pose, others);
     }
     this.measureAuthor();
     if (this.stage === 'qualifying') this.runQualifyingSims();
     v.render();
-    this.hud.setSpeed(this.view.speed);
+    this.hud.setSpeed(focus.speed);
     const assists = settings().assists;
     this.hud.setGear(car.state.gear, car.state.rpm, car.state.speed, assists.gears === 'manual', HANDLING.gearbox.shiftLight);
     this.touch.setManualGears(assists.gears === 'manual');
-    this.updateLine(assists.line);
+    this.updateLine(this.watching ? 'off' : assists.line);
     this.hud.setSlipstream(car.draft, SLIPSTREAM.show);
     this.showWeather(v);
     this.towerIn -= dt;
@@ -1260,9 +1609,11 @@ export class RaceScreen implements Screen {
 
     if (this.finishedFor >= 0 && !this.paused) {
       this.finishedFor += dt;
-      if (this.finishedFor >= RACE.resultsDelay) {
+      if (this.finishedFor >= (session.retired ? DAMAGE.resultsDelay : RACE.resultsDelay)) {
         this.finishedFor = -1;
         if (this.stage === 'qualifying') this.showGrid();
+        // In a championship every car's result counts: the rest of the race is run to the flag.
+        else if (this.game.event && this.stillRacing()) this.startWatching();
         else {
           this.showResults();
           return;

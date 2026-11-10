@@ -25,9 +25,10 @@ Each command builds the game as **one self-contained `index.html`**: the game's 
 >
 > **Features**
 > - A draw-and-race track editor: freehand or dots, hills, banking, bridges or tunnels, run-off, barriers, scenery and weather-proof roads (tarmac, dirt or snow)
+> - A career: a full championship of 20 cars and 10 teams, season after season, with qualifying, points for the top ten, drivers' and constructors' titles, and offers from better teams as you win
 > - Race up to 11 AI cars that take racing lines, slipstream and battle wheel to wheel
 > - Races of 1 to 50 laps, with tyre wear and pit stops through a real pit lane with a 60 km/h limiter
-> - Damage, yellow flags and a safety car that bunches the field up
+> - Damage (wreck the car and you're out of the race), yellow flags and a safety car that bunches the field up
 > - Rain, changing weather and night races
 > - Car setup: wing, gears and brake balance
 > - A live timing tower, a ghost of your best lap, and medals for every track

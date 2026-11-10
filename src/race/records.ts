@@ -21,6 +21,15 @@ export interface Standing {
   /** Race time from GO (s); an estimate if it was still racing when you finished. */
   time: number;
   estimated: boolean;
+  /** Retired (broken down): no time. */
+  dnf?: boolean;
+  /** Laps it finished behind the winner (flagged a lap or more down), and laps completed. */
+  lapsDown?: number;
+  laps?: number;
+  /** Its best clean lap of the race (null: none). */
+  best?: number | null;
+  /** Who it is in a championship (a driver id). */
+  id?: string;
 }
 
 /** What the results screen shows about a finished run. */
@@ -47,7 +56,9 @@ export interface RunResult {
   unlockedPaints: PaintId[];
   /** The bot's lap on this track (medal targets), if known. */
   author: number | null;
-  /** Finishing order and your place in it, in a race with AI cars (else null). */
+  /** Your car broke down: you didn't finish. */
+  dnf: boolean;
+  /** Finishing order and your place in it, in a race with AI cars (else null; no place if you didn't finish). */
   standings: Standing[] | null;
   position: number | null;
 }

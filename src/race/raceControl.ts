@@ -11,6 +11,12 @@ export interface ControlCar {
   racing: boolean;
   /** Its hardest hit this tick (m/s into a barrier or a car). */
   hit: number;
+  /**
+   * Out of the race (retired, or taken off the track): it leads nobody and
+   * nobody closes up on it. While it still stands on the track it is `racing`
+   * too, so the flags come out for it.
+   */
+  out?: boolean;
 }
 
 export type ControlEvent = { type: 'yellow'; s: number } | { type: 'sc-out' } | { type: 'sc-in' } | { type: 'green' };
@@ -68,7 +74,7 @@ export class RaceControl {
     for (let k = this.yellows.length - 1; k >= 0; k--) if (this.yellows[k].clearAt <= this.time) this.yellows.splice(k, 1);
 
     let leader = 0;
-    for (const c of cars) leader = Math.max(leader, c.dist);
+    for (const c of cars) if (!c.out) leader = Math.max(leader, c.dist);
     const leaderLap = Math.floor(leader / this.length);
     if (this.sc === 'none') {
       // Not in the last laps: there'd be no racing left after it.
@@ -140,7 +146,7 @@ export class RaceControl {
     const me = cars[i].dist;
     let gap = Infinity;
     cars.forEach((c, j) => {
-      if (j === i) return;
+      if (j === i || c.out) return;
       const d = c.dist - me;
       if (d > 0 && d < gap) gap = d;
     });

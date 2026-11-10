@@ -33,11 +33,13 @@ export class ResultsScreen implements Screen {
   private abort: AbortController | null = null;
   private readonly share = new ShareDialog();
   private readonly saveBtn: HTMLButtonElement;
+  private readonly title: HTMLElement;
 
   constructor(game: GameContext) {
     this.game = game;
     this.saveBtn = button(STR.buttons.saveTrack, () => this.saveTrack(), { icon: '⬇' });
     this.body = h('div', { class: 'results-body' });
+    this.title = h('h2', { text: STR.results.title });
     this.paint = h('div', { class: 'paint-shop' });
     this.blocker = h('div', { class: 'ad-blocker' }, h('div', { class: 'spinner' }), h('span', { text: STR.ads.loading }));
     this.blocker.hidden = true;
@@ -47,7 +49,7 @@ export class ResultsScreen implements Screen {
       h(
         'div',
         { class: 'panel' },
-        h('h2', { text: STR.results.title }),
+        this.title,
         h(
           'div',
           { class: 'results-grid' },
@@ -82,6 +84,7 @@ export class ResultsScreen implements Screen {
     const r = this.game.lastResult;
     this.body.replaceChildren();
     this.paintNote = null;
+    this.title.textContent = r?.dnf ? STR.results.dnfTitle : STR.results.title;
     if (r) {
       const row = (label: string, value: string, badge?: string) =>
         h('div', { class: 'stat' }, h('span', { class: 'stat-label', text: label }), h('span', { class: 'stat-value', text: value }), badge ? h('span', { class: 'badge', text: badge }) : null);
@@ -98,7 +101,7 @@ export class ResultsScreen implements Screen {
         h(
           'div',
           { class: 'stats' },
-          row(STR.results.total, formatTime(r.total)),
+          r.dnf ? null : row(STR.results.total, formatTime(r.total)),
           row(STR.results.bestLap, r.bestLap === null ? STR.results.noCleanLap : formatTime(r.bestLap), r.newRecord ? STR.results.newRecord : undefined),
           r.newRecord || r.recordLap === null ? null : row(STR.results.record, formatTime(r.recordLap)),
           this.lapsRow(row(STR.results.laps, r.laps.map((t, i) => (r.lapValid[i] === false ? `${formatTime(t)} ✗` : formatTime(t))).join('  ·  ')), r.laps.length),
@@ -172,30 +175,38 @@ export class ResultsScreen implements Screen {
   }
 
   private standingsBlock(r: RunResult): HTMLElement | null {
-    if (!r.standings || r.position === null) return null;
+    if (!r.standings) return null;
     const n = r.standings.length;
     const winner = r.standings[0].time;
     const ord = (i: number) => STR.results.ordinals[i] ?? String(i + 1);
     const list = h('ol', { class: 'standings' });
     r.standings.forEach((e, i) => {
-      const time = i === 0 ? formatTime(e.time) : fmt(STR.results.gap, { t: (e.time - winner).toFixed(2) });
+      // The winner's time, then gaps to it: in laps for a car flagged a lap or more down; none for one that retired.
+      const down = e.lapsDown ?? 0;
+      const time = e.dnf
+        ? STR.results.dnf
+        : i === 0
+          ? formatTime(e.time)
+          : down > 0
+            ? fmt(down === 1 ? STR.results.lapDown : STR.results.lapsDown, { n: down })
+            : fmt(STR.results.gap, { t: (e.time - winner).toFixed(2) });
       const dot = h('i', { class: 'car-dot' });
       dot.style.background = `#${e.paint.toString(16).padStart(6, '0')}`;
       list.append(
         h(
           'li',
-          { class: e.you ? 'you' : '' },
-          h('span', { class: 'standing-pos', text: ord(i) }),
+          { class: `${e.you ? 'you' : ''}${e.dnf ? ' dnf' : ''}`.trim() },
+          h('span', { class: 'standing-pos', text: e.dnf ? '–' : ord(i) }),
           dot,
           h('span', { class: 'standing-name', text: e.name }),
-          h('span', { class: 'standing-time', text: e.estimated ? `${time} · ${STR.results.estimated}` : time }),
+          h('span', { class: 'standing-time', text: e.estimated ? (r.dnf ? STR.results.estimated : `${time} · ${STR.results.estimated}`) : time }),
         ),
       );
     });
     return h(
       'div',
       { class: 'results-standings' },
-      h('div', { class: 'stat' }, h('span', { class: 'stat-label', text: STR.results.position }), h('span', { class: 'stat-value', text: fmt(STR.results.positionValue, { pos: ord(r.position - 1), n }) })),
+      h('div', { class: 'stat' }, h('span', { class: 'stat-label', text: STR.results.position }), h('span', { class: 'stat-value', text: r.position === null ? STR.results.dnf : fmt(STR.results.positionValue, { pos: ord(r.position - 1), n }) })),
       h('div', { class: 'label', text: STR.results.standings }),
       list,
     );
