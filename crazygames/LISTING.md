@@ -64,8 +64,8 @@ Each command builds the game as **one self-contained `index.html`**: the game's 
 | `covers/cover-landscape.jpg` | 1920 × 1080 (16:9) | Landscape cover |
 | `covers/cover-portrait.jpg` | 800 × 1200 (2:3) | Portrait cover |
 | `covers/cover-square.jpg` | 800 × 800 (1:1) | Square cover |
-| `track-builder-3d-landscape.mp4` | 1920 × 1080, about 17 s | Landscape preview video |
-| `track-builder-3d-portrait.mp4` | 1080 × 1920, about 17 s | Portrait preview video |
+| `track-builder-3d-landscape.mp4` | 1920 × 1080 (16:9), 19.5 s | Landscape preview video |
+| `track-builder-3d-portrait.mp4` | 1080 × 1620 (2:3, as the portal asks), 19.5 s | Portrait preview video |
 
 The covers show real in-game footage plus the title only: no other text, icons, store logos or borders, as the cover rules ask. The videos are real gameplay with no mouse cursor, no black bars and no logo screens. They show a track drawn in the editor, then raced against AI cars, then raced at night in the rain. They are rendered frame by frame on a fake clock, so they're smooth. To remake the covers or videos (for example after a name change), see [`tools/README.md`](tools/README.md).
 

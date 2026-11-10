@@ -21,9 +21,16 @@ const fs = require('fs');
     };
     try { localStorage.setItem('inkcircuit.settings', JSON.stringify(s)); localStorage.setItem('inkcircuit.library.manualOnly', 'true'); } catch {}
   });
+  // (No cloud save while recording: it would only hold up the start, by however long the network takes.)
+  await ctx.route(/supabase\.co/, (r) => r.abort());
   await p.clock.install();
   await p.goto('http://localhost:4319/?autopilot');
   await p.clock.runFor(2500);
+  // On to the main menu before anything is pressed.
+  for (let k = 0; k < 80 && !(await p.evaluate(() => document.body.innerText.includes('Race this track'))); k++) {
+    await p.waitForTimeout(100);
+    await p.clock.runFor(250);
+  }
   await p.addStyleTag({ content: '.hud-debug, .hud-hint { display: none !important; }' });
 
   let frames = 0;
