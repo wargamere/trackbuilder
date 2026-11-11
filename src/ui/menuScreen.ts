@@ -235,7 +235,7 @@ export class MenuScreen implements Screen {
     if (!career) this.careerHint.textContent = STR.menu.careerHint;
     else {
       const round = nextRound(career);
-      const name = careerTeam(career.team).name;
+      const name = careerTeam(career.team, career).name;
       this.careerHint.textContent =
         round === null ? fmt(STR.menu.careerOver, { season: career.season, team: name }) : fmt(STR.menu.careerOn, { season: career.season, round: round + 1, rounds: career.calendar.length, team: name });
     }

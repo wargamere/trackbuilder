@@ -67,6 +67,6 @@ export function vehicleView(save: CareerSave, develop: () => void): HTMLElement 
     (meter.firstElementChild as HTMLElement).style.width = `${save.cars[t.id] * 100}%`;
     list.append(h('li', { class: t.id === save.team ? 'yours' : '' }, h('b', { text: String(i + 1).padStart(2, '0') }), h('div', {}, h('span', { text: t.name }), meter), h('strong', { text: `${Math.round(save.cars[t.id] * 100)}%` })));
   }
-  return h('section', { class: 'owner-card' }, intro('VEHICLE PERFORMANCE', `${team(save.team).name} · TB–${String(save.season).padStart(2, '0')}`, 'Your car against the field. Shared development improves the grip, engine pull and top speed of your controlled car, and the pace of your teammate.'),
+  return h('section', { class: 'owner-card' }, intro('VEHICLE PERFORMANCE', `${team(save.team, save).name} · TB–${String(save.season).padStart(2, '0')}`, 'Your car against the field. Shared development improves the grip, engine pull and top speed of your controlled car, and the pace of your teammate.'),
     h('div', { class: 'owner-stats' }, ownerStat('ON THE GRID', `P${carRank(save, save.team)}`), ownerStat('CAR RATING', `${Math.round(save.cars[save.team] * 100)}%`)), list, button('Open development workshop ↗', develop));
 }

@@ -42,6 +42,8 @@ import { AssistsPanel, assistsSummary } from './assistsPanel.ts';
 import { button, h, segmented, slider } from './dom.ts';
 import { SetupPanel, setupSummary } from './setupPanel.ts';
 import { ownerBody, ownerHeader, OWNER_TABS, type OwnerTab } from './ownerHub.ts';
+import { teamsFor } from '../career/roster.ts';
+import { freshTeamDraft, teamCreation } from './teamCreation.ts';
 
 type Tab = OwnerTab;
 const TABS: readonly Tab[] = OWNER_TABS.map(([id]) => id);
@@ -92,6 +94,8 @@ export class CareerScreen implements Screen {
   private shown: Shown | null = null;
   /** Starting a new career: the choices so far. */
   private draft = { name: '', team: CAREER.teams[4].id, difficulty: 50, length: 'medium' as RaceLength, rounds: 'standard' as SeasonLength };
+  private creationMode: 'custom' | 'takeover' = 'custom';
+  private readonly customDraft = freshTeamDraft();
   /** The season review: the team picked for next season. */
   private pick = '';
   /** Abandon was tapped once (tap again to confirm). */
@@ -146,6 +150,7 @@ export class CareerScreen implements Screen {
         const typing = e.target instanceof HTMLInputElement;
         // Focused controls use Enter themselves; do not also launch a session.
         if ((e.code === 'Enter' || e.code === 'NumpadEnter') && e.target instanceof HTMLElement && e.target.closest('button, summary')) return;
+        if (typing && this.save && e.code !== 'Escape') return;
         if (e.code === 'Escape') {
           e.preventDefault();
           this.game.go('menu');
@@ -153,7 +158,7 @@ export class CareerScreen implements Screen {
           e.preventDefault();
           this.primary?.();
         } else if (!typing && this.save && !this.shown && nextRound(this.save) !== null) {
-          const k = /^Digit([1-7])$/.exec(e.code);
+          const k = /^Digit([1-8])$/.exec(e.code);
           if (!k) return;
           e.preventDefault();
           this.tab = TABS[Number(k[1]) - 1];
@@ -212,22 +217,31 @@ export class CareerScreen implements Screen {
 
   /** Draws the view the career is in: a new one, a race's result, the season's end, or the paddock. */
   private render(): void {
+    const createScroll = this.panel.querySelector('.team-create-layout')?.scrollTop ?? 0;
+    const marketScroll = this.panel.querySelector('.team-driver-market')?.scrollTop ?? 0;
     const save = this.save;
     this.primary = null;
     const view = !save ? 'new' : this.shown ? 'result' : nextRound(save) === null ? 'review' : 'hub';
     this.root.dataset.view = view;
     this.root.classList.toggle('owner-mode', !!save?.owner);
+    this.root.classList.toggle('creating-team', !save && this.creationMode === 'custom');
     let body: (Node | null)[];
     if (!save) body = this.newCareer();
     else if (this.shown) body = this.result(save, this.shown);
     else if (nextRound(save) === null) body = this.review(save);
     else body = this.hub(save, nextRound(save) as number);
     this.panel.replaceChildren(...body.filter((x): x is Node => !!x));
+    const creation = this.panel.querySelector('.team-create-layout');
+    if (creation) creation.scrollTop = createScroll;
+    const market = this.panel.querySelector('.team-driver-market');
+    if (market) market.scrollTop = marketScroll;
+    if (!save && this.creationMode === 'custom') this.panel.querySelectorAll('button').forEach((b) => b.tabIndex = 0);
     const target = this.panel.querySelector<HTMLElement>('.owner-garage');
-    if (target && this.game.view3d && save) {
+    if (target && this.game.view3d) {
       try {
-        this.garage ??= new Garage(teamDef(save.team).paint);
-        this.garage.attach(target, teamDef(save.team).paint);
+        const identity = save ? teamDef(save.team, save) : this.customDraft;
+        this.garage ??= new Garage(identity.paint);
+        this.garage.attach(target, identity.paint, identity.secondary);
       } catch {
         target.textContent = 'TEAM GARAGE';
       }
@@ -237,6 +251,16 @@ export class CareerScreen implements Screen {
   // ---------------------------------------------------------------- a new career
 
   private newCareer(): (Node | null)[] {
+    if (this.creationMode === 'custom') {
+      const view = teamCreation(this.customDraft, () => this.render(), (save) => {
+        this.game.career.start(save); this.tab = 'race'; this.tyresFor = ''; this.showTrack(); this.render();
+      }, () => this.game.go('menu'), () => { this.creationMode = 'takeover'; this.render(); }, () => {
+        const target = this.panel.querySelector<HTMLElement>('.team-create-garage');
+        if (target) this.garage?.attach(target, this.customDraft.paint, this.customDraft.secondary);
+      });
+      this.primary = view.primary;
+      return view.body;
+    }
     const C = STR.career;
     const d = this.draft;
     const field = (label: string, ...children: (Node | null)[]) => h('div', { class: 'field' }, h('span', { class: 'label', text: label }), ...children);
@@ -300,6 +324,7 @@ export class CareerScreen implements Screen {
     };
     this.primary = start;
     return [
+      button('Create my own team', () => { this.creationMode = 'custom'; this.render(); }),
       h('h2', { text: C.newTitle }),
       h(
         'div',
@@ -328,10 +353,10 @@ export class CareerScreen implements Screen {
   }
 
   /** How good a car is, as ten pips: `rank` 1 (the quickest) lights them all. */
-  private carBar(rank: number): HTMLElement {
+  private carBar(rank: number, total = 10): HTMLElement {
     const bar = h('span', { class: 'career-car' });
-    bar.style.setProperty('--car', `${((11 - rank) / 10) * 100}%`);
-    bar.title = fmt(STR.career.carOf, { car: rank });
+    bar.style.setProperty('--car', `${Math.max(0, Math.min(100, ((total + 1 - rank) / total) * 100))}%`);
+    bar.title = `Car: ${rank} of ${total}`;
     return bar;
   }
 
@@ -339,7 +364,7 @@ export class CareerScreen implements Screen {
 
   private header(save: CareerSave, sub: string): HTMLElement {
     const C = STR.career;
-    const t = teamDef(save.team);
+    const t = teamDef(save.team, save);
     const mine = yourSeason(save);
     const stripe = h('div', { class: 'career-head' });
     stripe.style.setProperty('--team', colour(t.paint));
@@ -563,7 +588,7 @@ export class CareerScreen implements Screen {
               h(
                 'li',
                 { class: x.position === 1 ? 'won' : '' },
-                h('span', { text: fmt(C.historyLine, { n: x.season, team: teamDef(x.team).name, pos: ord(x.position), pts: x.points, wins: x.wins }) }),
+                h('span', { text: fmt(C.historyLine, { n: x.season, team: teamDef(x.team, save).name, pos: ord(x.position), pts: x.points, wins: x.wins }) }),
                 h('span', { class: 'career-cal-note', text: fmt(C.historyChampion, { name: x.champion }) }),
               ),
             ),
@@ -585,11 +610,11 @@ export class CareerScreen implements Screen {
     if (!save || round === null || !t) return;
     const weather = roundWeather(save, round);
     const fails = roundFailures(save, round);
-    const teams = CAREER.teams;
+    const teams = teamsFor(save);
     const entrants = lineup(save);
     const field: EventCar[] = entrants
       .filter((e) => !e.you)
-      .map((e) => ({ id: e.id, name: e.name, paint: e.team.paint, difficulty: aiDifficulty(save, round, e.id), box: teams.indexOf(e.team), failAt: fails[e.id] }))
+      .map((e) => ({ id: e.id, name: e.name, paint: e.team.paint, ...(e.team.secondary !== undefined ? { secondary: e.team.secondary } : {}), difficulty: aiDifficulty(save, round, e.id), box: teams.findIndex((t) => t.id === e.team.id), failAt: fails[e.id] }))
       .sort((a, b) => b.difficulty - a.difficulty);
     const practice = session === 'practice';
     const laps = raceLaps(save.length, trackLapTime(t));
@@ -608,13 +633,13 @@ export class CareerScreen implements Screen {
       damage: !practice,
       safetyCar: true,
     };
-    const mine = teamDef(save.team);
+    const mine = teamDef(save.team, save);
     const controlled = entrants.find((e) => e.you)!;
     const spec: RaceEventSpec = {
       setup,
       session,
       title: fmt(STR.career.roundOf, { round: round + 1, rounds: save.calendar.length }),
-      you: { id: controlled.id, name: controlled.name, paint: mine.paint, box: teams.indexOf(mine) },
+      you: { id: controlled.id, name: controlled.name, paint: mine.paint, ...(mine.secondary !== undefined ? { secondary: mine.secondary } : {}), box: teams.findIndex((t) => t.id === mine.id) },
       car: playerCar(save),
       tyreLife: tyreLife(laps, trackTyreLife(t)),
       field,
@@ -710,22 +735,22 @@ export class CareerScreen implements Screen {
     const mine = yourSeason(save);
     const champion = drivers[0];
     const best = teams[0];
-    const wanted = save.owner ? [teamDef(save.team)] : offers(save);
+    const wanted = save.owner ? [teamDef(save.team, save)] : offers(save);
     if (!wanted.some((t) => t.id === this.pick)) this.pick = save.team;
-    const next = { cars: nextCars(save) };
+    const next = { ...save, cars: nextCars(save) };
     const order = carOrder(next);
     const list = h('div', { class: 'career-teams career-offers' });
     list.setAttribute('role', 'group');
     for (const t of wanted) {
-      const mate = lineup({ team: t.id, name: '' }).find((e) => e.team.id === t.id && !e.you);
-      const rank = order.indexOf(t) + 1;
+      const mate = lineup(save.owner ? save : { team: t.id, name: '' }).find((e) => e.team.id === t.id && !e.you);
+      const rank = order.findIndex((other) => other.id === t.id) + 1;
       const b = h(
         'button',
         { class: `career-team${t.id === this.pick ? ' on' : ''}` },
         dot(t),
         h('span', { class: 'career-team-name', text: t.id === save.team ? `${t.name} (${C.stay})` : t.name }),
         h('span', { class: 'career-team-line', text: fmt(C.offerLine, { car: rank, mate: mate?.name ?? '' }) }),
-        this.carBar(rank),
+        this.carBar(rank, order.length),
       );
       b.type = 'button';
       b.tabIndex = -1;
@@ -758,7 +783,7 @@ export class CareerScreen implements Screen {
         best?.yours ? h('p', { class: 'career-headline good', text: `🏆 ${C.teamChampion}` }) : null,
         h('div', { class: 'career-champs' }, champion ? big(C.champion, champion.team, champion.name, champion.points) : null, best ? big(C.constructors, best.team, best.team.name, best.points) : null),
         h('p', { class: 'career-status', text: fmt(C.yourSeason, { pos: ord(mine.position), pts: mine.points, wins: mine.wins, podiums: mine.podiums }) }),
-        h('p', { class: `career-status${mine.teamPosition <= target ? ' good' : ''}`, text: fmt(C.yourTeam, { team: teamDef(save.team).name, pos: ord(mine.teamPosition), target: ord(target) }) }),
+        h('p', { class: `career-status${mine.teamPosition <= target ? ' good' : ''}`, text: fmt(C.yourTeam, { team: teamDef(save.team, save).name, pos: ord(mine.teamPosition), target: ord(target) }) }),
         h('div', { class: 'label', text: C.offers }),
         h('p', { class: 'setup-hint', text: C.offersHint }),
         list,

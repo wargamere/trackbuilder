@@ -38,6 +38,8 @@ const handed = () => { assert.ok(event); return event; };
 const press = (code: string) => win.dispatchEvent(new win.KeyboardEvent('keydown', { code, bubbles: true }));
 
 test('start an owner career with two named drivers and a persistent budget', () => {
+  assert.ok(text().includes('Build your own team.'));
+  click('Take over an existing team');
   assert.ok(text().includes('Start a team-owner career'));
   assert.equal(ui.querySelectorAll('.career-team').length, 10);
   const name = ui.querySelector('input') as unknown as HTMLInputElement;
@@ -131,4 +133,18 @@ test('focused navigation cannot launch a race; abandonment needs two taps', () =
   click('Career settings'); click('Abandon career'); assert.ok(game.career.save);
   click('Abandon it? Tap again'); assert.equal(game.career.save, null); assert.equal(storage.getItem('career.v1'), null);
   press('Escape'); assert.equal(current, 'menu');
+});
+
+test('a custom team season review keeps its identity, hired drivers and twelve-team car rank', async () => {
+  const { createCustomCareer } = await import('../src/career/teamManagement.ts');
+  const s = createCustomCareer({ principal: 'Oskar', name: 'Nova Racing', paint: 0x7657ed, secondary: 0x61e2be, drivers: ['gp-norrin', 'gp-verstallen'], difficulty: 50, length: 'short', rounds: 'short' })!;
+  while (nextRound(s) !== null) recordRound(s, { order: lineup(s).map((e) => e.id), dnf: [], fastest: null });
+  game.career.start(s); current = 'career'; screen.enter();
+  assert.ok(text().includes('Nova Racing'));
+  const bar = ui.querySelector('.career-offers .career-car')!;
+  assert.match(bar.getAttribute('title')!, /^Car: \d+ of 12$/);
+  click('Start season 2');
+  assert.equal(s.team, 'privateer');
+  assert.ok(text().includes('Nova Racing'));
+  assert.deepEqual(s.entry!.drivers, ['gp-norrin', 'gp-verstallen']);
 });

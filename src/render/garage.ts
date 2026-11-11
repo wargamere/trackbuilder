@@ -52,8 +52,8 @@ export class Garage {
     });
   }
 
-  attach(target: HTMLElement, paint: number): void {
-    this.car.setPaint(paint);
+  attach(target: HTMLElement, paint: number, secondary?: number): void {
+    this.car.setPaint(paint, secondary);
     target.append(this.renderer.domElement);
   }
 

@@ -1,14 +1,15 @@
 import { carRank, driverStandings, lineup, raceLaps, roundWeather, team, teamStandings, type CareerSave } from '../career/career.ts';
 import { money, RESEARCH, selectDriver, sponsorFor } from '../career/owner.ts';
-import { CAREER } from '../config/career.ts';
+import { driverDef, teamsFor } from '../career/roster.ts';
 import { builtInTrack } from '../editor/pipeline.ts';
 import { trackLapTime } from '../race/strategy.ts';
 import { button, h } from './dom.ts';
 import { circuitMap } from './ownerGraphics.ts';
 import { developmentView, facilitiesView, financeView, ownerLabel as label, ownerStat as stat, vehicleView } from './ownerOperations.ts';
+import { identityView, recruitmentView } from './teamManagement.ts';
 
-export type OwnerTab = 'race' | 'drivers' | 'development' | 'facilities' | 'vehicle' | 'teams' | 'finance' | 'calendar' | 'career';
-export const OWNER_TABS: [OwnerTab, string][] = [['race', 'Overview'], ['drivers', 'Drivers'], ['development', 'Development'], ['facilities', 'Facilities'], ['vehicle', 'Vehicle'], ['teams', 'Standings'], ['finance', 'Finance']];
+export type OwnerTab = 'race' | 'drivers' | 'development' | 'facilities' | 'vehicle' | 'teams' | 'finance' | 'identity' | 'calendar' | 'career';
+export const OWNER_TABS: [OwnerTab, string][] = [['race', 'Overview'], ['drivers', 'Drivers'], ['development', 'Development'], ['facilities', 'Facilities'], ['vehicle', 'Vehicle'], ['teams', 'Standings'], ['finance', 'Finance'], ['identity', 'My team']];
 interface Actions {
   navigate(tab: OwnerTab): void;
   changed(): void;
@@ -33,7 +34,7 @@ export function ownerHeader(save: CareerSave, active: OwnerTab, navigate: Action
   }
   return h('header', { class: 'owner-top' },
     h('div', { class: 'owner-brand' }, h('b', { text: 'TB' }), h('span', {}, 'TEAM OWNER', h('small', { text: `CHAMPIONSHIP / SEASON ${String(save.season).padStart(2, '0')}` }))), nav,
-    h('div', { class: 'owner-account' }, h('strong', { text: team(save.team).name }), h('span', { text: `${save.name} · Team principal` }), focusable(button(`FUNDS ${money(save.owner!.cash)}`, () => navigate('finance'), { class: 'owner-funds' }))));
+    h('div', { class: 'owner-account' }, h('strong', { text: team(save.team, save).name }), h('span', { text: `${save.name} · Team principal` }), focusable(button(`FUNDS ${money(save.owner!.cash)}`, () => navigate('finance'), { class: 'owner-funds' }))));
 }
 
 function driverCards(save: CareerSave, changed: Actions['changed']): HTMLElement {
@@ -42,7 +43,7 @@ function driverCards(save: CareerSave, changed: Actions['changed']): HTMLElement
   const group = h('div', { class: 'owner-drivers' });
   group.setAttribute('aria-label', 'Choose your race driver');
   for (const [i, d] of drivers.entries()) {
-    const rating = CAREER.drivers.find((x) => x.id === d.id)!;
+    const rating = driverDef(d.id)!;
     const row = standings.find((x) => x.id === d.id)!;
     const b = focusable(button('', () => { selectDriver(save, d.id); changed(); }, { class: `owner-driver${d.you ? ' selected' : ''}` }));
     b.setAttribute('aria-label', `Race as ${d.name}`);
@@ -74,7 +75,7 @@ function operations(save: CareerSave, navigate: Actions['navigate']): HTMLElemen
 
 export function ownerBody(save: CareerSave, round: number, tab: OwnerTab, actions: Actions): HTMLElement {
   const o = save.owner!;
-  const mine = team(save.team);
+  const mine = team(save.team, save);
   const track = builtInTrack(save.calendar[round]);
   const constructors = teamStandings(save);
   const row = constructors.find((t) => t.yours)!;
@@ -82,7 +83,7 @@ export function ownerBody(save: CareerSave, round: number, tab: OwnerTab, action
   const selected = lineup(save).find((e) => e.you)!;
   const weather = roundWeather(save, round);
   const ahead = constructors[position - 2];
-  const target = o.target ?? CAREER.teams.findIndex((t) => t.id === save.team) + 1;
+  const target = o.target ?? teamsFor(save).findIndex((t) => t.id === save.team) + 1;
   const side = h('aside', { class: 'owner-timeline' }, label('YOUR SEASON'),
     h('h2', {}, `ROUND ${String(round + 1).padStart(2, '0')}`, h('small', { text: `/ ${save.calendar.length}` })),
     h('div', { class: 'owner-season-progress' }, ...save.calendar.map((_, i) => h('i', { class: i < round ? 'done' : i === round ? 'current' : '' }))));
@@ -123,11 +124,12 @@ export function ownerBody(save: CareerSave, round: number, tab: OwnerTab, action
         return h('span', { class: place && place <= 3 ? 'podium' : '', text: place === undefined ? '—' : place === 0 ? 'DNF' : `P${place}` });
       })), h('p', { text: `${standing.wins} wins · ${standing.podiums} podiums · ${standing.dnfs} retirements` })));
     }
-    content = h('section', { class: 'owner-card' }, label('DRIVER MANAGEMENT'), h('h1', { text: 'Two drivers. One ambition.' }), h('p', { class: 'owner-muted', text: 'Choose who you control each weekend. Both drivers keep their own points and qualifying positions when you switch seats.' }), driverCards(save, actions.changed), form);
+    content = h('section', { class: 'owner-card' }, label('DRIVER MANAGEMENT'), h('h1', { text: 'Two drivers. One ambition.' }), h('p', { class: 'owner-muted', text: 'Choose who you control each weekend. Both drivers keep their own points and qualifying positions when you switch seats.' }), driverCards(save, actions.changed), form, recruitmentView(save, actions.changed));
   } else if (tab === 'development') content = developmentView(save, actions.changed);
   else if (tab === 'finance') content = financeView(save, actions.changed);
   else if (tab === 'facilities') content = facilitiesView(save, actions.changed);
   else if (tab === 'vehicle') content = vehicleView(save, () => actions.navigate('development'));
+  else if (tab === 'identity') content = identityView(save, actions.changed);
   else {
     const body = tab === 'teams' ? actions.standings : tab === 'calendar' ? actions.calendar : actions.settings;
     content = h('section', { class: 'owner-card owner-data' }, label('TEAM MANAGEMENT'), h('h1', { text: tab === 'teams' ? 'Every point matters.' : tab === 'calendar' ? 'The road ahead.' : 'Your career.' }), ...body);

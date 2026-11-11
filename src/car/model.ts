@@ -158,6 +158,7 @@ export class CarModel {
   readonly root = new Group();
   private readonly body = new Group();
   private readonly paint: MeshLambertMaterial;
+  private readonly accent: Mesh;
   private readonly lampMat: MeshBasicMaterial;
   private readonly glow: Mesh;
   /** The player's headlight beam (see addHeadlight()). */
@@ -178,12 +179,20 @@ export class CarModel {
     const ghost = ghostOpacity > 0;
     const see = ghost ? { transparent: true, opacity: ghostOpacity, depthWrite: false } : {};
     this.paint = new MeshLambertMaterial({ color: paint, flatShading: true, ...see });
+    const stripes = [
+      new BoxGeometry(.3, .025, 1.0).translate(.28, .79, 1.32),
+      new BoxGeometry(.3, .025, .94).translate(.28, 1.305, -.45),
+      new BoxGeometry(.025, .12, 2.6).translate(.945, .55, 0),
+      new BoxGeometry(.025, .12, 2.6).translate(-.945, .55, 0),
+    ];
+    this.accent = new Mesh(merge(stripes), new MeshLambertMaterial({ color: 0xffffff, flatShading: true, ...see }));
+    this.accent.visible = false;
     const trimMat = new MeshLambertMaterial({ vertexColors: true, flatShading: true, ...see });
     this.lampMat = new MeshBasicMaterial({ vertexColors: true, color: 0xd4d4d4, ...see });
     this.glow = new Mesh(glowGeometry(), new MeshBasicMaterial({ map: glowTexture(), vertexColors: true, transparent: true, depthWrite: false, blending: AdditiveBlending }));
     this.glow.visible = false;
     this.glow.renderOrder = 3;
-    this.body.add(new Mesh(paintGeometry(), this.paint), new Mesh(trimGeometry(), trimMat), new Mesh(lampGeometry(), this.lampMat), this.glow);
+    this.body.add(new Mesh(paintGeometry(), this.paint), this.accent, new Mesh(trimGeometry(), trimMat), new Mesh(lampGeometry(), this.lampMat), this.glow);
     this.wheels = new InstancedMesh(wheelGeometry(), trimMat, 4);
     this.wheels.frustumCulled = false;
     if (!ghost) {
@@ -206,8 +215,10 @@ export class CarModel {
     this.root.rotation.set(-pitch, Math.PI / 2 - heading, roll, 'YXZ');
   }
 
-  setPaint(hex: number): void {
+  setPaint(hex: number, secondary?: number): void {
     this.paint.color.setHex(hex);
+    this.accent.visible = secondary !== undefined;
+    if (secondary !== undefined) (this.accent.material as MeshLambertMaterial).color.setHex(secondary);
   }
 
   /** Lights on (night): the lamps shine and glow, and the headlight beam (if it has one, and `beam`) lights the road. */

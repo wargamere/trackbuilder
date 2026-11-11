@@ -81,7 +81,7 @@ interface Opponent {
 }
 
 /** A car of the field: an AI's name, colour and pace, and in a championship who it is, its pit box and its luck. */
-type FieldCar = { name: string; paint: number; difficulty: number } & Partial<Pick<EventCar, 'id' | 'box' | 'failAt'>>;
+type FieldCar = { name: string; paint: number; secondary?: number; difficulty: number } & Partial<Pick<EventCar, 'id' | 'box' | 'failAt'>>;
 
 /** A car in the race order. */
 interface Entry {
@@ -667,7 +667,7 @@ export class RaceScreen implements Screen {
     field.forEach((f, k) => {
       const ai = new AiDriver(t, { name: f.name, paint: f.paint, difficulty: f.difficulty, laps, slot: order.indexOf(k), box: f.box ?? k + 1, wet: this.wet, tyreWear: this.game.setup.tyreWear, damage: this.game.setup.damage, mediumLife: this.game.event?.tyreLife });
       const model = this.aiModels[k];
-      model.setPaint(f.paint);
+      model.setPaint(f.paint, f.secondary);
       model.root.visible = true;
       const label = this.aiLabels[k];
       label.textContent = f.name;
@@ -712,8 +712,8 @@ export class RaceScreen implements Screen {
   /** Puts the selected paint on the car and its ghost. */
   applyPaint(): void {
     const hex = this.myPaint;
-    this.model?.setPaint(hex);
-    this.ghostModel?.setPaint(hex);
+    this.model?.setPaint(hex, this.game.event?.you.secondary);
+    this.ghostModel?.setPaint(hex, this.game.event?.you.secondary);
   }
 
   private toggleSound(): void {
