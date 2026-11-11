@@ -97,7 +97,7 @@ try {
   await career.locator('.owner-driver:not(.selected)').click();
   assert.notEqual(await career.evaluate(() => window.__game.career.save.owner.selected), initialDriver, 'either team driver can be controlled');
   await career.getByRole('button', { name: 'Development', exact: true }).click();
-  await career.getByRole('button', { name: /Commission upgrade/ }).click();
+  await career.locator('.research-balanced').getByRole('button', { name: /Commission upgrade/ }).click();
   assert.equal(await career.evaluate(() => window.__game.career.save.owner.project), true);
   await career.getByRole('button', { name: 'Overview', exact: true }).click();
   await career.getByRole('button', { name: /Qualifying/ }).click();
@@ -115,10 +115,22 @@ try {
   await career.setViewportSize({ width: 390, height: 844 });
   await career.screenshot({ path: 'test-results/owner-phone.png' });
   const raceButton = await career.getByRole('button', { name: /Start the race/ }).boundingBox();
-  assert.ok(raceButton && raceButton.y >= 0 && raceButton.y + raceButton.height <= 844, 'phone race action stays on screen');
+  assert.ok(raceButton && raceButton.x >= 0 && raceButton.x + raceButton.width <= 390 && raceButton.y >= 0 && raceButton.y + raceButton.height <= 844, 'phone race action stays fully on screen');
   assert.equal(await career.evaluate(() => document.querySelector('.owner-layout').scrollWidth > document.querySelector('.owner-layout').clientWidth), false, 'owner hub has no horizontal overflow');
+  assert.equal(await career.locator('.career .panel').evaluate((el) => el.scrollWidth > el.clientWidth), false, 'phone shell contains every panel');
   await career.getByRole('button', { name: 'Calendar', exact: true }).click();
   assert.equal(await career.locator('.career-calendar li').count(), 16, 'phone calendar remains reachable');
+  await career.getByRole('button', { name: 'Finance', exact: true }).click();
+  assert.equal(await career.locator('.owner-contract').count(), 3);
+  await career.locator('.owner-contract').filter({ hasText: 'Meridian Group' }).getByRole('button', { name: 'Sign season contract' }).click();
+  assert.equal(await career.evaluate(() => window.__game.career.save.owner.sponsor), 'meridian');
+  await career.getByRole('button', { name: 'Development', exact: true }).click();
+  assert.equal(await career.locator('.research-option').count(), 3);
+  await career.getByRole('button', { name: 'Overview', exact: true }).click();
+  for (const size of [{ width: 844, height: 390 }, { width: 1024, height: 768 }, { width: 1440, height: 900 }]) {
+    await career.setViewportSize(size);
+    assert.equal(await career.locator('.career .panel').evaluate((el) => el.scrollWidth > el.clientWidth), false, 'owner shell fits ' + size.width + 'px');
+  }
   assert.deepEqual(errors, [], 'no browser runtime errors');
   console.log('Browser checks passed: templates, keyboard editing, heights, guide, practice, draft recovery, mobile layout, career.');
 } catch (error) {

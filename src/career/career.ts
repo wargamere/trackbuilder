@@ -362,7 +362,7 @@ export function nextCars(save: CareerSave): Record<string, number> {
 /** Your season so far, in a line: place, points, wins, podiums and your team's place. */
 export function yourSeason(save: CareerSave): { position: number; points: number; wins: number; podiums: number; teamPosition: number } {
   const drivers = driverStandings(save);
-  const i = drivers.findIndex((d) => d.you);
+  const i = drivers.findIndex((d) => save.owner ? d.team.id === save.team : d.you);
   const me = drivers[i];
   return { position: i + 1, points: me?.points ?? 0, wins: me?.wins ?? 0, podiums: me?.podiums ?? 0, teamPosition: teamStandings(save).findIndex((t) => t.yours) + 1 };
 }
@@ -400,6 +400,7 @@ export function nextSeason(save: CareerSave, teamId: string): void {
   save.calendar = seasonCalendar(save.rounds, save.season);
   save.done = [];
   save.grid = null;
+  if (save.owner) { save.owner.development = 0; save.owner.target = carRank(save, save.team); }
 }
 
 /** Saved data made safe: a career as this version understands it, or null if it isn't one. */

@@ -153,7 +153,7 @@ export class CareerScreen implements Screen {
           e.preventDefault();
           this.primary?.();
         } else if (!typing && this.save && !this.shown && nextRound(this.save) !== null) {
-          const k = /^Digit([1-6])$/.exec(e.code);
+          const k = /^Digit([1-7])$/.exec(e.code);
           if (!k) return;
           e.preventDefault();
           this.tab = TABS[Number(k[1]) - 1];
@@ -187,7 +187,7 @@ export class CareerScreen implements Screen {
   frame(dt: number): void {
     const v = this.game.view3d;
     if (v && !this.save?.owner) this.orbit.frame(v, dt);
-    this.garage?.frame();
+    this.garage?.frame(dt);
   }
 
   /** The track of the round on show (the next one; the last one once the season is over), or null with no career. */

@@ -1,11 +1,14 @@
-import { carRank, driverStandings, lineup, team, teamStandings, type CareerSave } from '../career/career.ts';
-import { commissionDevelopment, developmentCost, expandFacilities, facilityCost, money, selectDriver } from '../career/owner.ts';
+import { carRank, driverStandings, lineup, raceLaps, roundWeather, team, teamStandings, type CareerSave } from '../career/career.ts';
+import { money, RESEARCH, selectDriver, sponsorFor } from '../career/owner.ts';
 import { CAREER } from '../config/career.ts';
 import { builtInTrack } from '../editor/pipeline.ts';
+import { trackLapTime } from '../race/strategy.ts';
 import { button, h } from './dom.ts';
+import { circuitMap } from './ownerGraphics.ts';
+import { developmentView, facilitiesView, financeView, ownerLabel as label, ownerStat as stat, vehicleView } from './ownerOperations.ts';
 
-export type OwnerTab = 'race' | 'drivers' | 'development' | 'facilities' | 'vehicle' | 'teams' | 'calendar' | 'career';
-export const OWNER_TABS: [OwnerTab, string][] = [['race', 'Overview'], ['drivers', 'Drivers'], ['development', 'Development'], ['facilities', 'Facilities'], ['vehicle', 'Vehicle'], ['teams', 'Standings']];
+export type OwnerTab = 'race' | 'drivers' | 'development' | 'facilities' | 'vehicle' | 'teams' | 'finance' | 'calendar' | 'career';
+export const OWNER_TABS: [OwnerTab, string][] = [['race', 'Overview'], ['drivers', 'Drivers'], ['development', 'Development'], ['facilities', 'Facilities'], ['vehicle', 'Vehicle'], ['teams', 'Standings'], ['finance', 'Finance']];
 interface Actions {
   navigate(tab: OwnerTab): void;
   changed(): void;
@@ -15,24 +18,22 @@ interface Actions {
   settings: (Node | null)[];
 }
 
-const label = (text: string) => h('div', { class: 'owner-label', text });
-const stat = (name: string, value: string) => h('div', { class: 'owner-stat' }, label(name), h('strong', { text: value }));
-const card = (title: string, ...body: (Node | null)[]) => h('section', { class: 'owner-card' }, label('TEAM OPERATIONS'), h('h2', { text: title }), ...body);
+const focusable = (b: HTMLButtonElement) => { b.tabIndex = 0; return b; };
 
 export function ownerHeader(save: CareerSave, active: OwnerTab, navigate: Actions['navigate']): HTMLElement {
   const nav = h('nav', { class: 'owner-nav' });
   nav.setAttribute('aria-label', 'Team management');
-  for (const [id, name] of OWNER_TABS) {
-    const b = button(name, () => navigate(id), { class: active === id ? 'on' : '' });
-    b.tabIndex = 0;
+  for (const [i, [id, name]] of OWNER_TABS.entries()) {
+    const b = focusable(button(name, () => navigate(id), { class: active === id ? 'on' : '' }));
+    const index = h('span', { class: 'owner-nav-index', text: `0${i + 1}` });
+    index.setAttribute('aria-hidden', 'true');
+    b.prepend(index);
     if (active === id) b.setAttribute('aria-current', 'page');
     nav.append(b);
   }
   return h('header', { class: 'owner-top' },
-    h('div', { class: 'owner-brand' }, h('b', { text: 'TB' }), h('span', {}, 'TEAM OWNER', h('small', { text: `CHAMPIONSHIP / SEASON ${String(save.season).padStart(2, '0')}` }))),
-    nav,
-    h('div', { class: 'owner-account' }, h('strong', { text: team(save.team).name }), h('span', { text: `${save.name} · Team principal` }), h('span', { class: 'owner-funds', text: `FUNDS ${money(save.owner!.cash)}` })),
-  );
+    h('div', { class: 'owner-brand' }, h('b', { text: 'TB' }), h('span', {}, 'TEAM OWNER', h('small', { text: `CHAMPIONSHIP / SEASON ${String(save.season).padStart(2, '0')}` }))), nav,
+    h('div', { class: 'owner-account' }, h('strong', { text: team(save.team).name }), h('span', { text: `${save.name} · Team principal` }), focusable(button(`FUNDS ${money(save.owner!.cash)}`, () => navigate('finance'), { class: 'owner-funds' }))));
 }
 
 function driverCards(save: CareerSave, changed: Actions['changed']): HTMLElement {
@@ -43,18 +44,32 @@ function driverCards(save: CareerSave, changed: Actions['changed']): HTMLElement
   for (const [i, d] of drivers.entries()) {
     const rating = CAREER.drivers.find((x) => x.id === d.id)!;
     const row = standings.find((x) => x.id === d.id)!;
-    const b = button('', () => { selectDriver(save, d.id); changed(); }, { class: `owner-driver${d.you ? ' selected' : ''}` });
-    b.tabIndex = 0;
+    const b = focusable(button('', () => { selectDriver(save, d.id); changed(); }, { class: `owner-driver${d.you ? ' selected' : ''}` }));
     b.setAttribute('aria-label', `Race as ${d.name}`);
     b.setAttribute('aria-pressed', String(d.you));
-    b.append(label(`SEAT ${String(i + 1).padStart(2, '0')}`),
-      h('span', { class: 'owner-driver-code', text: d.code }),
-      h('strong', { text: `${rating.first} ${d.name}` }),
-      h('span', { class: 'owner-driver-stats', text: `P${standings.indexOf(row) + 1} · ${row.points} PTS · ${Math.round(rating.skill * 100)} RATING` }),
-      h('span', { class: 'owner-driver-role', text: d.you ? '● YOU WILL DRIVE' : 'AI DRIVER · SELECT TO DRIVE' }));
+    const meter = h('div', { class: 'owner-meter driver-rating' }, h('i'));
+    (meter.firstElementChild as HTMLElement).style.width = `${rating.skill * 100}%`;
+    b.append(h('div', { class: 'owner-driver-top' }, label(`DRIVER 0${i + 1}`), h('span', { class: 'owner-driver-check', text: d.you ? '✓' : '+' })),
+      h('div', { class: 'owner-driver-identity' }, h('span', { class: 'owner-driver-code', text: d.code }), h('div', {}, h('small', { text: rating.first }), h('strong', { text: d.name }))),
+      h('div', { class: 'owner-driver-stats' }, h('span', {}, h('b', { text: String(row.points) }), ' PTS'), h('span', {}, h('b', { text: `P${standings.indexOf(row) + 1}` }), ' WDC'), h('span', {}, h('b', { text: String(Math.round(rating.skill * 100)) }), ' RATING')),
+      meter, h('span', { class: 'owner-driver-role', text: d.you ? '● YOU WILL DRIVE' : 'AI DRIVER · SELECT TO DRIVE' }));
     group.append(b);
   }
   return group;
+}
+
+function operations(save: CareerSave, navigate: Actions['navigate']): HTMLElement {
+  const o = save.owner!;
+  const project = RESEARCH.find((r) => r.id === o.research?.id) ?? RESEARCH[1];
+  const tile = (title: string, value: string, detail: string, tab: OwnerTab, icon: string) => {
+    const b = focusable(button('', () => navigate(tab), { class: 'owner-operation' }));
+    b.append(h('span', { class: 'owner-operation-icon', text: icon }), label(title), h('strong', { text: value }), h('small', { text: detail }), h('span', { class: 'owner-operation-arrow', text: '↗' }));
+    return b;
+  };
+  return h('div', { class: 'owner-operations' },
+    tile('DEVELOPMENT', o.project ? project.name : 'Workshop ready', o.project ? `Delivery in ${o.research?.remaining ?? 1} round(s)` : `${o.development}/5 packages this season`, 'development', '↗'),
+    tile('COMMERCIAL', sponsorFor(save).name, `${money(sponsorFor(save).base)} guaranteed / race`, 'finance', '◈'),
+    tile('HEADQUARTERS', `Level ${o.facilities} facilities`, `${money(o.facilities * 250_000)} additional / race`, 'facilities', '▥'));
 }
 
 export function ownerBody(save: CareerSave, round: number, tab: OwnerTab, actions: Actions): HTMLElement {
@@ -63,65 +78,68 @@ export function ownerBody(save: CareerSave, round: number, tab: OwnerTab, action
   const track = builtInTrack(save.calendar[round]);
   const constructors = teamStandings(save);
   const row = constructors.find((t) => t.yours)!;
+  const position = constructors.indexOf(row) + 1;
   const selected = lineup(save).find((e) => e.you)!;
-  const side = h('aside', { class: 'owner-timeline' }, label('SEASON TIMELINE'),
-    h('h2', { text: `ROUND ${String(round + 1).padStart(2, '0')}` }),
-    h('p', { class: 'owner-muted', text: `${save.done.length} of ${save.calendar.length} races completed` }));
+  const weather = roundWeather(save, round);
+  const ahead = constructors[position - 2];
+  const target = o.target ?? CAREER.teams.findIndex((t) => t.id === save.team) + 1;
+  const side = h('aside', { class: 'owner-timeline' }, label('YOUR SEASON'),
+    h('h2', {}, `ROUND ${String(round + 1).padStart(2, '0')}`, h('small', { text: `/ ${save.calendar.length}` })),
+    h('div', { class: 'owner-season-progress' }, ...save.calendar.map((_, i) => h('i', { class: i < round ? 'done' : i === round ? 'current' : '' }))));
   const events = h('ol');
-  for (let i = Math.max(0, round - 1); i < Math.min(save.calendar.length, round + 3); i++) {
+  for (let i = Math.max(0, round - 1); i < Math.min(save.calendar.length, round + 4); i++) {
     const t = builtInTrack(save.calendar[i]);
-    const done = save.done[i];
-    const b = button('', () => actions.navigate('calendar'), { class: `owner-event${i === round ? ' current' : ''}` });
-    b.tabIndex = 0;
+    const b = focusable(button('', () => actions.navigate('calendar'), { class: `owner-event${i === round ? ' current' : ''}` }));
     b.setAttribute('aria-label', `View calendar: ${t?.def.name ?? 'Race'}`);
-    b.append(h('span', { class: 'owner-event-index', text: String(i + 1).padStart(2, '0') }),
-      h('span', {}, h('strong', { text: t?.def.name ?? 'Race weekend' }), h('small', { text: done ? 'RACE COMPLETED' : i === round ? 'RACE WEEKEND · UP NEXT' : 'UPCOMING GRAND PRIX' })));
+    b.append(h('span', { class: 'owner-event-index', text: save.done[i] ? '✓' : String(i + 1).padStart(2, '0') }),
+      h('span', {}, h('strong', { text: t?.def.name ?? 'Race weekend' }), h('small', { text: save.done[i] ? 'RACE COMPLETED' : i === round ? 'RACE WEEKEND · UP NEXT' : t?.def.place?.toUpperCase() ?? 'UPCOMING GRAND PRIX' })));
     events.append(h('li', {}, b));
   }
-  side.append(events, button('Full calendar ↗', () => actions.navigate('calendar'), { class: 'owner-text-button' }),
-    h('div', { class: 'owner-team-position' }, label('CONSTRUCTORS’ POSITION'), h('strong', {}, `P${constructors.indexOf(row) + 1}`, h('small', { text: `/ ${constructors.length}` })), h('p', { text: `${row.points} POINTS · ${row.wins} WINS` })));
+  side.append(events, focusable(button('Full calendar ↗', () => actions.navigate('calendar'), { class: 'owner-text-button' })),
+    h('div', { class: 'owner-team-position' }, label('CONSTRUCTORS’ CHAMPIONSHIP'), h('strong', {}, `P${position}`, h('small', { text: `/ ${constructors.length}` })),
+      h('p', { text: `${row.points} POINTS · ${row.wins} WINS` }), h('span', { class: 'owner-gap', text: save.done.length ? ahead ? `${ahead.points - row.points} pts to ${ahead.team.name}` : 'Leading the championship' : 'A new season. A fresh opportunity.' })),
+    h('div', { class: 'owner-objective' }, label('SEASON OBJECTIVE'), h('strong', { text: `Finish P${target} or better` }), h('p', { text: save.done.length ? position <= target ? '● Currently on target' : `${position - target} position(s) to gain` : 'Make your mark in the constructors’ championship.' })));
 
   let content: HTMLElement;
   if (tab === 'race') {
     const prep = h('details', { class: 'owner-preparation' }, h('summary', { text: 'Weekend setup & starting grid' }), ...actions.weekend);
+    const event = h('section', { class: 'owner-next-event' },
+      h('div', { class: 'owner-race-copy' }, label(`ROUND ${round + 1} / ${save.calendar.length} · ${track?.def.place?.toUpperCase() ?? 'GRAND PRIX'}`),
+        h('h2', {}, track?.def.name ?? 'Race', h('span', { text: 'GRAND PRIX' })),
+        h('div', { class: 'owner-race-status', text: save.grid ? '● GRID CONFIRMED · READY TO RACE' : '● NEXT SESSION · QUALIFYING' })),
+      track ? h('div', { class: 'owner-map-wrap' }, circuitMap(track), h('span', { text: '● START / FINISH' })) : null,
+      h('div', { class: 'owner-race-facts' }, stat('FORECAST', weather === 'rain' ? 'RAIN' : weather === 'changing' ? 'CHANGING' : 'DRY'), stat('CIRCUIT', track ? `${(track.center.length / 1000).toFixed(2)} KM` : '—'), stat('RACE DISTANCE', track ? `${raceLaps(save.length, trackLapTime(track))} LAPS` : '—'), stat('YOUR DRIVER', selected.code)));
     content = h('section', { class: 'owner-overview' },
-      label(`ROUND ${round + 1} / ${save.calendar.length} · ${track?.def.place ?? 'GRAND PRIX'}`),
-      h('h1', {}, 'BUILD A TEAM.', h('br'), h('em', { text: 'LEAVE A LEGACY.' })),
-      h('p', { class: 'owner-intro', text: 'Your team. Your decisions. Two drivers, one ambition.' }),
-      h('section', { class: 'owner-next-event' }, label('NEXT EVENT'), h('h2', { text: `${track?.def.name ?? 'Race'} Grand Prix` }),
-        h('p', { text: save.grid ? `The grid is set. You’ll race as ${selected.name}.` : 'Choose your driver, prepare the car, and take on qualifying.' }),
-        h('div', { class: 'owner-event-strip' }, h('span', { text: save.grid ? '● READY TO RACE' : '● QUALIFYING AWAITS' }), h('span', { text: '20 CARS / 10 TEAMS' }))),
-      driverCards(save, actions.changed), prep);
+      h('div', { class: 'owner-page-heading' }, h('div', {}, label('TEAM PRINCIPAL OVERVIEW'), h('h1', { text: 'Race weekend.' })), h('span', { class: 'owner-live', text: '● ALL SYSTEMS READY' })),
+      event, h('div', { class: 'owner-section-heading' }, label('CHOOSE YOUR RACE DRIVER'), h('span', { text: 'Your other car runs with the AI' })), driverCards(save, actions.changed),
+      operations(save, actions.navigate),
+      h('div', { class: 'owner-briefing' }, h('span', { class: 'owner-briefing-icon', text: '◉' }), h('div', {}, label('RACE ENGINEER’S BRIEFING'), h('p', { text: weather === 'rain' ? 'Wet conditions expected. Start on wets, brake earlier and protect the car. Both drivers’ points count.' : weather === 'changing' ? 'Rain is on the way. Watch the wetness indicator and be ready to switch tyres as conditions change.' : 'Dry conditions expected. Check your starting tyres and car setup before qualifying. Bring both cars home.' }))), prep);
   } else if (tab === 'drivers') {
-    content = card('Two seats. One team.', h('p', { class: 'owner-muted', text: 'Pick the driver you control this weekend. Your other driver races with the AI. Both keep their own points, qualifying slots and results.' }), driverCards(save, actions.changed),
-      h('div', { class: 'owner-stats' }, ...lineup(save).filter((d) => d.team.id === save.team).map((d) => stat(d.name, `${driverStandings(save).find((r) => r.id === d.id)!.points} PTS`))));
-  } else if (tab === 'development') {
-    const start = button(o.project ? 'Development in progress' : o.development >= 5 ? 'Programme complete' : `Commission upgrade · ${money(developmentCost(save))}`, () => { if (commissionDevelopment(save)) actions.changed(); }, { class: 'primary' });
-    start.disabled = o.project || o.development >= 5 || o.cash < developmentCost(save);
-    content = card('Find the next tenth.', h('p', { class: 'owner-muted', text: 'Fund a performance package for both cars. It arrives after the next completed race and adds 3.5 percentage points to the car rating, up to 100%.' }),
-      h('div', { class: 'owner-stats' }, stat('PACKAGES DELIVERED', `${o.development} / 5`), stat('CAR RATING', `${Math.round(save.cars[save.team] * 100)}%`)),
-      h('div', { class: 'owner-progress' }, h('i', { 'data-level': String(o.development) })),
-      h('p', { text: o.project ? 'IN DEVELOPMENT · Delivery after this round' : 'No active project. Your next move starts here.' }), start);
-  } else if (tab === 'facilities') {
-    const expand = button(o.facilities >= 3 ? 'Headquarters fully expanded' : `Expand headquarters · ${money(facilityCost(save))}`, () => { if (expandFacilities(save)) actions.changed(); }, { class: 'primary' });
-    expand.disabled = o.facilities >= 3 || o.cash < facilityCost(save);
-    content = card('Invest beyond the circuit.', h('p', { class: 'owner-muted', text: 'Expand your commercial headquarters. Each level adds $250,000 to your team’s income after every race, starting with the next completed round.' }),
-      h('div', { class: 'owner-stats' }, stat('HEADQUARTERS', `LEVEL ${o.facilities}`), stat('BASE RACE INCOME', money(1_000_000 + o.facilities * 250_000))), expand);
-  } else if (tab === 'vehicle') {
-    content = card(`${mine.name} / Season ${save.season}`, h('p', { class: 'owner-muted', text: 'Both cars share your team’s performance. Development improves your controlled car and your AI teammate together.' }),
-      h('div', { class: 'owner-stats' }, stat('PERFORMANCE RANK', `${carRank(save, save.team)} / 10`), stat('CAR RATING', `${Math.round(save.cars[save.team] * 100)}%`)),
-      button('Develop the car ↗', () => actions.navigate('development')));
-  } else {
+    const form = h('div', { class: 'owner-driver-form' });
+    for (const d of lineup(save).filter((e) => e.team.id === save.team)) {
+      const standing = driverStandings(save).find((r) => r.id === d.id)!;
+      form.append(h('section', {}, label(`${d.name.toUpperCase()} · RECENT FORM`), h('div', {}, ...Array.from({ length: 5 }, (_, i) => {
+        const place = standing.results.slice(-5)[i];
+        return h('span', { class: place && place <= 3 ? 'podium' : '', text: place === undefined ? '—' : place === 0 ? 'DNF' : `P${place}` });
+      })), h('p', { text: `${standing.wins} wins · ${standing.podiums} podiums · ${standing.dnfs} retirements` })));
+    }
+    content = h('section', { class: 'owner-card' }, label('DRIVER MANAGEMENT'), h('h1', { text: 'Two drivers. One ambition.' }), h('p', { class: 'owner-muted', text: 'Choose who you control each weekend. Both drivers keep their own points and qualifying positions when you switch seats.' }), driverCards(save, actions.changed), form);
+  } else if (tab === 'development') content = developmentView(save, actions.changed);
+  else if (tab === 'finance') content = financeView(save, actions.changed);
+  else if (tab === 'facilities') content = facilitiesView(save, actions.changed);
+  else if (tab === 'vehicle') content = vehicleView(save, () => actions.navigate('development'));
+  else {
     const body = tab === 'teams' ? actions.standings : tab === 'calendar' ? actions.calendar : actions.settings;
-    content = h('section', { class: 'owner-card owner-data' }, label('TEAM MANAGEMENT'), h('h2', { text: tab === 'teams' ? 'Championship standings' : tab === 'calendar' ? 'The road ahead.' : 'Your career' }), ...body);
+    content = h('section', { class: 'owner-card owner-data' }, label('TEAM MANAGEMENT'), h('h1', { text: tab === 'teams' ? 'Every point matters.' : tab === 'calendar' ? 'The road ahead.' : 'Your career.' }), ...body);
   }
 
   const hero = h('aside', { class: 'owner-hero' },
-    label('THE NEXT CHAPTER IS YOURS'), h('div', { class: 'owner-team-wordmark', text: mine.name }),
-    h('div', { class: 'owner-garage' }),
-    h('div', { class: 'owner-hero-caption' }, h('span', { text: `TB–${String(save.season).padStart(2, '0')}` }), label('BUILT TO COMPETE')),
+    h('div', { class: 'owner-garage-top' }, label('TEAM GARAGE'), h('span', { class: 'owner-garage-badge', text: 'CAR READY' })),
+    h('div', { class: 'owner-team-wordmark', text: mine.name }), h('div', { class: 'owner-garage' }),
+    h('div', { class: 'owner-hero-caption' }, h('span', { text: `TB–${String(save.season).padStart(2, '0')}` }), label('DRAG TO INSPECT')),
     h('div', { class: 'owner-hero-rule' }),
-    h('div', { class: 'owner-stats' }, stat('AVAILABLE FUNDS', money(o.cash)), stat('CAR PERFORMANCE', `P${carRank(save, save.team)}`)),
-    h('p', { class: 'owner-muted', text: o.project ? '↗ Performance package in development' : '● Headquarters operational' }));
-  return h('div', { class: 'owner-layout' }, side, content, hero);
+    h('div', { class: 'owner-stats' }, stat('CAR PERFORMANCE', `P${carRank(save, save.team)}`), stat('CAR RATING', `${Math.round(save.cars[save.team] * 100)}%`), stat('TEAM POINTS', String(row.points))),
+    h('div', { class: 'owner-garage-note' }, label(o.project ? 'DEVELOPMENT IN PROGRESS' : 'WORKSHOP STATUS'), h('p', { text: o.project ? `${RESEARCH.find((r) => r.id === o.research?.id)?.name ?? 'Performance package'} · ${o.research?.remaining ?? 1} round(s) to delivery` : 'No active project. Find your next performance advantage.' }), focusable(button(o.project ? 'View project ↗' : 'Explore development ↗', () => actions.navigate('development'), { class: 'owner-text-button' }))),
+    h('div', { class: 'owner-partner' }, label('OFFICIAL TEAM PARTNER'), h('strong', { text: sponsorFor(save).name.toUpperCase() })));
+  return h('div', { class: `owner-layout${['teams', 'calendar', 'career', 'finance'].includes(tab) ? ' owner-layout-wide' : ''}`, 'data-tab': tab }, side, content, hero);
 }
