@@ -18,7 +18,11 @@
     "preview:web": "vite preview --outDir dist/web",
     "preview:cg": "vite preview --outDir dist/crazygames",
     "test:browser": "node scripts/browserCheck.mjs",
-    "baseline:ai": "node training/baseline.ts"
+    "baseline:ai": "node training/baseline.ts",
+    "train:ai": "node training/train.ts",
+    "eval:ai": "node training/evaluate.ts",
+    "bench:ai": "node training/bench.ts",
+    "test:ai:browser": "node scripts/aiBrowserCheck.mjs"
   },
   "dependencies": {
     "three": "0.186.1"

@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, writeFile, rename } from 'node:fs/promises';
 import { dirname } from 'node:path';
 
 export function argumentsOf(args = process.argv.slice(2)): Map<string, string> {
@@ -21,5 +21,6 @@ export function revision(): string {
 }
 export async function jsonFile(path: string, data: unknown): Promise<void> {
   await mkdir(dirname(path), { recursive: true });
-  await writeFile(path, JSON.stringify(data, null, 2) + '\n');
+  await writeFile(`${path}.tmp`, JSON.stringify(data, null, 2) + '\n');
+  await rename(`${path}.tmp`, path);
 }

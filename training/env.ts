@@ -42,6 +42,7 @@ export interface Agent {
   resets: number;
   maxHit: number;
 }
+export type Controller = (agent: Agent, index: number) => Readonly<DriveInput>;
 
 /** Node/browser-compatible stepping core. No rendering, fake physics, wall-clock input or training imports. */
 export class DrivingEnv {
@@ -112,7 +113,7 @@ export class DrivingEnv {
   }
 
   /** External actions are held by the caller between policy ticks. Classic cars use the unmodified game teacher. */
-  step(actions?: readonly (Readonly<DriveInput> | undefined)[]): void {
+  step(actions?: readonly (Readonly<DriveInput> | undefined)[] | Controller, onAction?: (agent: Agent, index: number) => void): void {
     const n = this.agents.length;
     this.weather.step(DT);
     // This is environmental wetness, not a policy feature: match the game's drying-line model.
@@ -135,10 +136,11 @@ export class DrivingEnv {
       const x = st.x, z = st.z;
       let input: Readonly<DriveInput> = NO_INPUT;
       if (a.classic) input = a.classic.drive(this.liveStates, DT);
-      else if (a.session.canDrive && !a.session.retired) input = actions?.[i] ?? NO_INPUT;
+      else if (a.session.canDrive && !a.session.retired) input = (typeof actions === 'function' ? actions(a, i) : actions?.[i]) ?? NO_INPUT;
       Object.assign(a.input, input);
       const jumped = Math.hypot(st.x - x, st.z - z) > 3;
       if (jumped) a.resets++;
+      onAction?.(a, i);
       a.car.step(input);
       a.maxHit = st.wallHit;
       if (st.wallHit > 4 && a.car.prev.wallHit <= 4) a.wallHits++;

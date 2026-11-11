@@ -3,6 +3,8 @@ import { test } from 'node:test';
 import { DrivingEnv } from '../training/env.ts';
 import { procedural, corpus, requireTrainingTrack, corpusSignature } from '../training/trackCorpus.ts';
 import { getSampleTrack } from '../src/editor/pipeline.ts';
+import { collect } from '../training/teacher.ts';
+import { newDrivingPolicy } from '../src/ai/nn.ts';
 
 test('learned migration: held-out tracks cannot enter teacher collection', () => {
   assert.throws(() => requireTrainingTrack(procedural('validation', 1)), /held-out/);
@@ -28,4 +30,13 @@ test('learned migration: real physics environment replays seeded 24-car starts e
   assert.deepEqual([first.weather.rain, first.weather.lineWet, first.weather.offWet], [second.weather.rain, second.weather.lineWet, second.weather.offWet]);
   assert.equal(first.agents.length, 24);
   assert.ok(first.agents[0].distance > 0, 'cars drove through the start under real physics');
+});
+
+test('learned migration: a separate DAgger teacher exactly reproduces solo teacher rollouts at beta one', () => {
+  const cases = [{ key: 'unit-test-training', split: 'train' as const, source: 'game' as const, build: () => getSampleTrack(0) }];
+  const classic = collect(cases, 82, 8);
+  const shadow = collect(cases, 82, 8, newDrivingPolicy(82), 1);
+  assert.equal(classic.data.inputs.length, 150);
+  assert.deepEqual(shadow.data, classic.data, 'teacher labels and observations must match without moving the learner from the shadow');
+  assert.equal(shadow.episodes[0].teacherResetLabelsRejected, 0);
 });

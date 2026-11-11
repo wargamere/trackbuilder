@@ -22,6 +22,8 @@ The web build is `index.html` at the root plus one JS file. The CrazyGames build
 
 ## Web deploy (GitHub Pages)
 
+Learned opponent driving is being developed in stages. The live game still uses the classic AI; training commands, experimental results and remaining release gates are in [training/README.md](training/README.md).
+
 `.github/workflows/pages.yml` runs the tests, builds the web version and publishes `dist/web` to Pages. In the repository's **Settings → Pages → Build and deployment**, set **Source** to **GitHub Actions**. With "Deploy from a branch", Pages serves the raw source `index.html`, which can't run without Vite, so you get a blank page.
 
 ## Layout
