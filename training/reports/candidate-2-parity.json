@@ -1,0 +1,9 @@
+{
+  "kind": "single-car dry Node/Chrome trajectory conformance, not full acceptance parity",
+  "ticks": 1800,
+  "seed": 42,
+  "observationHash": "53199a48",
+  "maximumError": 4.2366110619695974e-13,
+  "passed": true,
+  "fullParityGatePassed": false
+}
