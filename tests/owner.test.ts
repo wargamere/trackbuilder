@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { cleanCareer, driverStandings, lineup, newCareer, nextSeason, recordRound, setGrid, teamStandings } from '../src/career/career.ts';
-import { commissionDevelopment, expandFacilities, selectDriver, takeOwnership } from '../src/career/owner.ts';
+import { commissionDevelopment, expandFacilities, researchBlocker, selectDriver, signSponsor, takeOwnership } from '../src/career/owner.ts';
 
 const start = () => {
   const save = newCareer({ name: 'Oskar', team: 'kestrel', difficulty: 60, length: 'short', rounds: 'short' }, 1234);
@@ -94,4 +94,78 @@ test('owner saves round-trip and malformed budgets and selections are bounded', 
   const cleaned = cleanCareer({ ...save, owner: { selected: 'lin', cash: -10, earned: Infinity, spent: 'oops', development: 900, facilities: -4, project: 'yes' } })!;
   assert.deepEqual(cleaned.owner, { selected: 'whi', cash: 0, earned: 0, spent: 0, development: 5, facilities: 0, project: false });
   assert.equal(lineup(cleaned).length, 20);
+});
+
+test('multi-round research persists its remaining work and only applies its gain on delivery', () => {
+  const save = start();
+  const rating = save.cars.kestrel;
+  assert.ok(commissionDevelopment(save, 'concept'));
+  assert.equal(save.owner!.cash, 4_200_000);
+  recordRound(save, result(save));
+  assert.equal(save.cars.kestrel, rating);
+  assert.deepEqual(save.owner!.research, { id: 'concept', remaining: 2 });
+  const restored = cleanCareer(JSON.parse(JSON.stringify(save)))!;
+  recordRound(restored, result(restored));
+  assert.equal(restored.cars.kestrel, rating);
+  recordRound(restored, result(restored));
+  assert.ok(Math.abs(restored.cars.kestrel - rating - .065) < 1e-9);
+  assert.equal(restored.owner!.project, false);
+  assert.equal(restored.owner!.research, undefined);
+  assert.equal(restored.owner!.development, 1);
+  assert.equal(restored.owner!.ledger!.filter((e) => e.amount < 0).length, 1);
+});
+
+test('a long project cannot exceed the remaining calendar or waste money on a maxed car', () => {
+  const save = start();
+  while (save.done.length < save.calendar.length - 2) recordRound(save, result(save));
+  const before = save.owner!.cash;
+  assert.equal(commissionDevelopment(save, 'concept'), false);
+  assert.equal(save.owner!.cash, before);
+  assert.match(researchBlocker(save, 'concept')!, /Not enough rounds/);
+  save.cars.kestrel = 1;
+  assert.equal(commissionDevelopment(save, 'sprint'), false);
+  assert.equal(save.owner!.cash, before);
+});
+
+test('sponsor tradeoffs, target bonuses and contract locks affect actual race income', () => {
+  const save = start();
+  assert.equal(signSponsor(save, 'nobody'), false);
+  assert.ok(signSponsor(save, 'vector'));
+  recordRound(save, result(save));
+  assert.equal(save.owner!.earned, 700_000 + 43 * 45_000 + 450_000);
+  assert.equal(save.owner!.ledger![0].amount, save.owner!.earned);
+  assert.equal(signSponsor(save, 'meridian'), false, 'contract locked after first race');
+  const safer = start();
+  signSponsor(safer, 'meridian');
+  recordRound(safer, { ...result(safer), dnf: ['alm', 'whi'] });
+  assert.equal(safer.owner!.earned, 1_300_000, 'guaranteed income even with no points');
+  const missed = start();
+  signSponsor(missed, 'vector');
+  recordRound(missed, { ...result(missed), dnf: ['alm', 'whi'] });
+  assert.equal(missed.owner!.earned, 700_000, 'no target bonus without the points');
+});
+
+test('new seasons reopen contracts and development; history follows the lead driver, not seat selection', () => {
+  const save = start();
+  signSponsor(save, 'vector');
+  while (save.done.length < save.calendar.length) recordRound(save, result(save));
+  save.owner!.development = 5;
+  selectDriver(save, 'whi');
+  nextSeason(save, save.team);
+  assert.equal(save.history[0].position, 1, 'Almeida won the title even though Whitlock was selected');
+  assert.equal(save.owner!.development, 0);
+  assert.ok(signSponsor(save, 'meridian'));
+  assert.ok(commissionDevelopment(save));
+});
+
+test('the ledger stays bounded and invalid nested save data cannot corrupt owner state', () => {
+  const save = start();
+  for (let i = 0; i < 3; i++) {
+    while (save.done.length < save.calendar.length) recordRound(save, result(save));
+    nextSeason(save, save.team);
+  }
+  assert.equal(save.owner!.ledger!.length, 20);
+  const restored = cleanCareer({ ...save, owner: { ...save.owner, project: true, research: { id: 'concept', remaining: -900 }, ledger: [null, { label: 'bad', amount: NaN }, { label: 'Valid', amount: 100, season: Infinity, round: -99 }] } })!;
+  assert.deepEqual(restored.owner!.research, { id: 'concept', remaining: 1 });
+  assert.deepEqual(restored.owner!.ledger, [{ label: 'Valid', amount: 100, season: 1, round: 0 }]);
 });

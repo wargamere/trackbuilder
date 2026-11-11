@@ -47,7 +47,8 @@ test('start an owner career with two named drivers and a persistent budget', () 
   assert.deepEqual([s.name, s.team, s.length, s.rounds, s.calendar.length], ['Oskar', 'solaris', 'long', 'short', 8]);
   assert.equal(s.owner!.cash, 8_000_000); assert.equal(s.owner!.selected, 'bre');
   assert.ok(text().includes('TEAM OWNER') && text().includes('Team principal'));
-  assert.ok(text().includes('Melbourne Grand Prix'));
+  assert.ok(text().includes('Melbourne') && text().includes('GRAND PRIX'));
+  assert.ok(ui.querySelector('svg[aria-label="Melbourne circuit layout"]'));
   assert.equal(ui.querySelectorAll('.owner-driver').length, 2);
   assert.ok(find('Qualifying') && find('Practice'));
   assert.equal(new CareerStore().save?.owner?.cash, 8_000_000);
@@ -57,9 +58,9 @@ test('owner navigation, upgrades and driver choice affect saved state', () => {
   click('Drivers'); click('Race as Nakamura');
   assert.equal(save().owner!.selected, 'nak');
   assert.equal(find('Race as Nakamura')!.getAttribute('aria-pressed'), 'true');
-  click('Development'); buttons().find((b) => b.textContent?.includes('Commission upgrade'))!.click();
+  click('Development'); (ui.querySelector('.research-balanced button') as unknown as HTMLButtonElement).click();
   assert.equal(save().owner!.cash, 6_000_000); assert.equal(save().owner!.project, true);
-  assert.ok(buttons().find((b) => b.textContent?.includes('Development in progress'))?.disabled);
+  assert.equal(ui.querySelectorAll('.research-option button:disabled').length, 3);
   click('Facilities'); buttons().find((b) => b.textContent?.includes('Expand headquarters'))!.click();
   assert.equal(save().owner!.facilities, 1);
   click('Vehicle'); assert.ok(text().includes('CAR RATING'));
@@ -99,6 +100,10 @@ test('results score both drivers, pay the team and deliver development', () => {
   assert.equal(ui.querySelectorAll('.career-table tbody tr').length, 20);
   press('Enter'); click('Standings');
   assert.equal(ui.querySelectorAll('.career-table').length, 2);
+  click('Finance');
+  assert.equal(ui.querySelectorAll('.owner-contract').length, 3);
+  assert.equal(ui.querySelectorAll('.owner-contract button:disabled').length, 3);
+  assert.ok(text().includes('Headquarters · level 1'));
   click('Overview'); assert.ok(text().includes('ROUND 02'));
   assert.equal(new CareerStore().save?.owner?.development, 1);
 });
@@ -112,6 +117,11 @@ test('owners keep their team, selection and funds next season', () => {
   click('Start season 2');
   assert.equal(s.team, 'solaris'); assert.equal(s.owner!.cash, funds); assert.equal(s.owner!.selected, 'bre');
   assert.equal(s.season, 2); assert.ok(text().includes('CHAMPIONSHIP / SEASON 02'));
+  click('Finance');
+  const sign = [...ui.querySelectorAll('.owner-contract')].find((c) => c.textContent?.includes('Vector Energy'))!.querySelector('button')!;
+  sign.click();
+  assert.equal(s.owner!.sponsor, 'vector');
+  assert.equal(new CareerStore().save?.owner?.sponsor, 'vector');
 });
 
 test('focused navigation cannot launch a race; abandonment needs two taps', () => {
