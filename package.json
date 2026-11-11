@@ -17,7 +17,8 @@
     "build": "npm run build:web && npm run build:cg",
     "preview:web": "vite preview --outDir dist/web",
     "preview:cg": "vite preview --outDir dist/crazygames",
-    "test:browser": "node scripts/browserCheck.mjs"
+    "test:browser": "node scripts/browserCheck.mjs",
+    "baseline:ai": "node training/baseline.ts"
   },
   "dependencies": {
     "three": "0.186.1"
