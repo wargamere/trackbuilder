@@ -315,8 +315,8 @@ export const ASSISTS = {
 export const AI = {
   /** Up to this many AI cars in a single race (12 cars with you). */
   maxOpponents: 11,
-  /** The most AI cars the race screen can run: a championship's full grid of twenty with you. */
-  maxField: 19,
+  /** Eleven GP-inspired rivals and a custom team: up to 24 cars with you. */
+  maxField: 23,
   /** Timed laps in qualifying (the best clean one sets your grid slot). */
   qualifyingLaps: 2,
   /** AI qualifying times vary by up to this share either way, so equal cars don't always line up the same. */

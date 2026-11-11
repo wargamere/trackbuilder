@@ -4,6 +4,8 @@ import { clamp } from '../core/math.ts';
 import { hashString, rng } from '../core/random.ts';
 import { loadJSON, saveJSON, storage } from '../platform/storage.ts';
 import { cleanOwner, settleOwnerRound, type OwnerState } from './owner.ts';
+import { cleanEntry, driverDef, teamsFor, type RosterSave } from './roster.ts';
+import { GP_TEAMS } from '../config/grandPrix.ts';
 
 /**
  * The career's rules, as plain data and functions (no screen, no tracks):
@@ -45,7 +47,7 @@ export interface SeasonRecord {
 }
 
 /** Everything a career keeps. */
-export interface CareerSave {
+export interface CareerSave extends RosterSave {
   /** Present in a team-owner career; absent in legacy driver careers. */
   owner?: OwnerState;
   v: 1;
@@ -109,7 +111,6 @@ export interface TeamRow {
 
 const KEY = 'career.v1';
 const teamById = new Map(CAREER.teams.map((t) => [t.id, t]));
-const driverById = new Map(CAREER.drivers.map((d) => [d.id, d]));
 const LENGTHS: readonly RaceLength[] = ['short', 'medium', 'long'];
 const SEASONS: readonly SeasonLength[] = ['short', 'standard', 'full'];
 const COMPOUNDS: readonly Compound[] = ['soft', 'medium', 'hard', 'wet'];
@@ -125,8 +126,8 @@ export function cleanName(name: unknown): string {
   return s || 'You';
 }
 
-export function team(id: string): TeamDef {
-  return teamById.get(id) ?? CAREER.teams[0];
+export function team(id: string, save?: RosterSave): TeamDef {
+  return (save ? teamsFor(save).find((t) => t.id === id) : undefined) ?? teamById.get(id) ?? GP_TEAMS.find((t) => t.id === id) ?? CAREER.teams[0];
 }
 
 /** The rounds of season `season` (1-based): an even spread of the calendar, a different one each season when it's shorter than the whole. */
@@ -165,11 +166,11 @@ export function newCareer(opts: { name: string; team: string; difficulty: number
 }
 
 /** This season's twenty drivers, team by team (quickest car first as designed): you in your team's second seat. */
-export function lineup(save: Pick<CareerSave, 'team' | 'name' | 'owner'>): Entrant[] {
+export function lineup(save: Pick<CareerSave, 'team' | 'name' | 'owner' | 'entry' | 'roster'>): Entrant[] {
   const out: Entrant[] = [];
-  for (const t of CAREER.teams) {
+  for (const t of teamsFor(save)) {
     t.drivers.forEach((id, seat) => {
-      const d = driverById.get(id) as DriverDef;
+      const d = driverDef(id) as DriverDef;
       if (!save.owner && t.id === save.team && seat === 1) out.push({ id: YOU_ID, name: save.name, code: save.name.slice(0, 3).toUpperCase(), team: t, you: true });
       else out.push({ id: d.id, name: d.name, code: d.code, team: t, you: save.owner?.selected === id });
     });
@@ -184,12 +185,12 @@ export function carRating(save: Pick<CareerSave, 'cars'>, id: string): number {
 }
 
 /** The teams by how good their cars are this season, the quickest first. */
-export function carOrder(save: Pick<CareerSave, 'cars'>): TeamDef[] {
-  return [...CAREER.teams].sort((a, b) => carRating(save, b.id) - carRating(save, a.id));
+export function carOrder(save: Pick<CareerSave, 'cars'> & RosterSave): TeamDef[] {
+  return [...teamsFor(save)].sort((a, b) => carRating(save, b.id) - carRating(save, a.id));
 }
 
 /** Where team `id`'s car ranks this season (1 = the quickest): what the team expects in the constructors' championship. */
-export function carRank(save: Pick<CareerSave, 'cars'>, id: string): number {
+export function carRank(save: Pick<CareerSave, 'cars'> & RosterSave, id: string): number {
   return carOrder(save).findIndex((t) => t.id === id) + 1;
 }
 
@@ -199,8 +200,8 @@ export function carRank(save: Pick<CareerSave, 'cars'>, id: string): number {
  * less for a slower car and a weaker driver, give or take the weekend's form.
  */
 export function aiDifficulty(save: CareerSave, round: number, id: string): number {
-  const d = driverById.get(id);
-  const t = CAREER.teams.find((x) => x.drivers.includes(id));
+  const d = driverDef(id);
+  const t = teamsFor(save).find((x) => x.drivers.includes(id));
   if (!d || !t) return save.difficulty / 100;
   const rating = CAREER.carShare * carRating(save, t.id) + (1 - CAREER.carShare) * d.skill;
   const form = (dice(save, `${save.season}:${round}:form:${id}`) * 2 - 1) * CAREER.form;
@@ -294,7 +295,7 @@ export function driverStandings(save: CareerSave): DriverRow[] {
 /** The constructors' championship: each team's two drivers' points together. */
 export function teamStandings(save: CareerSave): TeamRow[] {
   const drivers = driverStandings(save);
-  const rows = CAREER.teams.map((t) => {
+  const rows = teamsFor(save).map((t) => {
     const mine = drivers.filter((d) => d.team.id === t.id);
     const places: number[] = [];
     for (const d of mine) d.results.forEach((p) => p > 0 && (places[p - 1] = (places[p - 1] ?? 0) + 1));
@@ -352,11 +353,12 @@ export function recordRound(save: CareerSave, result: { order: readonly string[]
 
 /** How the cars will stand next season: each up to CAREER.drift better or worse, then spread out again from the quickest (1) down. */
 export function nextCars(save: CareerSave): Record<string, number> {
-  const raw = CAREER.teams.map((t) => carRating(save, t.id) + (dice(save, `${save.season}:drift:${t.id}`) * 2 - 1) * CAREER.drift);
+  const teams = teamsFor(save);
+  const raw = teams.map((t) => carRating(save, t.id) + (dice(save, `${save.season}:drift:${t.id}`) * 2 - 1) * CAREER.drift);
   const lo = Math.min(...raw);
   const hi = Math.max(...raw);
-  const floor = CAREER.teams[CAREER.teams.length - 1].car;
-  return Object.fromEntries(CAREER.teams.map((t, i) => [t.id, hi > lo ? floor + ((raw[i] - lo) / (hi - lo)) * (1 - floor) : t.car]));
+  const floor = Math.min(...teams.map((t) => t.car));
+  return Object.fromEntries(teams.map((t, i) => [t.id, hi > lo ? floor + ((raw[i] - lo) / (hi - lo)) * (1 - floor) : t.car]));
 }
 
 /** Your season so far, in a line: place, points, wins, podiums and your team's place. */
@@ -407,7 +409,10 @@ export function nextSeason(save: CareerSave, teamId: string): void {
 export function cleanCareer(raw: unknown): CareerSave | null {
   if (!raw || typeof raw !== 'object') return null;
   const r = raw as Record<string, unknown>;
-  if (r.v !== 1 || typeof r.team !== 'string' || !teamById.has(r.team)) return null;
+  const roster = r.roster === 'grandprix' ? 'grandprix' : undefined;
+  const entry = cleanEntry(r.entry, roster);
+  const field = teamsFor({ roster, entry });
+  if (r.v !== 1 || typeof r.team !== 'string' || !field.some((t) => t.id === r.team) || (entry && entry.id !== r.team)) return null;
   const num = (x: unknown, lo: number, hi: number, d: number) => (typeof x === 'number' && isFinite(x) ? clamp(Math.round(x), lo, hi) : d);
   const strings = (x: unknown): string[] => (Array.isArray(x) ? x.filter((s): s is string => typeof s === 'string') : []);
   const rounds = SEASONS.includes(r.rounds as SeasonLength) ? (r.rounds as SeasonLength) : 'standard';
@@ -416,7 +421,7 @@ export function cleanCareer(raw: unknown): CareerSave | null {
   const calendar = strings(r.calendar).filter((id) => known.has(id));
   const cars: Record<string, number> = {};
   const savedCars = r.cars && typeof r.cars === 'object' ? (r.cars as Record<string, unknown>) : {};
-  for (const t of CAREER.teams) cars[t.id] = typeof savedCars[t.id] === 'number' && isFinite(savedCars[t.id] as number) ? clamp(savedCars[t.id] as number, 0, 1) : t.car;
+  for (const t of field) cars[t.id] = typeof savedCars[t.id] === 'number' && isFinite(savedCars[t.id] as number) ? clamp(savedCars[t.id] as number, 0, 1) : t.car;
   const save: CareerSave = {
     v: 1,
     name: cleanName(r.name),
@@ -433,7 +438,10 @@ export function cleanCareer(raw: unknown): CareerSave | null {
     tyres: COMPOUNDS.includes(r.tyres as Compound) ? (r.tyres as Compound) : 'medium',
     history: [],
   };
-  const owner = cleanOwner(r.owner, save.team);
+  if (roster) save.roster = roster;
+  if (entry) save.entry = entry;
+  const seats = field.find((t) => t.id === save.team)!.drivers;
+  const owner = cleanOwner(r.owner, save.team, seats);
   if (owner) save.owner = owner;
   const ids = new Set(lineup(save).map((e) => e.id));
   const one = (x: unknown) => (typeof x === 'string' && ids.has(x) ? x : null);
@@ -448,17 +456,17 @@ export function cleanCareer(raw: unknown): CareerSave | null {
   for (const h of Array.isArray(r.history) ? r.history : []) {
     if (!h || typeof h !== 'object') continue;
     const o = h as Record<string, unknown>;
-    if (typeof o.team !== 'string' || !teamById.has(o.team)) continue;
+    if (typeof o.team !== 'string' || !field.some((t) => t.id === o.team)) continue;
     save.history.push({
       season: num(o.season, 1, 9999, save.history.length + 1),
       team: o.team,
-      position: num(o.position, 1, CAREER.cars, CAREER.cars),
+      position: num(o.position, 1, field.length * 2, field.length * 2),
       points: num(o.points, 0, 1e6, 0),
       wins: num(o.wins, 0, 999, 0),
       podiums: num(o.podiums, 0, 999, 0),
-      teamPosition: num(o.teamPosition, 1, CAREER.teams.length, CAREER.teams.length),
+      teamPosition: num(o.teamPosition, 1, field.length, field.length),
       champion: typeof o.champion === 'string' ? o.champion.slice(0, 40) : '',
-      championTeam: typeof o.championTeam === 'string' && teamById.has(o.championTeam) ? o.championTeam : '',
+      championTeam: typeof o.championTeam === 'string' && field.some((t) => t.id === o.championTeam) ? o.championTeam : '',
     });
   }
   return save;

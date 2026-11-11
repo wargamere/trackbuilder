@@ -14,6 +14,8 @@ export interface TeamDef {
   name: string;
   /** The cars' colour. */
   paint: number;
+  /** Optional second livery colour. */
+  secondary?: number;
   /** How good its car is in the first season, 0 (the slowest) to 1 (the quickest). */
   car: number;
   /** Its two drivers (ids in CAREER.drivers). You take the second one's seat when you drive for it. */

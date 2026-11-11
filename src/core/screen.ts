@@ -50,6 +50,7 @@ export interface EventCar {
   id: string;
   name: string;
   paint: number;
+  secondary?: number;
   /** How hard it drives, 0..1 (see aiPace). */
   difficulty: number;
   /** Its pit box (teammates share one; see pitBox). */
@@ -86,7 +87,7 @@ export interface RaceEventSpec {
   session: 'practice' | 'qualifying' | 'race';
   /** "Round 3 of 16", for the HUD. */
   title: string;
-  you: { id: string; name: string; paint: number; box: number };
+  you: { id: string; name: string; paint: number; secondary?: number; box: number };
   /** Your car against the standard one: grip, engine pull and top speed (shares of it). */
   car: { grip: number; pull: number; top: number };
   /** Laps medium tyres last in this race (the other kinds in proportion). */
