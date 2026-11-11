@@ -1,0 +1,16 @@
+{
+  "kind": "Node observation + inference microbenchmark, not browser race-frame timing",
+  "revision": "65cadc1e82de7a827782ca7d6c5aca0e270055ff",
+  "engine": "v24.22.1",
+  "parameters": 52738,
+  "float32Bytes": 210952,
+  "iterations": 1000,
+  "field": 24,
+  "averagePolicyBatchMs": 3.3781250999999974,
+  "p95PolicyBatchMs": 4.876699999999801,
+  "estimated19CarAmortized120HzMs": 0.6685872593749994,
+  "estimated23CarAmortized120HzMs": 0.8093424718749994,
+  "usesDecisionStaggering": false,
+  "runtimeGatePassed": false,
+  "note": "All decisions currently align: peak cost, allocation profiling and an actual browser race must pass before promotion."
+}

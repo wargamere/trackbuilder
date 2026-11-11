@@ -1,0 +1,652 @@
+{
+  "kind": "phase 1 warm-start candidate, not a release",
+  "revision": "22563cf5e96ed5ceadd6cde4ef00b5a5c399311a",
+  "settings": {
+    "seed": 20261111,
+    "tracks": 12,
+    "seconds": 90,
+    "updates": 1500,
+    "daggerUpdates": 750,
+    "iterations": 3,
+    "batch": 128
+  },
+  "initialLoss": 0.658841021037683,
+  "finalLoss": 0.2013841906542173,
+  "history": [
+    {
+      "phase": "teacher collection",
+      "episodes": [
+        {
+          "key": "driving-corpus-1/train/sample-sunday-loop",
+          "field": 1,
+          "difficulty": 1,
+          "beta": 1,
+          "samples": 2135,
+          "simulatedSeconds": 74.16666666666667,
+          "terminatedOffRoad": false,
+          "teacherResetLabelsRejected": 0
+        },
+        {
+          "key": "driving-corpus-1/train/sample-paperclip",
+          "field": 1,
+          "difficulty": 0.75,
+          "beta": 1,
+          "samples": 2192,
+          "simulatedSeconds": 76.04166666666667,
+          "terminatedOffRoad": false,
+          "teacherResetLabelsRejected": 0
+        },
+        {
+          "key": "driving-corpus-1/train/gp/268435456",
+          "field": 6,
+          "difficulty": 0.5,
+          "beta": 1,
+          "samples": 2610,
+          "simulatedSeconds": 90,
+          "terminatedOffRoad": false,
+          "teacherResetLabelsRejected": 0
+        },
+        {
+          "key": "driving-corpus-1/train/flowing/268435457",
+          "field": 1,
+          "difficulty": 1,
+          "beta": 1,
+          "samples": 2228,
+          "simulatedSeconds": 77.25833333333333,
+          "terminatedOffRoad": false,
+          "teacherResetLabelsRejected": 0
+        },
+        {
+          "key": "driving-corpus-1/train/technical/268435458",
+          "field": 1,
+          "difficulty": 0.25,
+          "beta": 1,
+          "samples": 2610,
+          "simulatedSeconds": 90,
+          "terminatedOffRoad": false,
+          "teacherResetLabelsRejected": 0
+        },
+        {
+          "key": "driving-corpus-1/train/street/268435459",
+          "field": 6,
+          "difficulty": 1,
+          "beta": 1,
+          "samples": 2610,
+          "simulatedSeconds": 90,
+          "terminatedOffRoad": false,
+          "teacherResetLabelsRejected": 0
+        },
+        {
+          "key": "driving-corpus-1/train/oval/268435460",
+          "field": 1,
+          "difficulty": 1,
+          "beta": 1,
+          "samples": 1957,
+          "simulatedSeconds": 68.225,
+          "terminatedOffRoad": false,
+          "teacherResetLabelsRejected": 0
+        },
+        {
+          "key": "driving-corpus-1/train/kart/268435461",
+          "field": 1,
+          "difficulty": 0.75,
+          "beta": 1,
+          "samples": 1321,
+          "simulatedSeconds": 47.03333333333333,
+          "terminatedOffRoad": false,
+          "teacherResetLabelsRejected": 0
+        },
+        {
+          "key": "driving-corpus-1/train/gp/268435462",
+          "field": 6,
+          "difficulty": 0.5,
+          "beta": 1,
+          "samples": 2610,
+          "simulatedSeconds": 90,
+          "terminatedOffRoad": false,
+          "teacherResetLabelsRejected": 0
+        },
+        {
+          "key": "driving-corpus-1/train/flowing/268435463",
+          "field": 1,
+          "difficulty": 1,
+          "beta": 1,
+          "samples": 2347,
+          "simulatedSeconds": 81.20833333333333,
+          "terminatedOffRoad": false,
+          "teacherResetLabelsRejected": 0
+        },
+        {
+          "key": "driving-corpus-1/train/technical/268435464",
+          "field": 1,
+          "difficulty": 0.25,
+          "beta": 1,
+          "samples": 2610,
+          "simulatedSeconds": 90,
+          "terminatedOffRoad": false,
+          "teacherResetLabelsRejected": 0
+        },
+        {
+          "key": "driving-corpus-1/train/street/268435465",
+          "field": 6,
+          "difficulty": 1,
+          "beta": 1,
+          "samples": 2610,
+          "simulatedSeconds": 90,
+          "terminatedOffRoad": false,
+          "teacherResetLabelsRejected": 0
+        },
+        {
+          "key": "driving-corpus-1/train/oval/268435466",
+          "field": 1,
+          "difficulty": 1,
+          "beta": 1,
+          "samples": 1967,
+          "simulatedSeconds": 68.55,
+          "terminatedOffRoad": false,
+          "teacherResetLabelsRejected": 0
+        },
+        {
+          "key": "driving-corpus-1/train/kart/268435467",
+          "field": 1,
+          "difficulty": 0.75,
+          "beta": 1,
+          "samples": 1893,
+          "simulatedSeconds": 66.09166666666667,
+          "terminatedOffRoad": false,
+          "teacherResetLabelsRejected": 0
+        }
+      ],
+      "samples": 31700
+    },
+    {
+      "phase": "bc",
+      "updates": 1500,
+      "samples": 31700,
+      "cloningLoss": 0.04228139114696017
+    },
+    {
+      "phase": "dagger 1 collection",
+      "beta": 0.5,
+      "episodes": [
+        {
+          "key": "driving-corpus-1/train/sample-sunday-loop",
+          "field": 1,
+          "difficulty": 1,
+          "beta": 0.5,
+          "samples": 2190,
+          "simulatedSeconds": 75.98333333333333,
+          "terminatedOffRoad": false,
+          "teacherResetLabelsRejected": 0
+        },
+        {
+          "key": "driving-corpus-1/train/sample-paperclip",
+          "field": 1,
+          "difficulty": 0.75,
+          "beta": 0.5,
+          "samples": 2196,
+          "simulatedSeconds": 76.19166666666666,
+          "terminatedOffRoad": false,
+          "teacherResetLabelsRejected": 0
+        },
+        {
+          "key": "driving-corpus-1/train/gp/268435456",
+          "field": 6,
+          "difficulty": 0.5,
+          "beta": 0.5,
+          "samples": 2610,
+          "simulatedSeconds": 90,
+          "terminatedOffRoad": false,
+          "teacherResetLabelsRejected": 0
+        },
+        {
+          "key": "driving-corpus-1/train/flowing/268435457",
+          "field": 1,
+          "difficulty": 1,
+          "beta": 0.5,
+          "samples": 2237,
+          "simulatedSeconds": 77.55,
+          "terminatedOffRoad": false,
+          "teacherResetLabelsRejected": 0
+        },
+        {
+          "key": "driving-corpus-1/train/technical/268435458",
+          "field": 1,
+          "difficulty": 0.25,
+          "beta": 0.5,
+          "samples": 2610,
+          "simulatedSeconds": 90,
+          "terminatedOffRoad": false,
+          "teacherResetLabelsRejected": 0
+        },
+        {
+          "key": "driving-corpus-1/train/street/268435459",
+          "field": 6,
+          "difficulty": 1,
+          "beta": 0.5,
+          "samples": 2610,
+          "simulatedSeconds": 90,
+          "terminatedOffRoad": false,
+          "teacherResetLabelsRejected": 0
+        },
+        {
+          "key": "driving-corpus-1/train/oval/268435460",
+          "field": 1,
+          "difficulty": 1,
+          "beta": 0.5,
+          "samples": 2018,
+          "simulatedSeconds": 70.25833333333333,
+          "terminatedOffRoad": false,
+          "teacherResetLabelsRejected": 0
+        },
+        {
+          "key": "driving-corpus-1/train/kart/268435461",
+          "field": 1,
+          "difficulty": 0.75,
+          "beta": 0.5,
+          "samples": 1327,
+          "simulatedSeconds": 47.21666666666667,
+          "terminatedOffRoad": false,
+          "teacherResetLabelsRejected": 0
+        },
+        {
+          "key": "driving-corpus-1/train/gp/268435462",
+          "field": 6,
+          "difficulty": 0.5,
+          "beta": 0.5,
+          "samples": 2610,
+          "simulatedSeconds": 90,
+          "terminatedOffRoad": false,
+          "teacherResetLabelsRejected": 0
+        },
+        {
+          "key": "driving-corpus-1/train/flowing/268435463",
+          "field": 1,
+          "difficulty": 1,
+          "beta": 0.5,
+          "samples": 2367,
+          "simulatedSeconds": 81.9,
+          "terminatedOffRoad": false,
+          "teacherResetLabelsRejected": 0
+        },
+        {
+          "key": "driving-corpus-1/train/technical/268435464",
+          "field": 1,
+          "difficulty": 0.25,
+          "beta": 0.5,
+          "samples": 2610,
+          "simulatedSeconds": 90,
+          "terminatedOffRoad": false,
+          "teacherResetLabelsRejected": 0
+        },
+        {
+          "key": "driving-corpus-1/train/street/268435465",
+          "field": 6,
+          "difficulty": 1,
+          "beta": 0.5,
+          "samples": 2610,
+          "simulatedSeconds": 90,
+          "terminatedOffRoad": false,
+          "teacherResetLabelsRejected": 0
+        },
+        {
+          "key": "driving-corpus-1/train/oval/268435466",
+          "field": 1,
+          "difficulty": 1,
+          "beta": 0.5,
+          "samples": 2016,
+          "simulatedSeconds": 70.2,
+          "terminatedOffRoad": false,
+          "teacherResetLabelsRejected": 0
+        },
+        {
+          "key": "driving-corpus-1/train/kart/268435467",
+          "field": 1,
+          "difficulty": 0.75,
+          "beta": 0.5,
+          "samples": 1898,
+          "simulatedSeconds": 66.25,
+          "terminatedOffRoad": false,
+          "teacherResetLabelsRejected": 0
+        }
+      ],
+      "samplesAdded": 31909
+    },
+    {
+      "phase": "dagger 1",
+      "updates": 2250,
+      "samples": 63609,
+      "cloningLoss": 0.07911588660581859
+    },
+    {
+      "phase": "dagger 2 collection",
+      "beta": 0.25,
+      "episodes": [
+        {
+          "key": "driving-corpus-1/train/sample-sunday-loop",
+          "field": 1,
+          "difficulty": 1,
+          "beta": 0.25,
+          "samples": 2198,
+          "simulatedSeconds": 76.25833333333333,
+          "terminatedOffRoad": false,
+          "teacherResetLabelsRejected": 0
+        },
+        {
+          "key": "driving-corpus-1/train/sample-paperclip",
+          "field": 1,
+          "difficulty": 0.75,
+          "beta": 0.25,
+          "samples": 2583,
+          "simulatedSeconds": 89.1,
+          "terminatedOffRoad": false,
+          "teacherResetLabelsRejected": 0
+        },
+        {
+          "key": "driving-corpus-1/train/gp/268435456",
+          "field": 6,
+          "difficulty": 0.5,
+          "beta": 0.25,
+          "samples": 2610,
+          "simulatedSeconds": 90,
+          "terminatedOffRoad": false,
+          "teacherResetLabelsRejected": 0
+        },
+        {
+          "key": "driving-corpus-1/train/flowing/268435457",
+          "field": 1,
+          "difficulty": 1,
+          "beta": 0.25,
+          "samples": 2274,
+          "simulatedSeconds": 78.775,
+          "terminatedOffRoad": false,
+          "teacherResetLabelsRejected": 0
+        },
+        {
+          "key": "driving-corpus-1/train/technical/268435458",
+          "field": 1,
+          "difficulty": 0.25,
+          "beta": 0.25,
+          "samples": 2610,
+          "simulatedSeconds": 90,
+          "terminatedOffRoad": false,
+          "teacherResetLabelsRejected": 0
+        },
+        {
+          "key": "driving-corpus-1/train/street/268435459",
+          "field": 6,
+          "difficulty": 1,
+          "beta": 0.25,
+          "samples": 2610,
+          "simulatedSeconds": 90,
+          "terminatedOffRoad": false,
+          "teacherResetLabelsRejected": 0
+        },
+        {
+          "key": "driving-corpus-1/train/oval/268435460",
+          "field": 1,
+          "difficulty": 1,
+          "beta": 0.25,
+          "samples": 1992,
+          "simulatedSeconds": 69.39166666666667,
+          "terminatedOffRoad": false,
+          "teacherResetLabelsRejected": 0
+        },
+        {
+          "key": "driving-corpus-1/train/kart/268435461",
+          "field": 1,
+          "difficulty": 0.75,
+          "beta": 0.25,
+          "samples": 1343,
+          "simulatedSeconds": 47.74166666666667,
+          "terminatedOffRoad": false,
+          "teacherResetLabelsRejected": 0
+        },
+        {
+          "key": "driving-corpus-1/train/gp/268435462",
+          "field": 6,
+          "difficulty": 0.5,
+          "beta": 0.25,
+          "samples": 2610,
+          "simulatedSeconds": 90,
+          "terminatedOffRoad": false,
+          "teacherResetLabelsRejected": 0
+        },
+        {
+          "key": "driving-corpus-1/train/flowing/268435463",
+          "field": 1,
+          "difficulty": 1,
+          "beta": 0.25,
+          "samples": 2400,
+          "simulatedSeconds": 82.975,
+          "terminatedOffRoad": false,
+          "teacherResetLabelsRejected": 0
+        },
+        {
+          "key": "driving-corpus-1/train/technical/268435464",
+          "field": 1,
+          "difficulty": 0.25,
+          "beta": 0.25,
+          "samples": 2610,
+          "simulatedSeconds": 90,
+          "terminatedOffRoad": false,
+          "teacherResetLabelsRejected": 0
+        },
+        {
+          "key": "driving-corpus-1/train/street/268435465",
+          "field": 6,
+          "difficulty": 1,
+          "beta": 0.25,
+          "samples": 2610,
+          "simulatedSeconds": 90,
+          "terminatedOffRoad": false,
+          "teacherResetLabelsRejected": 0
+        },
+        {
+          "key": "driving-corpus-1/train/oval/268435466",
+          "field": 1,
+          "difficulty": 1,
+          "beta": 0.25,
+          "samples": 2021,
+          "simulatedSeconds": 70.35833333333333,
+          "terminatedOffRoad": false,
+          "teacherResetLabelsRejected": 0
+        },
+        {
+          "key": "driving-corpus-1/train/kart/268435467",
+          "field": 1,
+          "difficulty": 0.75,
+          "beta": 0.25,
+          "samples": 1955,
+          "simulatedSeconds": 68.14166666666667,
+          "terminatedOffRoad": false,
+          "teacherResetLabelsRejected": 0
+        }
+      ],
+      "samplesAdded": 32426
+    },
+    {
+      "phase": "dagger 2",
+      "updates": 3000,
+      "samples": 96035,
+      "cloningLoss": 0.1349744258494353
+    },
+    {
+      "phase": "dagger 3 collection",
+      "beta": 0,
+      "episodes": [
+        {
+          "key": "driving-corpus-1/train/sample-sunday-loop",
+          "field": 1,
+          "difficulty": 1,
+          "beta": 0,
+          "samples": 2425,
+          "simulatedSeconds": 83.80833333333334,
+          "terminatedOffRoad": true,
+          "teacherResetLabelsRejected": 0
+        },
+        {
+          "key": "driving-corpus-1/train/sample-paperclip",
+          "field": 1,
+          "difficulty": 0.75,
+          "beta": 0,
+          "samples": 730,
+          "simulatedSeconds": 27.308333333333334,
+          "terminatedOffRoad": true,
+          "teacherResetLabelsRejected": 0
+        },
+        {
+          "key": "driving-corpus-1/train/gp/268435456",
+          "field": 6,
+          "difficulty": 0.5,
+          "beta": 0,
+          "samples": 1138,
+          "simulatedSeconds": 40.925,
+          "terminatedOffRoad": true,
+          "teacherResetLabelsRejected": 0
+        },
+        {
+          "key": "driving-corpus-1/train/flowing/268435457",
+          "field": 1,
+          "difficulty": 1,
+          "beta": 0,
+          "samples": 2541,
+          "simulatedSeconds": 87.675,
+          "terminatedOffRoad": false,
+          "teacherResetLabelsRejected": 0
+        },
+        {
+          "key": "driving-corpus-1/train/technical/268435458",
+          "field": 1,
+          "difficulty": 0.25,
+          "beta": 0,
+          "samples": 929,
+          "simulatedSeconds": 33.95,
+          "terminatedOffRoad": true,
+          "teacherResetLabelsRejected": 1
+        },
+        {
+          "key": "driving-corpus-1/train/street/268435459",
+          "field": 6,
+          "difficulty": 1,
+          "beta": 0,
+          "samples": 2610,
+          "simulatedSeconds": 90,
+          "terminatedOffRoad": false,
+          "teacherResetLabelsRejected": 1
+        },
+        {
+          "key": "driving-corpus-1/train/oval/268435460",
+          "field": 1,
+          "difficulty": 1,
+          "beta": 0,
+          "samples": 2104,
+          "simulatedSeconds": 73.13333333333333,
+          "terminatedOffRoad": false,
+          "teacherResetLabelsRejected": 0
+        },
+        {
+          "key": "driving-corpus-1/train/kart/268435461",
+          "field": 1,
+          "difficulty": 0.75,
+          "beta": 0,
+          "samples": 980,
+          "simulatedSeconds": 35.666666666666664,
+          "terminatedOffRoad": true,
+          "teacherResetLabelsRejected": 0
+        },
+        {
+          "key": "driving-corpus-1/train/gp/268435462",
+          "field": 6,
+          "difficulty": 0.5,
+          "beta": 0,
+          "samples": 946,
+          "simulatedSeconds": 34.525,
+          "terminatedOffRoad": true,
+          "teacherResetLabelsRejected": 0
+        },
+        {
+          "key": "driving-corpus-1/train/flowing/268435463",
+          "field": 1,
+          "difficulty": 1,
+          "beta": 0,
+          "samples": 2610,
+          "simulatedSeconds": 90,
+          "terminatedOffRoad": false,
+          "teacherResetLabelsRejected": 0
+        },
+        {
+          "key": "driving-corpus-1/train/technical/268435464",
+          "field": 1,
+          "difficulty": 0.25,
+          "beta": 0,
+          "samples": 284,
+          "simulatedSeconds": 12.45,
+          "terminatedOffRoad": true,
+          "teacherResetLabelsRejected": 1
+        },
+        {
+          "key": "driving-corpus-1/train/street/268435465",
+          "field": 6,
+          "difficulty": 1,
+          "beta": 0,
+          "samples": 2610,
+          "simulatedSeconds": 90,
+          "terminatedOffRoad": false,
+          "teacherResetLabelsRejected": 0
+        },
+        {
+          "key": "driving-corpus-1/train/oval/268435466",
+          "field": 1,
+          "difficulty": 1,
+          "beta": 0,
+          "samples": 2100,
+          "simulatedSeconds": 72.99166666666666,
+          "terminatedOffRoad": false,
+          "teacherResetLabelsRejected": 0
+        },
+        {
+          "key": "driving-corpus-1/train/kart/268435467",
+          "field": 1,
+          "difficulty": 0.75,
+          "beta": 0,
+          "samples": 2174,
+          "simulatedSeconds": 75.44166666666666,
+          "terminatedOffRoad": false,
+          "teacherResetLabelsRejected": 0
+        }
+      ],
+      "samplesAdded": 24181
+    },
+    {
+      "phase": "dagger 3",
+      "updates": 3750,
+      "samples": 120216,
+      "cloningLoss": 0.2013841906542173
+    }
+  ],
+  "metadata": {
+    "algorithm": "behaviour cloning + DAgger",
+    "seed": 20261111,
+    "samples": 120216,
+    "updates": 3750,
+    "promotion": "experimental",
+    "corpus": "ce0b40fe"
+  },
+  "parameterCount": 52738,
+  "float32ParameterBytes": 210952,
+  "wallSeconds": 286.7952199,
+  "gates": {
+    "status": "not eligible for promotion",
+    "heldOutPace": "not measured",
+    "validLaps98Percent": "not measured",
+    "fullFieldTenLaps": "not measured",
+    "playerFairness": "not measured",
+    "pits100Percent": "not measured",
+    "conditions": "not measured",
+    "calibratedDifficulty": "not measured",
+    "browserNodeParity": "not measured",
+    "runtimeBudget": "not measured",
+    "quantizedExport": "not measured"
+  }
+}
