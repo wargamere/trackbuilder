@@ -19,6 +19,8 @@ export interface PauseActions {
   drawTrack(): void;
   myTracks(): void;
   toggleSound(): void;
+  /** In a championship round: back to the paddock. */
+  paddock(): void;
 }
 
 /** Pause overlay: Resume, Reset car, Restart, Race settings, Draw your track, My tracks, Main menu, sound, plus a controls reminder. */
@@ -29,6 +31,9 @@ export class PauseMenu {
   private readonly restartBtn: HTMLButtonElement;
   private readonly skipBtn: HTMLButtonElement;
   private readonly resetBtn: HTMLButtonElement;
+  /** Buttons for a single race only, and the one for a championship round. */
+  private readonly single: HTMLButtonElement[];
+  private readonly paddockBtn: HTMLButtonElement;
 
   constructor(actions: PauseActions) {
     this.controls = h('p', { class: 'pause-controls' });
@@ -37,6 +42,14 @@ export class PauseMenu {
     this.skipBtn = button(STR.buttons.skipQualifying, actions.skipQualifying, { icon: '⏭' });
     this.skipBtn.hidden = true;
     this.resetBtn = button(STR.buttons.resetCar, actions.resetCar, { icon: '↺', key: 'R' });
+    this.paddockBtn = button(STR.career.paddock, actions.paddock, { icon: '🏆' });
+    this.paddockBtn.hidden = true;
+    this.single = [
+      button(STR.buttons.raceSettings, actions.raceSettings, { icon: '🏁' }),
+      button(STR.buttons.drawTrack, actions.drawTrack, { icon: '✎' }),
+      button(STR.buttons.myTracks, actions.myTracks, { icon: '☰' }),
+      button(STR.buttons.mainMenu, actions.mainMenu, { icon: '⌂' }),
+    ];
     this.root = h(
       'div',
       { class: 'screen overlay pause' },
@@ -51,7 +64,7 @@ export class PauseMenu {
           this.resetBtn,
           this.restartBtn,
           this.skipBtn,
-          button(STR.buttons.raceSettings, actions.raceSettings, { icon: '🏁' }),
+          this.single[0],
           button(STR.assists.open, () => {
             this.hide();
             actions.assists();
@@ -60,9 +73,10 @@ export class PauseMenu {
             this.hide();
             actions.controls();
           }, { icon: '⌨' }),
-          button(STR.buttons.drawTrack, actions.drawTrack, { icon: '✎' }),
-          button(STR.buttons.myTracks, actions.myTracks, { icon: '☰' }),
-          button(STR.buttons.mainMenu, actions.mainMenu, { icon: '⌂' }),
+          this.single[1],
+          this.single[2],
+          this.single[3],
+          this.paddockBtn,
           this.sound,
         ),
         h('div', { class: 'label', text: STR.race.controlsTitle }),
@@ -77,6 +91,12 @@ export class PauseMenu {
     const l = this.restartBtn.querySelector('.btn-label');
     if (l) l.textContent = mode === 'practice' ? STR.buttons.backToGrid : mode === 'qualifying' ? STR.buttons.restartQualifying : STR.buttons.restart;
     this.skipBtn.hidden = mode !== 'qualifying';
+  }
+
+  /** A championship round: the paddock instead of the race settings, the editor, the library and the main menu. */
+  setCareer(on: boolean): void {
+    for (const b of this.single) b.hidden = on;
+    this.paddockBtn.hidden = !on;
   }
 
   setSound(on: boolean): void {

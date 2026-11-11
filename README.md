@@ -29,7 +29,8 @@ The web build is `index.html` at the root plus one JS file. The CrazyGames build
 ```
 src/
   config/     strings.ts (all UI text), track.ts (track geometry tuning), themes.ts,
-              handling.ts (all car, input and camera tuning), race.ts (race rules)
+              handling.ts (all car, input and camera tuning), race.ts (race rules),
+              career.ts (the career: points, teams, drivers, calendar)
   core/       math, screen/state types, 2D canvas surface, fixedStep.ts
   editor/     drawing.ts (editor screen + input), smoothing.ts, validation.ts,
               pipeline.ts (stroke -> track), render2d.ts, viewport.ts (zoom/pan),
@@ -62,18 +63,22 @@ src/
               (line + speed plan), driver.ts (drives it), traffic.ts (racing other
               cars), bot.ts (test driver), medals.ts (medal times), assists.ts
               (braking and steering assists), pitStop.ts (pit box and pit stops),
-              strategy.ts (tyre life per track, AI tyre choices)
+              strategy.ts (tyre life per track, AI tyre choices), classify.ts (race order)
   ui/         dom helpers, menuScreen.ts (main menu), setupPanel.ts (car setup), raceSetupScreen.ts (race
               setup), assistsPanel.ts, conditionsPanel.ts (rain, time of day,
               tyre wear), controlsPanel.ts (key bindings), gridOverlay.ts (grid after qualifying), editor overlay, HUD,
               minimap, pause menu, touch controls,
-              libraryScreen.ts (track library), shareDialog.ts, style.css
+              libraryScreen.ts (track library), careerScreen.ts (the career's
+              paddock), shareDialog.ts, style.css
   audio/      audio.ts (synthesised engine, tyre squeal, grass rumble, rain, beeps)
   platform/   platform.ts (PLATFORM flag + CAPS), services.ts (what the game calls:
               loading/gameplay events, ads, user, device), crazygames.ts (SDK wrapper),
               storage.ts (key-value store), web.ts (share links, rotate prompt)
+  career/     career.ts (the championship's rules: seasons, points, standings,
+              the AI's pace and the weather per round, what's saved)
   main.ts     state machine: MENU (boot) → SETUP → RACE (practice or race) →
-              RESULTS, with EDITOR, PREVIEW and LIBRARY
+              RESULTS, with EDITOR, PREVIEW and LIBRARY; and CAREER, which
+              hands each round to RACE
 ```
 
 ### 3D scene
@@ -542,6 +547,12 @@ Two more switches in Conditions (both off by default, saved with the rest). Race
   - The HUD shows *Damage n %* in yellow, then red. It warns at 15 % ("pit to have it mended") and again at 50 % ("Heavy damage!").
   - The pit box mends it all, taking 8 s more per 100 % of damage on top of the usual stop. A stop for repairs alone fits no tyres when tyre wear is off.
   - The AI pits for repairs once it's 45 % damaged, unless it's in the last lap.
+  - **At 100 % the car breaks down on the spot** (`CarPhysics.broken`): no drive, it stops where it is and stays there whatever you press.
+    - In a race you've retired: *DNF* on the results, no place, no time. The same goes for an AI car, which shows *OUT* at the foot of the timing tower.
+    - A retired AI car stands where it stopped for 9 s (`DAMAGE.recoverAfter`): that's yellow flags, and with the safety car on, the safety car. Then the marshals take it away and it's in nobody's way (a test runs twenty cars past one at Spielberg: the other nineteen finish).
+    - In practice it's only a message: reset the car (R) for a fresh one.
+- **The chequered flag** (`RaceSession.flagged`, every race with AI cars). Once anyone has finished, every other car finishes the next time it crosses the line, however many laps it has done. A lapped car is classified "+1 lap" instead of being left to drive them all, and that goes for you too.
+  - The order (`race/classify.ts`) is by distance covered; of two cars that finished on the same lap, the one home first; retirements last, the one that got furthest first.
 - **Yellow flags (always on in a race).**
   - A car that has crashed (a hit over 14 m/s) or stopped on the track for 1.2 s brings yellow flags out around it.
   - The flags cover 160 m before the car and 30 m after it, and stay out 6 s after the car moves on.
@@ -558,6 +569,34 @@ Two more switches in Conditions (both off by default, saved with the rest). Race
     - *The AI lifts when it's running wide at full lock* (`DRIVER.wideFrom` / `wideDrift`). If it's more than 0.5 m off its path and drifting further off at over 2 m/s, it lifts and brakes, rather than flooring it and widening its arc into the barrier.
     - *A car leaning on a barrier can turn its nose away.* A scrape (under 2 m/s into the barrier, `HANDLING.wallKnock`) only checks a turn *into* it; before, every touch killed the car's rotation, so a car turned in against the wall could never drive off.
     - The same 12 laps now: no safety car, no yellow flags, 18 → 1 barrier knocks and 11 → 3 car-to-car hits (none hard). Spa, Baku, Monaco, Montréal and Sunday Loop show no safety car either. A test runs a full field round the Nürburgring.
+
+### Career
+
+🏆 Career in the main menu (K): own a team, manage both cars, and choose which of its two drivers you control each weekend. Owner rules and save migration live in `src/career/owner.ts`; the dark management hub is `src/ui/ownerHub.ts` with `src/ui/owner.css`. The rules are plain data and functions in `src/career/career.ts`, the numbers and the made-up field in `src/config/career.ts`, the screen is `src/ui/careerScreen.ts`. The race screen drives each round as a `RaceEventSpec` (`core/screen.ts`) in place of a single race.
+
+- **The field.** Ten teams of two: twenty cars on the track (a single race still has up to twelve). The teams and drivers are made up. Both named drivers keep their seats. Pick either to drive; the other is controlled by the AI. Switching seats preserves their identities, qualifying positions and individual points. Your team owns both cars.
+- **The cars differ, as they do in the real thing.** Each team's car has a rating (`CareerSave.cars`).
+  - An AI's pace is the career's *AI speed* for the best driver in the best car, and up to 10 points of difficulty less: 70 % of that by the car, 30 % by the driver, give or take a little form each weekend.
+  - *Your* car is your team's too: the slowest has 3 % less grip, 5 % less pull and 1.5 % less top speed than the best (`CarPhysics.tune`), about the same lap time as between the best and worst AI cars. So your teammate, in the same car, is the fair yardstick.
+  - Development changes the shared car rating, improving both cars. Packages cost $2m plus $0.75m per delivered package; a package arrives after the next completed race and adds 0.035 to the rating, capped at 1. Up to five packages can be delivered.
+- **Starting one:** your team-principal name, the team you take over, AI speed, race length and season length. You start with $8m. Headquarters expansion costs $1.5m per new level (up to three levels). Each race pays $1m + $250k per headquarters level + $35k per point scored by either car. Retired drivers earn no points bonus. One career at a time; *Abandon career* (tap twice) is in Career settings.
+- **A season** is 8, 16 or 24 rounds on the real circuits, in the order of the real calendar (Melbourne first, Yas Marina last). Shorter seasons take an even spread of it, a different one each year, so three 8-race seasons visit all 24.
+- **A race weekend.**
+  - *Practice* (optional): alone on the track, no tyre wear or damage.
+  - *Qualifying:* two timed laps alone set where you start; the AI cars' laps are simulated at their own pace meanwhile. The grid is saved, so you can go back to the paddock and race later, or qualify again.
+  - *The race:* about 4, 8 or 16 minutes, so the laps differ from track to track (more on a short one), as the real distance is the same everywhere.
+  - Tyre wear with pit stops, damage and the safety car are always on. Teammates share a pit box. In a long race the tyres last longer (mediums at least 40 % of the distance), so it's still one or two stops, not four.
+  - The weather is drawn for each round: mostly dry, sometimes rain on the way, now and then rain all race. The paddock shows the forecast, and suggests wets when it's raining.
+  - Each AI car has a 3 % chance a race of a mechanical failure: it breaks down and retires, like a car damaged all the way. Never yours.
+- **When your race is over** (finished, or broken down) the rest of the field races on to the flag, fast-forward, seen from the car in front, because every car's result counts for the standings. *Results* (Enter) cuts it short: everyone still racing is placed as they stand.
+- **Points** are the real ones: 25, 18, 15, 12, 10, 8, 6, 4, 2, 1 for the top ten. A car that retires scores nothing.
+  - *Drivers' championship:* the most points; level on points, the most wins, then the most 2nd places, and so on.
+  - *Constructors' championship:* each team's two cars together.
+- **The owner hub** follows a dark motorsport presentation: top navigation, season timeline, next-event card, two driver cards and a live studio view of the race car. Keys 1–6 open Overview, Drivers, Development, Facilities, Vehicle and Standings. The calendar and career settings remain reachable from the footer on phones. Overview’s expandable weekend setup contains tyres, assists, car setup and the saved grid. Practice and qualifying/race actions stay in the footer.
+- **The end of a season:** review the champions and team results, then continue with the same owned team, both drivers, budget and facilities. The cars change a little every year (each up to 0.14 better or worse on the 0–1 scale), so the order shuffles.
+- **Everything is saved as it happens** (`CareerStore`, the key `career.v1`): after qualifying, after every race, at every choice. It goes through the same storage as the rest, so it's in the cloud save too. A race you leave half-way isn't counted: it starts again from the grid.
+- **Migration:** opening an old driver career converts its player seat to the team’s second named driver, retaining all results, retirements, fastest laps, poles, the saved grid and past seasons. It does not reset the championship.
+- **Tests:** `tests/owner.test.ts` (budgets, development, switching drivers, migration and save validation), `tests/career.test.ts` (the rules), `tests/careerUI.test.ts` (the screen, start to season's end) and `tests/retire.test.ts` (breakdowns, the flag, the order).
 
 ### Saving, sharing and sound
 

@@ -3371,3 +3371,549 @@ html:not([data-screen="race"]) .rotate-prompt { display: none; }
 .hud-damage.bad {
   color: #ff6b5f;
 }
+
+/* ------------------------------------------------------------------ career */
+
+/* A full grid of twenty in the timing tower: tighter rows. */
+.timing-tower.long .tower-row {
+  height: 1.16rem;
+  font-size: 0.92em;
+}
+
+.tower-row.out {
+  opacity: 0.55;
+}
+
+.standings li.dnf {
+  opacity: 0.6;
+}
+
+/* Twenty cars on the grid after qualifying: two columns. */
+.grid-overlay .standings {
+  max-height: 58vh;
+  overflow-y: auto;
+}
+
+/* Watching the rest of a race, fast-forward, once yours is over. */
+.watch-bar {
+  position: absolute;
+  left: 50%;
+  bottom: 1rem;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  max-width: 92vw;
+  padding: 0.45rem 0.6rem 0.45rem 0.9rem;
+  border-radius: 0.8rem;
+  background: var(--panel-dark);
+  color: #fff;
+  font-weight: 700;
+  pointer-events: auto;
+}
+
+.watch-bar .btn.compact {
+  min-height: 2rem;
+  font-size: 0.9rem;
+}
+
+.watching .hud-speed,
+.watching .hud-hint,
+.watching .hud-medals,
+.watching .lap-time,
+.watching .lap-sub,
+.watching .hud-split,
+.watching .hud-draft {
+  visibility: hidden;
+}
+
+.career {
+  background: rgba(10, 14, 24, 0.5);
+}
+
+.overlay.career .panel {
+  display: flex;
+  flex-direction: column;
+  width: min(46rem, 96vw);
+  max-height: 96%;
+  padding: 0.9rem 1.2rem 1rem;
+  text-align: left;
+}
+
+.career h2 {
+  margin: 0 0 0.3rem;
+}
+
+.career-intro {
+  margin: 0 0 0.7rem;
+  font-size: 0.86rem;
+  line-height: 1.4;
+  color: #4a5270;
+}
+
+.career .field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin-bottom: 0.7rem;
+}
+
+.career .segmented {
+  display: flex;
+}
+
+.career .segmented .btn {
+  flex: 1;
+  justify-content: center;
+}
+
+.career-new {
+  display: grid;
+  grid-template-columns: 1.25fr 1fr;
+  gap: 0 1.3rem;
+}
+
+.career-name {
+  width: 100%;
+}
+
+.career-teams {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.35rem;
+}
+
+.career-team {
+  pointer-events: auto;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 0.1rem 0.4rem;
+  padding: 0.35rem 0.5rem;
+  border: 1.5px solid rgba(27, 58, 138, 0.25);
+  border-radius: 0.6rem;
+  background: #fff;
+  color: #14182a;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.career-team:hover {
+  background: #eef2ff;
+}
+
+.career-team.on {
+  border-color: #1b1b1b;
+  background: #fff3c4;
+  box-shadow: 0 2px 0 #1b1b1b;
+}
+
+.career-team-name {
+  grid-column: 2 / 4;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-weight: 800;
+  font-size: 0.88rem;
+}
+
+.career-team-line {
+  grid-column: 2;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 0.72rem;
+  color: #5a6280;
+}
+
+/* How good a car is: a bar, full for the quickest. */
+.career-car {
+  --car: 50%;
+  grid-column: 3;
+  width: 3rem;
+  height: 0.42rem;
+  border-radius: 0.3rem;
+  background: linear-gradient(90deg, var(--ink) var(--car), rgba(27, 58, 138, 0.16) var(--car));
+}
+
+.career-head {
+  --team: var(--ink);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.6rem;
+  padding: 0.45rem 0.7rem;
+  border-left: 0.5rem solid var(--team);
+  border-radius: 0.5rem;
+  background: #fff;
+  box-shadow: inset 0 0 0 1.5px rgba(27, 58, 138, 0.16);
+}
+
+.career-season {
+  font-size: 1.35rem;
+  font-weight: 900;
+  color: var(--ink);
+  line-height: 1.1;
+}
+
+.career-round {
+  font-weight: 700;
+  color: #4a5270;
+}
+
+.career-head-you {
+  text-align: right;
+  line-height: 1.25;
+}
+
+.career-you-name {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.35rem;
+  font-weight: 900;
+}
+
+.career-you-line {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #4a5270;
+}
+
+.career-tabs {
+  margin-bottom: 0.6rem;
+}
+
+.career-tabs .btn {
+  min-height: max(2.1rem, 30px);
+  padding: 0.25em 0.4em;
+  font-size: 0.86rem;
+}
+
+.career-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 0.2rem;
+}
+
+.career-foot {
+  flex: none;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  margin: 0.7rem 0 0;
+}
+
+.overlay.career .menu.row {
+  margin-bottom: 0;
+}
+
+.career-track {
+  margin-bottom: 0.3rem;
+}
+
+.career-track-name {
+  font-size: 1.5rem;
+  font-weight: 900;
+  color: var(--ink);
+  line-height: 1.15;
+}
+
+.career-track-info {
+  font-weight: 700;
+  color: #4a5270;
+}
+
+.career-status {
+  margin: 0.2rem 0 0.5rem;
+  font-weight: 700;
+  color: #2a3150;
+}
+
+.career-status.good {
+  color: var(--ok);
+}
+
+.career-grid,
+.career-calendar,
+.career-history {
+  margin: 0 0 0.6rem;
+  padding: 0;
+  list-style: none;
+}
+
+.career-grid {
+  columns: 4;
+  column-gap: 0.6rem;
+  padding: 0.4rem 0.5rem;
+  border-radius: 0.6rem;
+  background: #fff;
+  box-shadow: inset 0 0 0 1.5px rgba(27, 58, 138, 0.16);
+  font-size: 0.8rem;
+}
+
+.career-grid li {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.08rem 0.25rem;
+  border-radius: 0.3rem;
+  break-inside: avoid;
+}
+
+.career-grid li.you,
+.career-table tr.you td,
+.career-calendar li.next {
+  background: #fff7d6;
+  font-weight: 800;
+}
+
+.career-grid .standing-pos {
+  min-width: 1.5em;
+}
+
+.career-tyres .btn {
+  min-height: max(2.1rem, 30px);
+  padding: 0.25em 0.3em;
+  font-size: 0.8rem;
+  white-space: normal;
+}
+
+.career-tyres .btn.tyre-choice.on {
+  color: #14182a;
+  box-shadow: inset 0 0 0 2px #14182a;
+}
+
+.career-tyres .btn.tyre-choice[data-compound='soft'].on {
+  background: #ffc9c2;
+}
+
+.career-tyres .btn.tyre-choice[data-compound='medium'].on {
+  background: #ffe27a;
+}
+
+.career-tyres .btn.tyre-choice[data-compound='hard'].on {
+  background: #e4e4df;
+}
+
+.career-tyres .btn.tyre-choice[data-compound='wet'].on {
+  background: #bcd9ff;
+}
+
+.career-rules {
+  margin: 0.5rem 0 0.6rem;
+}
+
+.career-sessions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.career-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+}
+
+.career-table th {
+  position: sticky;
+  top: 0;
+  padding: 0.25rem 0.4rem;
+  background: #fffcf3;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  text-align: left;
+  color: var(--ink-soft);
+}
+
+.career-table td {
+  padding: 0.22rem 0.4rem;
+  border-top: 1px solid rgba(27, 58, 138, 0.1);
+  white-space: nowrap;
+}
+
+.career-table .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.career-table .pos {
+  width: 2.2em;
+  font-weight: 800;
+  color: var(--ink);
+}
+
+.career-table .who {
+  font-weight: 700;
+}
+
+.career-table .who .car-dot {
+  display: inline-block;
+  margin-right: 0.4rem;
+  vertical-align: -0.05rem;
+}
+
+.career-table .team {
+  max-width: 14rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #4a5270;
+}
+
+.career-table .pts {
+  font-weight: 900;
+  color: var(--ink);
+}
+
+.career-table tr.dnf td {
+  opacity: 0.6;
+}
+
+.career-fl {
+  margin-left: 0.35rem;
+}
+
+.career-target {
+  margin: 0 0 0.5rem;
+}
+
+.career-calendar li,
+.career-history li {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.25rem 0.4rem;
+  border-top: 1px solid rgba(27, 58, 138, 0.1);
+  font-size: 0.88rem;
+}
+
+.career-calendar li.done .career-cal-name {
+  color: #4a5270;
+}
+
+.career-cal-name {
+  flex: 1;
+  min-width: 0;
+  font-weight: 700;
+}
+
+.career-cal-note {
+  font-size: 0.8rem;
+  color: #4a5270;
+  text-align: right;
+}
+
+.career-history li {
+  justify-content: space-between;
+}
+
+.career-history li.won {
+  background: #fff7d6;
+  font-weight: 800;
+}
+
+.career-trophies {
+  margin: 0.2rem 0 0.4rem;
+  font-weight: 900;
+  color: var(--ink);
+}
+
+.career-abandon {
+  justify-content: flex-start;
+  margin-top: 0.4rem;
+}
+
+.btn.danger {
+  border-color: var(--error);
+  color: var(--error);
+  box-shadow: 0 2px 0 var(--error);
+}
+
+.career-headline {
+  margin: 0 0 0.5rem;
+  font-size: 1.25rem;
+  font-weight: 900;
+  color: var(--ink);
+}
+
+.career-headline.good {
+  color: var(--ok);
+}
+
+.career-headline.bad {
+  color: var(--error);
+}
+
+.career-champs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.6rem;
+  margin: 0.2rem 0 0.6rem;
+}
+
+.career-champ {
+  padding: 0.5rem 0.7rem;
+  border-radius: 0.6rem;
+  background: #fff;
+  box-shadow: inset 0 0 0 1.5px rgba(27, 58, 138, 0.16);
+}
+
+.career-champ-name {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 1.15rem;
+  font-weight: 900;
+}
+
+.career-champ-pts {
+  font-weight: 700;
+  color: #4a5270;
+}
+
+.career-offers {
+  margin-bottom: 0.3rem;
+}
+
+@media (max-width: 640px) {
+  .career-new,
+  .career-champs {
+    grid-template-columns: 1fr;
+  }
+
+  .career-grid {
+    columns: 2;
+  }
+
+  .career-table .team {
+    display: none;
+  }
+
+  .career-table th:nth-child(3) {
+    display: none;
+  }
+}
+
+@media (max-height: 520px) {
+  .overlay.career .panel {
+    padding: 0.5rem 0.9rem 0.6rem;
+  }
+
+  .career-head {
+    margin-bottom: 0.35rem;
+    padding: 0.25rem 0.6rem;
+  }
+
+  .career-season {
+    font-size: 1.1rem;
+  }
+}

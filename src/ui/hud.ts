@@ -58,6 +58,8 @@ export class Hud {
   private readonly tyreValue: HTMLElement;
   private lastTyres = '';
   private readonly raceBtn: HTMLButtonElement;
+  private readonly drawBtn: HTMLButtonElement;
+  private career = false;
   private lastTime = '';
   private hintTimer = 0;
   private centerTimer = 0;
@@ -66,13 +68,14 @@ export class Hud {
   constructor(actions: HudActions) {
     this.info = h('div', { class: 'hud-info' });
     this.raceBtn = button(STR.buttons.startRace, actions.startRace, { icon: '🏁', class: 'draw race-btn' });
+    this.drawBtn = button(STR.buttons.drawTrack, actions.drawTrack, { icon: '✎', class: 'draw' });
     const pause = button('', actions.pause, { icon: 'Ⅱ', class: 'icon-btn' });
     pause.title = STR.buttons.pause;
     pause.setAttribute('aria-label', STR.buttons.pause);
     const top = h(
       'div',
       { class: 'hud-top' },
-      button(STR.buttons.drawTrack, actions.drawTrack, { icon: '✎', class: 'draw' }),
+      this.drawBtn,
       this.raceBtn,
       this.info,
       h('div', { class: 'spacer' }),
@@ -265,7 +268,14 @@ export class Hud {
 
   /** Practice shows a "Start a race" button; a race doesn't. */
   setMode(mode: 'practice' | 'race'): void {
-    this.raceBtn.hidden = mode !== 'practice';
+    this.raceBtn.hidden = mode !== 'practice' || this.career;
+  }
+
+  /** In a championship round there's no leaving for the editor or another race from the HUD. */
+  setCareer(on: boolean): void {
+    this.career = on;
+    this.drawBtn.hidden = on;
+    if (on) this.raceBtn.hidden = true;
   }
 
   /** Race position against the AI cars ("2/4"), or null to hide it. */

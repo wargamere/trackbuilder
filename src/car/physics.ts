@@ -29,6 +29,11 @@ export interface DriveInput {
 }
 
 export const NO_INPUT: Readonly<DriveInput> = { throttle: 0, brake: 0, steer: 0, handbrake: false };
+/** The standard car: all of its grip, engine pull and top speed (see CarPhysics.tune). */
+export const STANDARD_CAR: Readonly<{ grip: number; pull: number; top: number }> = { grip: 1, pull: 1, top: 1 };
+/** A broken-down car: no drive, and it's brought to a stop where it is (the brakes while it rolls, then held). */
+const BROKEN_ROLLING: Readonly<DriveInput> = { throttle: 0, brake: 1, steer: 0, handbrake: true };
+const BROKEN_STOPPED: Readonly<DriveInput> = { throttle: 0, brake: 0, steer: 0, handbrake: true };
 
 /** The run-off kinds, by index (OPTION_CHOICES.runoff order). */
 const RUNOFFS = ['grass', 'gravel', 'tarmac'] as const;
@@ -194,6 +199,10 @@ export class CarPhysics {
   damageOn = false;
   wingDamage = 0;
   bodyDamage = 0;
+  /** This car against the standard one: the share of its grip, engine pull and top speed it has (a championship team's car). */
+  tune: Readonly<{ grip: number; pull: number; top: number }> = STANDARD_CAR;
+  /** Something in the car has failed (a championship's mechanical failures): broken down, whatever the damage. */
+  failed = false;
   private readonly track: Track;
   private readonly locator: TrackLocator;
   private readonly obstacles: ObstacleGrid;
@@ -281,6 +290,11 @@ export class CarPhysics {
     return Math.max(this.wingDamage, this.bodyDamage);
   }
 
+  /** Broken down: damaged all the way (DAMAGE.breakAt). The engine's dead and the car stops where it is. */
+  get broken(): boolean {
+    return this.failed || (this.damageOn && this.damage >= DAMAGE.breakAt);
+  }
+
   /** The share of cornering grip a damaged front wing leaves. */
   get damageGrip(): number {
     return 1 - DAMAGE.wingGrip * this.wingDamage;
@@ -326,6 +340,8 @@ export class CarPhysics {
     let vf = st.vx * cos + st.vz * sin; // forward
     let vr = -st.vx * sin + st.vz * cos; // sideways, + = sliding right
     const vf0 = vf;
+    // Broken down: whatever the driver does, it rolls to a stop and stays there.
+    if (this.broken) inp = vf > 0.5 ? BROKEN_ROLLING : BROKEN_STOPPED;
 
     // --- surface: which wheels are off the road (kerbs count as road)
     const pos = this.locator.locate({ x: st.x, y: st.z }, st.trackIndex);
@@ -359,7 +375,7 @@ export class CarPhysics {
     // The rain and worn tyres take some of it away: how hard the car can corner (not how
     // quickly it answers the wheel, which is the surface's).
     const surfaceGrip = (a.gripFactor + b.gripFactor) / 2;
-    const grip = surfaceGrip * this.gripScale * roadGrip * this.damageGrip;
+    const grip = surfaceGrip * this.gripScale * roadGrip * this.damageGrip * this.tune.grip;
     const wing = SETUP.wing[this.setup.wing];
     const gears = SETUP.gears[this.setup.gears];
     const balance = SETUP.brakes[this.setup.brakes];
@@ -387,8 +403,8 @@ export class CarPhysics {
     const tow = this.draft;
     let resist = H.rollingDrag + surfDrag + H.aeroDrag * wing.drag * (1 + DAMAGE.bodyDrag * this.bodyDamage) * (1 - H.slipstreamDragCut * tow) * vf * vf;
     if (throttle > 0) {
-      const fade = Math.max(0, 1 - vf / (H.maxSpeed * gears.top * speedF * (1 + H.slipstreamTopSpeed * tow)));
-      if (vf >= -0.5) drive += (H.engineAccel * accelF * pull + H.slipstreamPush * tow) * throttle * fade;
+      const fade = Math.max(0, 1 - vf / (H.maxSpeed * this.tune.top * gears.top * speedF * (1 + H.slipstreamTopSpeed * tow)));
+      if (vf >= -0.5) drive += (H.engineAccel * this.tune.pull * accelF * pull + H.slipstreamPush * tow) * throttle * fade;
       else resist += brakeDecel * throttle;
     }
     if (brake > 0) {

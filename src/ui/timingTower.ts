@@ -19,6 +19,8 @@ export interface TowerRow {
   /** In the pits now (going in, stopped or coming out). */
   pit: boolean;
   finished: boolean;
+  /** Retired from the race. */
+  out?: boolean;
 }
 
 const hexColour = (hex: number) => `#${hex.toString(16).padStart(6, '0')}`;
@@ -67,7 +69,7 @@ export class TimingTower {
     // Compact: the top three and the two cars either side of you.
     const shown = this.mode === 'compact' ? rows.filter((_, i) => i < 3 || Math.abs(i - you) <= 2) : rows;
     const els = shown.map((r, i) => {
-      const gapText = r.you ? T.you : r.finished && !r.gap ? T.finished : r.gap;
+      const gapText = r.out ? T.out : r.you ? T.you : r.finished && !r.gap ? T.finished : r.gap;
       const tyre = r.tyre
         ? h('span', { class: 'tower-tyre' }, h('span', { class: 'tyre-chip', text: STR.tyres.letters[r.tyre] }), h('span', { class: 'tower-age', text: fmt(T.age, { n: Math.floor(r.tyreAge) }) }))
         : null;
@@ -76,11 +78,11 @@ export class TimingTower {
       if (r.tyreLeft <= 0 && r.tyre) tyre?.classList.add('gone');
       const row = h(
         'div',
-        { class: `tower-row${r.you ? ' you' : ''}` },
+        { class: `tower-row${r.you ? ' you' : ''}${r.out ? ' out' : ''}` },
         h('span', { class: 'tower-pos', text: String(r.pos) }),
         h('span', { class: 'tower-colour' }),
         h('span', { class: 'tower-name', text: r.name }),
-        r.pit ? h('span', { class: 'tower-pit', text: T.pit }) : r.stops > 0 ? h('span', { class: 'tower-stops', text: fmt(r.stops === 1 ? T.stops : T.stopsMany, { n: r.stops }) }) : null,
+        r.out ? null : r.pit ? h('span', { class: 'tower-pit', text: T.pit }) : r.stops > 0 ? h('span', { class: 'tower-stops', text: fmt(r.stops === 1 ? T.stops : T.stopsMany, { n: r.stops }) }) : null,
         tyre,
         h('span', { class: 'tower-gap', text: gapText }),
       );
@@ -91,6 +93,8 @@ export class TimingTower {
       return row;
     });
     this.rows.replaceChildren(...els);
+    // A full grid of twenty: tighter rows, so it fits a small screen.
+    this.root.classList.toggle('long', shown.length > 12);
     this.footer.textContent = footer ?? '';
     this.footer.hidden = !footer;
   }

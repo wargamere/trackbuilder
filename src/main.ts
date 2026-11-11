@@ -1,8 +1,10 @@
 import css from './ui/style.css?inline';
+import ownerCss from './ui/owner.css?inline';
 import { installCommonFixes } from './core/browserInput.ts';
 import { audio } from './audio/audio.ts';
 import { STR } from './config/strings.ts';
-import type { DriveMode, GameContext, RaceSetup, Screen, ScreenId } from './core/screen.ts';
+import { CareerStore } from './career/career.ts';
+import type { DriveMode, GameContext, RaceEventSpec, RaceSetup, Screen, ScreenId } from './core/screen.ts';
 import { settings, updateSettings } from './core/settings.ts';
 import { AI } from './config/race.ts';
 import { clamp } from './core/math.ts';
@@ -22,17 +24,19 @@ import { TrackLibrary } from './track/library.ts';
 import type { Track } from './track/track.ts';
 import { h } from './ui/dom.ts';
 import { LibraryScreen } from './ui/libraryScreen.ts';
+import { CareerScreen } from './ui/careerScreen.ts';
 import { MenuScreen } from './ui/menuScreen.ts';
 import { RaceSetupScreen } from './ui/raceSetupScreen.ts';
 
 /**
  * Main state machine: MENU (boot) → SETUP → RACE → RESULTS, with EDITOR,
  * PREVIEW and LIBRARY reachable from most of them. SETUP (the race setup
- * menu) opens wherever you choose to race a track.
+ * menu) opens wherever you choose to race a track. CAREER (the championship's
+ * paddock) hands its rounds to RACE and gets their results back.
  */
 
 const style = document.createElement('style');
-style.textContent = css;
+style.textContent = css + ownerCss;
 document.head.append(style);
 document.documentElement.dataset.platform = PLATFORM;
 document.title = STR.gameName;
@@ -61,10 +65,14 @@ class Game implements GameContext {
   readonly ui = ui;
   readonly records = new RecordBook();
   readonly library = new TrackLibrary();
+  readonly career = new CareerStore();
+  /** The championship round being driven (null in a single race); cleared on leaving the race. */
+  event: RaceEventSpec | null = null;
   lastResult: RunResult | null = null;
   interrupted = false;
   preview: GameContext['preview'] = null;
-  readonly setup: RaceSetup;
+  /** The single race's setup (the race setup menu's choices). */
+  private readonly ownSetup: RaceSetup;
   /** The track whose own lap count the setup's laps were last reset to. */
   private lapsFor = '';
   private setupBack: (() => void) | null = null;
@@ -75,7 +83,7 @@ class Game implements GameContext {
   constructor(bootTrack: Track) {
     this.track = bootTrack;
     const saved = settings().raceSetup;
-    this.setup = {
+    this.ownSetup = {
       mode: saved?.mode === 'practice' ? 'practice' : 'race',
       laps: bootTrack.options.laps,
       ghost: saved?.ghost ?? true,
@@ -98,6 +106,19 @@ class Game implements GameContext {
     this.screens.results = new ResultsScreen(this);
     this.screens.library = new LibraryScreen(this);
     this.screens.preview = new PreviewScreen(this);
+    this.screens.career = new CareerScreen(this);
+  }
+
+  /** A championship round has its own settings; otherwise the race setup menu's. */
+  get setup(): RaceSetup {
+    return this.event?.setup ?? this.ownSetup;
+  }
+
+  startEvent(event: RaceEventSpec): void {
+    this.event = event;
+    this.setupBack = null;
+    if (this.currentId === 'race') (this.screens.race as RaceScreen).startRun();
+    else this.go('race');
   }
 
   setTrack(track: Track): void {
@@ -116,7 +137,7 @@ class Game implements GameContext {
   private syncLaps(): void {
     if (this.lapsFor === this.track.def.id) return;
     this.lapsFor = this.track.def.id;
-    this.setup.laps = this.track.options.laps;
+    this.ownSetup.laps = this.track.options.laps;
   }
 
   drive(mode: DriveMode): void {
@@ -124,9 +145,10 @@ class Game implements GameContext {
   }
 
   start(patch: Partial<RaceSetup> = {}): void {
+    this.event = null;
     this.syncLaps();
-    Object.assign(this.setup, patch);
-    const { mode, ghost, opponents, difficulty, grid, startSlot, weather, time, tyreWear, tyres, damage, safetyCar } = this.setup;
+    Object.assign(this.ownSetup, patch);
+    const { mode, ghost, opponents, difficulty, grid, startSlot, weather, time, tyreWear, tyres, damage, safetyCar } = this.ownSetup;
     updateSettings({ raceSetup: { mode, ghost, opponents, difficulty, grid, startSlot, weather, time, tyreWear, tyres, damage, safetyCar } });
     this.setupBack = null;
     if (this.currentId === 'race') (this.screens.race as RaceScreen).startRun();
@@ -134,8 +156,9 @@ class Game implements GameContext {
   }
 
   openSetup(opts: { back?: () => void; mode?: DriveMode } = {}): void {
+    this.event = null;
     this.syncLaps();
-    if (opts.mode) this.setup.mode = opts.mode;
+    if (opts.mode) this.ownSetup.mode = opts.mode;
     const from = this.currentId;
     this.setupBack = opts.back ?? (() => this.go(from && from !== 'setup' ? from : 'menu'));
     this.go('setup');
@@ -152,6 +175,8 @@ class Game implements GameContext {
     const next = this.screens[id];
     if (!next || id === this.currentId) return;
     this.current?.exit();
+    // A championship round lasts as long as it's being driven.
+    if (id !== 'race') this.event = null;
     // Menus, editor and results are breaks in gameplay; the race reports its own start.
     platform.setGameplay(false);
     canvas3d.classList.toggle('layer-hidden', next.layer !== '3d');
@@ -191,7 +216,7 @@ function wipeOldLibraryOnce(library: TrackLibrary, records: RecordBook): void {
 function legacySaveKeys(): string[] {
   const records = loadJSON<unknown>('records.index', []);
   const ids = Array.isArray(records) ? records.filter((x): x is string => typeof x === 'string') : [];
-  return ['settings', 'library', 'library.manualOnly', 'records.index', 'editor.draft.v1', ...ids.map((id) => `records.${id}`)];
+  return ['settings', 'library', 'library.manualOnly', 'records.index', 'editor.draft.v1', 'career.v1', ...ids.map((id) => `records.${id}`)];
 }
 
 /** Web build: a share link (#track=…) boots straight into that track. */
