@@ -91,6 +91,15 @@ try {
   await career.locator('.career').waitFor();
   await career.locator('.career-name').fill('Tester');
   await career.getByRole('button', { name: /Start career/ }).click();
+  await career.locator('.owner-layout').waitFor();
+  await career.screenshot({ path: 'test-results/owner-desktop.png' });
+  const initialDriver = await career.evaluate(() => window.__game.career.save.owner.selected);
+  await career.locator('.owner-driver:not(.selected)').click();
+  assert.notEqual(await career.evaluate(() => window.__game.career.save.owner.selected), initialDriver, 'either team driver can be controlled');
+  await career.getByRole('button', { name: 'Development', exact: true }).click();
+  await career.getByRole('button', { name: /Commission upgrade/ }).click();
+  assert.equal(await career.evaluate(() => window.__game.career.save.owner.project), true);
+  await career.getByRole('button', { name: 'Overview', exact: true }).click();
   await career.getByRole('button', { name: /Qualifying/ }).click();
   await career.waitForFunction(() => document.documentElement.dataset.screen === 'race');
   await career.keyboard.press('Escape');
@@ -98,10 +107,18 @@ try {
   await career.locator('.grid-overlay:not([hidden])').waitFor();
   assert.equal(await career.locator('.grid-overlay .standings li').count(), 20, 'a full grid of twenty');
   await career.getByRole('button', { name: /Back to the paddock/ }).click();
+  await career.locator('.owner-preparation summary').click();
   await career.locator('.career-grid').waitFor();
   assert.equal(await career.locator('.career-grid li').count(), 20, 'the grid is kept in the paddock');
   assert.ok((await career.locator('.career-status').textContent())?.includes('You start 20th of 20'));
   await career.screenshot({ path: 'test-results/career-paddock.png' });
+  await career.setViewportSize({ width: 390, height: 844 });
+  await career.screenshot({ path: 'test-results/owner-phone.png' });
+  const raceButton = await career.getByRole('button', { name: /Start the race/ }).boundingBox();
+  assert.ok(raceButton && raceButton.y >= 0 && raceButton.y + raceButton.height <= 844, 'phone race action stays on screen');
+  assert.equal(await career.evaluate(() => document.querySelector('.owner-layout').scrollWidth > document.querySelector('.owner-layout').clientWidth), false, 'owner hub has no horizontal overflow');
+  await career.getByRole('button', { name: 'Calendar', exact: true }).click();
+  assert.equal(await career.locator('.career-calendar li').count(), 16, 'phone calendar remains reachable');
   assert.deepEqual(errors, [], 'no browser runtime errors');
   console.log('Browser checks passed: templates, keyboard editing, heights, guide, practice, draft recovery, mobile layout, career.');
 } catch (error) {

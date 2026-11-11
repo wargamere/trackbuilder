@@ -1,4 +1,5 @@
 import css from './ui/style.css?inline';
+import ownerCss from './ui/owner.css?inline';
 import { installCommonFixes } from './core/browserInput.ts';
 import { audio } from './audio/audio.ts';
 import { STR } from './config/strings.ts';
@@ -35,7 +36,7 @@ import { RaceSetupScreen } from './ui/raceSetupScreen.ts';
  */
 
 const style = document.createElement('style');
-style.textContent = css;
+style.textContent = css + ownerCss;
 document.head.append(style);
 document.documentElement.dataset.platform = PLATFORM;
 document.title = STR.gameName;

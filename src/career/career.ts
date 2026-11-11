@@ -3,6 +3,7 @@ import type { Compound } from '../config/race.ts';
 import { clamp } from '../core/math.ts';
 import { hashString, rng } from '../core/random.ts';
 import { loadJSON, saveJSON, storage } from '../platform/storage.ts';
+import { cleanOwner, settleOwnerRound, type OwnerState } from './owner.ts';
 
 /**
  * The career's rules, as plain data and functions (no screen, no tracks):
@@ -45,6 +46,8 @@ export interface SeasonRecord {
 
 /** Everything a career keeps. */
 export interface CareerSave {
+  /** Present in a team-owner career; absent in legacy driver careers. */
+  owner?: OwnerState;
   v: 1;
   /** Your name on the timing screens. */
   name: string;
@@ -162,13 +165,13 @@ export function newCareer(opts: { name: string; team: string; difficulty: number
 }
 
 /** This season's twenty drivers, team by team (quickest car first as designed): you in your team's second seat. */
-export function lineup(save: Pick<CareerSave, 'team' | 'name'>): Entrant[] {
+export function lineup(save: Pick<CareerSave, 'team' | 'name' | 'owner'>): Entrant[] {
   const out: Entrant[] = [];
   for (const t of CAREER.teams) {
     t.drivers.forEach((id, seat) => {
       const d = driverById.get(id) as DriverDef;
-      if (t.id === save.team && seat === 1) out.push({ id: YOU_ID, name: save.name, code: save.name.slice(0, 3).toUpperCase(), team: t, you: true });
-      else out.push({ id: d.id, name: d.name, code: d.code, team: t, you: false });
+      if (!save.owner && t.id === save.team && seat === 1) out.push({ id: YOU_ID, name: save.name, code: save.name.slice(0, 3).toUpperCase(), team: t, you: true });
+      else out.push({ id: d.id, name: d.name, code: d.code, team: t, you: save.owner?.selected === id });
     });
   }
   return out;
@@ -342,6 +345,7 @@ export function recordRound(save: CareerSave, result: { order: readonly string[]
     pole: save.grid?.[0] ?? null,
   };
   save.done.push(round);
+  settleOwnerRound(save, round);
   save.grid = null;
   return round;
 }
@@ -389,7 +393,7 @@ export function nextSeason(save: CareerSave, teamId: string): void {
     championTeam: teams[0]?.team.id ?? '',
   });
   if (save.history.length > 50) save.history.splice(0, save.history.length - 50);
-  const allowed = offers(save).some((t) => t.id === teamId);
+  const allowed = !save.owner && offers(save).some((t) => t.id === teamId);
   save.cars = nextCars(save);
   if (allowed) save.team = teamId;
   save.season++;
@@ -428,6 +432,8 @@ export function cleanCareer(raw: unknown): CareerSave | null {
     tyres: COMPOUNDS.includes(r.tyres as Compound) ? (r.tyres as Compound) : 'medium',
     history: [],
   };
+  const owner = cleanOwner(r.owner, save.team);
+  if (owner) save.owner = owner;
   const ids = new Set(lineup(save).map((e) => e.id));
   const one = (x: unknown) => (typeof x === 'string' && ids.has(x) ? x : null);
   for (const d of Array.isArray(r.done) ? r.done : []) {

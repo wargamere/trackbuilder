@@ -572,14 +572,14 @@ Two more switches in Conditions (both off by default, saved with the rest). Race
 
 ### Career
 
-🏆 Career in the main menu (K): a championship, season after season, driving for a team. The rules are plain data and functions in `src/career/career.ts`, the numbers and the made-up field in `src/config/career.ts`, the screen is `src/ui/careerScreen.ts`. The race screen drives each round as a `RaceEventSpec` (`core/screen.ts`) in place of a single race.
+🏆 Career in the main menu (K): own a team, manage both cars, and choose which of its two drivers you control each weekend. Owner rules and save migration live in `src/career/owner.ts`; the dark management hub is `src/ui/ownerHub.ts` with `src/ui/owner.css`. The rules are plain data and functions in `src/career/career.ts`, the numbers and the made-up field in `src/config/career.ts`, the screen is `src/ui/careerScreen.ts`. The race screen drives each round as a `RaceEventSpec` (`core/screen.ts`) in place of a single race.
 
-- **The field.** Ten teams of two: twenty cars on the track (a single race still has up to twelve). The teams and drivers are made up. You take the second seat of the team you pick, beside its first driver; your car is in the team's colour.
+- **The field.** Ten teams of two: twenty cars on the track (a single race still has up to twelve). The teams and drivers are made up. Both named drivers keep their seats. Pick either to drive; the other is controlled by the AI. Switching seats preserves their identities, qualifying positions and individual points. Your team owns both cars.
 - **The cars differ, as they do in the real thing.** Each team's car has a rating (`CareerSave.cars`).
   - An AI's pace is the career's *AI speed* for the best driver in the best car, and up to 10 points of difficulty less: 70 % of that by the car, 30 % by the driver, give or take a little form each weekend.
   - *Your* car is your team's too: the slowest has 3 % less grip, 5 % less pull and 1.5 % less top speed than the best (`CarPhysics.tune`), about the same lap time as between the best and worst AI cars. So your teammate, in the same car, is the fair yardstick.
-  - This is where car development will plug in later: it only has to change a team's rating.
-- **Starting one:** your name, a team (each shows how good its car is and who your teammate would be), the AI speed, the race length and the season length. One career at a time; *Abandon career* (tap twice) is on the Career tab.
+  - Development changes the shared car rating, improving both cars. Packages cost $2m plus $0.75m per delivered package; a package arrives after the next completed race and adds 0.035 to the rating, capped at 1. Up to five packages can be delivered.
+- **Starting one:** your team-principal name, the team you take over, AI speed, race length and season length. You start with $8m. Headquarters expansion costs $1.5m per new level (up to three levels). Each race pays $1m + $250k per headquarters level + $35k per point scored by either car. Retired drivers earn no points bonus. One career at a time; *Abandon career* (tap twice) is in Career settings.
 - **A season** is 8, 16 or 24 rounds on the real circuits, in the order of the real calendar (Melbourne first, Yas Marina last). Shorter seasons take an even spread of it, a different one each year, so three 8-race seasons visit all 24.
 - **A race weekend.**
   - *Practice* (optional): alone on the track, no tyre wear or damage.
@@ -592,10 +592,11 @@ Two more switches in Conditions (both off by default, saved with the rest). Race
 - **Points** are the real ones: 25, 18, 15, 12, 10, 8, 6, 4, 2, 1 for the top ten. A car that retires scores nothing.
   - *Drivers' championship:* the most points; level on points, the most wins, then the most 2nd places, and so on.
   - *Constructors' championship:* each team's two cars together.
-- **The paddock** has five tabs (keys 1–5): the next race (track, laps, forecast, the grid once you've qualified, your starting tyres with how long each kind lasts, assists and car setup), the drivers' standings, the teams' (with your team's target: the place its car's rank says it should finish), the calendar with every winner and your results, and your career (past seasons, titles, the AI speed).
-- **The end of a season:** the champions, your season against your team's target, and the teams that want you for the next one. Your own always keeps you; the better you finished, the better the cars on offer (the champion can go anywhere). The cars change a little every year (each up to 0.14 better or worse on the 0–1 scale), so the order shuffles.
+- **The owner hub** follows a dark motorsport presentation: top navigation, season timeline, next-event card, two driver cards and a live studio view of the race car. Keys 1–6 open Overview, Drivers, Development, Facilities, Vehicle and Standings. The calendar and career settings remain reachable from the footer on phones. Overview’s expandable weekend setup contains tyres, assists, car setup and the saved grid. Practice and qualifying/race actions stay in the footer.
+- **The end of a season:** review the champions and team results, then continue with the same owned team, both drivers, budget and facilities. The cars change a little every year (each up to 0.14 better or worse on the 0–1 scale), so the order shuffles.
 - **Everything is saved as it happens** (`CareerStore`, the key `career.v1`): after qualifying, after every race, at every choice. It goes through the same storage as the rest, so it's in the cloud save too. A race you leave half-way isn't counted: it starts again from the grid.
-- **Tests:** `tests/career.test.ts` (the rules), `tests/careerUI.test.ts` (the screen, start to season's end) and `tests/retire.test.ts` (breakdowns, the flag, the order).
+- **Migration:** opening an old driver career converts its player seat to the team’s second named driver, retaining all results, retirements, fastest laps, poles, the saved grid and past seasons. It does not reset the championship.
+- **Tests:** `tests/owner.test.ts` (budgets, development, switching drivers, migration and save validation), `tests/career.test.ts` (the rules), `tests/careerUI.test.ts` (the screen, start to season's end) and `tests/retire.test.ts` (breakdowns, the flag, the order).
 
 ### Saving, sharing and sound
 

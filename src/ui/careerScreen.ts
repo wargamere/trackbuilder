@@ -26,6 +26,7 @@ import {
   type RoundResult,
 } from '../career/career.ts';
 import { compoundLife } from '../car/tyres.ts';
+import { takeOwnership } from '../career/owner.ts';
 import { CAREER, YOU_ID, type RaceLength, type SeasonLength, type TeamDef } from '../config/career.ts';
 import { AI, TYRES, type Compound } from '../config/race.ts';
 import { STR, fmt } from '../config/strings.ts';
@@ -35,13 +36,15 @@ import { builtInTrack } from '../editor/pipeline.ts';
 import { formatTime } from '../race/session.ts';
 import { trackLapTime, trackTyreLife } from '../race/strategy.ts';
 import { TrackOrbit } from '../render/orbit.ts';
+import { Garage } from '../render/garage.ts';
 import type { Track } from '../track/track.ts';
 import { AssistsPanel, assistsSummary } from './assistsPanel.ts';
 import { button, h, segmented, slider } from './dom.ts';
 import { SetupPanel, setupSummary } from './setupPanel.ts';
+import { ownerBody, ownerHeader, OWNER_TABS, type OwnerTab } from './ownerHub.ts';
 
-type Tab = 'race' | 'drivers' | 'teams' | 'calendar' | 'career';
-const TABS: readonly Tab[] = ['race', 'drivers', 'teams', 'calendar', 'career'];
+type Tab = OwnerTab;
+const TABS: readonly Tab[] = OWNER_TABS.map(([id]) => id);
 const LENGTHS: readonly RaceLength[] = ['short', 'medium', 'long'];
 const SEASONS: readonly SeasonLength[] = ['short', 'standard', 'full'];
 
@@ -81,6 +84,7 @@ export class CareerScreen implements Screen {
   private readonly root: HTMLElement;
   private readonly panel: HTMLElement;
   private readonly orbit = new TrackOrbit();
+  private garage: Garage | null = null;
   private readonly assistsPanel = new AssistsPanel();
   private readonly setupPanel = new SetupPanel();
   private tab: Tab = 'race';
@@ -113,6 +117,10 @@ export class CareerScreen implements Screen {
 
   enter(): void {
     this.abandonArmed = false;
+    if (this.save && !this.save.owner) {
+      takeOwnership(this.save);
+      this.game.career.write();
+    }
     this.game.ui.append(this.root);
     const v = this.game.view3d;
     if (v) {
@@ -136,6 +144,8 @@ export class CareerScreen implements Screen {
         }
         // Typing your name: only Enter and Esc are ours.
         const typing = e.target instanceof HTMLInputElement;
+        // Focused controls use Enter themselves; do not also launch a session.
+        if ((e.code === 'Enter' || e.code === 'NumpadEnter') && e.target instanceof HTMLElement && e.target.closest('button, summary')) return;
         if (e.code === 'Escape') {
           e.preventDefault();
           this.game.go('menu');
@@ -143,7 +153,7 @@ export class CareerScreen implements Screen {
           e.preventDefault();
           this.primary?.();
         } else if (!typing && this.save && !this.shown && nextRound(this.save) !== null) {
-          const k = /^Digit([1-5])$/.exec(e.code);
+          const k = /^Digit([1-6])$/.exec(e.code);
           if (!k) return;
           e.preventDefault();
           this.tab = TABS[Number(k[1]) - 1];
@@ -155,6 +165,8 @@ export class CareerScreen implements Screen {
   }
 
   exit(): void {
+    this.garage?.dispose();
+    this.garage = null;
     this.assistsPanel.close();
     this.setupPanel.close();
     this.abort?.abort();
@@ -174,7 +186,8 @@ export class CareerScreen implements Screen {
 
   frame(dt: number): void {
     const v = this.game.view3d;
-    if (v) this.orbit.frame(v, dt);
+    if (v && !this.save?.owner) this.orbit.frame(v, dt);
+    this.garage?.frame();
   }
 
   /** The track of the round on show (the next one; the last one once the season is over), or null with no career. */
@@ -203,12 +216,22 @@ export class CareerScreen implements Screen {
     this.primary = null;
     const view = !save ? 'new' : this.shown ? 'result' : nextRound(save) === null ? 'review' : 'hub';
     this.root.dataset.view = view;
+    this.root.classList.toggle('owner-mode', !!save?.owner);
     let body: (Node | null)[];
     if (!save) body = this.newCareer();
     else if (this.shown) body = this.result(save, this.shown);
     else if (nextRound(save) === null) body = this.review(save);
     else body = this.hub(save, nextRound(save) as number);
     this.panel.replaceChildren(...body.filter((x): x is Node => !!x));
+    const target = this.panel.querySelector<HTMLElement>('.owner-garage');
+    if (target && this.game.view3d && save) {
+      try {
+        this.garage ??= new Garage(teamDef(save.team).paint);
+        this.garage.attach(target, teamDef(save.team).paint);
+      } catch {
+        target.textContent = 'TEAM GARAGE';
+      }
+    }
   }
 
   // ---------------------------------------------------------------- a new career
@@ -267,7 +290,9 @@ export class CareerScreen implements Screen {
     });
     season.set(d.rounds);
     const start = () => {
-      this.game.career.start(newCareer({ ...d, name: cleanName(d.name) }));
+      const save = newCareer({ ...d, name: cleanName(d.name) });
+      takeOwnership(save);
+      this.game.career.start(save);
       this.tab = 'race';
       this.tyresFor = '';
       this.showTrack();
@@ -333,30 +358,21 @@ export class CareerScreen implements Screen {
 
   private hub(save: CareerSave, round: number): (Node | null)[] {
     const C = STR.career;
-    const tabs = segmented<Tab>(TABS.map((t) => [t, C.tabs[t]]), (t) => {
-      this.tab = t;
-      this.abandonArmed = false;
-      this.render();
-    });
-    tabs.set(this.tab);
-    tabs.el.classList.add('career-tabs');
-    this.sessions = [];
-    const body =
-      this.tab === 'race'
-        ? this.raceTab(save, round)
-        : this.tab === 'drivers'
-          ? this.driversTab(save)
-          : this.tab === 'teams'
-            ? this.teamsTab(save)
-            : this.tab === 'calendar'
-              ? this.calendarTab(save, round)
-              : this.careerTab(save);
+    const navigate = (tab: Tab) => { this.tab = tab; this.abandonArmed = false; this.render(); };
+    const weekend = this.raceTab(save, round);
     return [
-      this.header(save, fmt(C.roundOf, { round: round + 1, rounds: save.calendar.length })),
-      tabs.el,
-      h('div', { class: `career-body tab-${this.tab}` }, ...body),
-      // (The sessions' buttons are down here with Back, so they're on screen however small it is.)
-      h('div', { class: 'menu row setup-buttons career-foot' }, button(C.back, () => this.game.go('menu'), { icon: '←', key: 'Esc' }), h('div', { class: 'career-sessions' }, ...this.sessions)),
+      ownerHeader(save, this.tab, navigate),
+      ownerBody(save, round, this.tab, {
+        navigate,
+        changed: () => { this.game.career.write(); this.render(); },
+        weekend,
+        standings: [...this.teamsTab(save), h('h3', { text: 'Driver standings' }), ...this.driversTab(save)],
+        calendar: this.calendarTab(save, round),
+        settings: this.careerTab(save),
+      }),
+      h('footer', { class: 'owner-footer' },
+        h('div', { class: 'owner-footer-links' }, button(C.back, () => this.game.go('menu'), { key: 'Esc' }), button('Calendar', () => navigate('calendar')), button('Career settings', () => navigate('career'))),
+        h('div', { class: 'career-sessions' }, ...this.sessions)),
     ];
   }
 
@@ -397,7 +413,7 @@ export class CareerScreen implements Screen {
 
     const info = [t.def.place, fmt(C.km, { len: (t.center.length / 1000).toFixed(2) }), fmt(C.laps, { n: laps }), C.forecast[weather], t.options.time === 'day' ? null : C.times[t.options.time]].filter(Boolean).join(' · ');
     const grid = save.grid;
-    const place = grid ? grid.indexOf(YOU_ID) + 1 : 0;
+    const place = grid ? grid.indexOf(save.owner?.selected ?? YOU_ID) + 1 : 0;
     const names = new Map(lineup(save).map((e) => [e.id, e]));
     const gridList = grid
       ? h(
@@ -494,7 +510,10 @@ export class CareerScreen implements Screen {
           const done = save.done[i];
           let note = '';
           if (done) {
-            const mine = done.dnf.includes(YOU_ID) ? C.yourDnf : fmt(C.yourResult, { pos: ord(done.order.indexOf(YOU_ID) + 1) });
+            const id = save.owner?.selected ?? YOU_ID;
+            const mine = save.owner
+              ? lineup(save).filter((e) => e.team.id === save.team).map((e) => `${e.name}: ${done.dnf.includes(e.id) ? 'DNF' : `P${done.order.indexOf(e.id) + 1}`}`).join(' · ')
+              : done.dnf.includes(id) ? C.yourDnf : fmt(C.yourResult, { pos: ord(done.order.indexOf(id) + 1) });
             note = `${fmt(C.winner, { name: names.get(done.order[0])?.name ?? '' })} · ${mine}`;
           } else if (i === round) note = C.next;
           return h(
@@ -590,11 +609,12 @@ export class CareerScreen implements Screen {
       safetyCar: true,
     };
     const mine = teamDef(save.team);
+    const controlled = entrants.find((e) => e.you)!;
     const spec: RaceEventSpec = {
       setup,
       session,
       title: fmt(STR.career.roundOf, { round: round + 1, rounds: save.calendar.length }),
-      you: { id: YOU_ID, name: save.name, paint: mine.paint, box: teams.indexOf(mine) },
+      you: { id: controlled.id, name: controlled.name, paint: mine.paint, box: teams.indexOf(mine) },
       car: playerCar(save),
       tyreLife: tyreLife(laps, trackTyreLife(t)),
       field,
@@ -613,6 +633,7 @@ export class CareerScreen implements Screen {
 
   /** The race is over: into the standings, saved, and its result on show. */
   private finished(save: CareerSave, round: number, t: Track, result: EventResult): void {
+    if (nextRound(save) !== round) return;
     const saved = recordRound(save, result);
     if (saved) {
       this.game.career.write();
@@ -630,8 +651,8 @@ export class CareerScreen implements Screen {
     const r = shown.result;
     const names = new Map(lineup(save).map((e) => [e.id, e]));
     const winner = shown.times.get(r.order[0]);
-    const place = r.order.indexOf(YOU_ID) + 1;
-    const out = r.dnf.includes(YOU_ID);
+    const place = r.order.indexOf(save.owner?.selected ?? YOU_ID) + 1;
+    const out = r.dnf.includes(save.owner?.selected ?? YOU_ID);
     const pts = out ? 0 : pointsFor(place);
     const headline = out ? C.retired : place === 1 ? C.won : pts > 0 ? fmt(C.finishedPoints, { pos: ord(place), pts }) : fmt(C.finished, { pos: ord(place) });
     const rows = r.order.map((id, i) => {
@@ -689,7 +710,7 @@ export class CareerScreen implements Screen {
     const mine = yourSeason(save);
     const champion = drivers[0];
     const best = teams[0];
-    const wanted = offers(save);
+    const wanted = save.owner ? [teamDef(save.team)] : offers(save);
     if (!wanted.some((t) => t.id === this.pick)) this.pick = save.team;
     const next = { cars: nextCars(save) };
     const order = carOrder(next);

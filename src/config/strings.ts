@@ -60,7 +60,7 @@ export const STR = {
     next: 'Next track',
     keys: 'Enter race this track · K career · E draw · L track library · ← → change track · ↑ ↓ change list',
     career: 'Career',
-    careerHint: 'A championship, season after season, driving for a team.',
+    careerHint: 'Own a team. Develop both cars. Choose your driver each race.',
     /** Under the Career button when one is under way. */
     careerOn: 'Season {season} · round {round} of {rounds} · {team}',
     careerOver: 'Season {season} is over · {team}',
@@ -676,11 +676,11 @@ export const STR = {
     paddock: 'Back to the paddock',
     back: 'Main menu',
     /** Starting one. */
-    newTitle: 'Start a career',
-    intro: 'Ten teams of two, twenty cars, a season of races on the real circuits. The top ten score points: the driver with the most is champion, and each team’s two cars together count for the constructors’ title. Your car is your team’s: the better it is, the faster you both are.',
-    name: 'Your name',
+    newTitle: 'Start a team-owner career',
+    intro: 'Take ownership of a team and lead two drivers through the championship. Manage your budget, invest in development and facilities, and choose which driver you control each weekend. Your other driver races with the AI; both score points for your team.',
+    name: 'Team principal name',
     namePlaceholder: 'You',
-    team: 'Your team',
+    team: 'Take ownership of a team',
     teamLine: 'with {mate}',
     /** A team's car, for its bar's tooltip. */
     carOf: 'Car: {car} of 10',
@@ -755,7 +755,7 @@ export const STR = {
     yourSeason: 'You: {pos} with {pts} points · {wins} wins · {podiums} podiums',
     yourTeam: '{team}: {pos} in the constructors’ (target {target})',
     offers: 'Next season',
-    offersHint: 'Teams that want you. The better your season, the better the cars on offer; the cars change a little every year.',
+    offersHint: 'Keep building your team next season. Your drivers, budget and facilities stay with you; the competitive order evolves each year.',
     offerLine: 'with {mate}',
     stay: 'your team',
     nextSeason: 'Start season {n}',
