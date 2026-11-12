@@ -1,8 +1,10 @@
 import { CAREER, YOU_ID } from '../config/career.ts';
 import type { CareerSave, RoundResult } from './career.ts';
 import { teamsFor } from './roster.ts';
+import { cleanDynasty, createDynasty, researchDiscount, researchDuration, researchMultiplier, weekendApproach, type DynastyState } from './dynasty.ts';
 
 export interface OwnerState {
+  world?: DynastyState;
   selected: string;
   cash: number;
   earned: number;
@@ -11,7 +13,7 @@ export interface OwnerState {
   facilities: number;
   project: boolean;
   target?: number;
-  research?: { id: string; remaining: number };
+  research?: { id: string; remaining: number; gain?: number; duration?: number };
   sponsor?: string;
   ledger?: { label: string; amount: number; season: number; round: number }[];
 }
@@ -60,7 +62,8 @@ export function takeOwnership(save: CareerSave): OwnerState {
   }
   if (save.grid) save.grid = save.grid.map(replace);
   const target = Object.values(save.cars).filter((rating) => rating > save.cars[save.team]).length + 1;
-  return save.owner = { selected: seats[1], cash: 8_000_000, earned: 0, spent: 0, development: 0, facilities: 0, project: false, target };
+  const owner: OwnerState = { selected: seats[1], cash: 8_000_000, earned: 0, spent: 0, development: 0, facilities: 0, project: false, target };
+  save.owner = owner; owner.world = createDynasty(save); return owner;
 }
 
 /** Selection changes control, never identities, the grid or championship points. */
@@ -72,8 +75,10 @@ export function selectDriver(save: CareerSave, id: string): boolean {
 }
 
 export function developmentCost(save: CareerSave, id = 'balanced'): number {
-  return (RESEARCH.find((r) => r.id === id)?.cost ?? RESEARCH[1].cost) + (save.owner?.development ?? 0) * 750_000;
+  return Math.round(((RESEARCH.find((r) => r.id === id)?.cost ?? RESEARCH[1].cost) + (save.owner?.development ?? 0) * 750_000) * (1 - researchDiscount(save)) / 10_000) * 10_000;
 }
+export function developmentGain(save: CareerSave, id = 'balanced'): number { return (RESEARCH.find((r) => r.id === id)?.gain ?? RESEARCH[1].gain) * researchMultiplier(save); }
+export function developmentRounds(save: CareerSave, id = 'balanced'): number { return researchDuration(save, RESEARCH.find((r) => r.id === id)?.rounds ?? 1); }
 
 export function researchBlocker(save: CareerSave, id = 'balanced'): string | null {
   const o = save.owner;
@@ -82,7 +87,7 @@ export function researchBlocker(save: CareerSave, id = 'balanced'): string | nul
   if (o.project) return 'Workshop occupied';
   if (o.development >= 5) return 'Season programme complete';
   if (save.cars[save.team] >= 1) return 'Car is at the performance ceiling';
-  if (spec.rounds > save.calendar.length - save.done.length) return 'Not enough rounds left this season';
+  if (Math.ceil(developmentRounds(save, id) / weekendApproach(save).work) > save.calendar.length - save.done.length) return 'Not enough rounds left this season';
   if (o.cash < developmentCost(save, id)) return 'Insufficient funds';
   return null;
 }
@@ -95,7 +100,11 @@ export function commissionDevelopment(save: CareerSave, id = 'balanced'): boolea
   o.cash -= cost;
   o.spent += cost;
   o.project = true;
-  o.research = { id, remaining: spec.rounds };
+  const duration = developmentRounds(save, id), gain = developmentGain(save, id);
+  o.research = { id, remaining: duration };
+  if (duration !== spec.rounds) o.research.duration = duration;
+  if (Math.abs(gain - spec.gain) > 1e-9) o.research.gain = gain;
+  if (o.world) o.world.insight = 0;
   transaction(save, spec.name, -cost);
   return true;
 }
@@ -130,10 +139,10 @@ export function settleOwnerRound(save: CareerSave, result: RoundResult): void {
   o.earned += income;
   transaction(save, `Round ${save.done.length} · ${pts} team points`, income);
   if (o.project) {
-    if (o.research) o.research.remaining--;
+    if (o.research) o.research.remaining -= weekendApproach(save, save.done.length - 1).work;
     if (!o.research || o.research.remaining <= 0) {
       const spec = RESEARCH.find((r) => r.id === o.research?.id) ?? RESEARCH[1];
-      save.cars[save.team] = Math.min(1, save.cars[save.team] + spec.gain);
+      save.cars[save.team] = Math.min(1, save.cars[save.team] + (o.research?.gain ?? spec.gain));
       o.development++;
       o.project = false;
       delete o.research;
@@ -152,12 +161,17 @@ export function cleanOwner(raw: unknown, team: string, teamSeats?: readonly [str
     cash: num('cash'), earned: num('earned'), spent: num('spent'),
     development: Math.floor(num('development', 5)), facilities: Math.floor(num('facilities', 3)), project: r.project === true,
   };
+  const world = cleanDynasty(r.world); if (world) owner.world = world;
   if (typeof r.target === 'number' && Number.isFinite(r.target)) owner.target = Math.max(1, Math.min(12, Math.floor(r.target)));
   if (typeof r.sponsor === 'string' && SPONSORS.some((s) => s.id === r.sponsor)) owner.sponsor = r.sponsor;
   if (r.research && typeof r.research === 'object' && owner.project) {
     const raw = r.research as Record<string, unknown>;
     const spec = RESEARCH.find((p) => p.id === raw.id);
-    if (spec) owner.research = { id: spec.id, remaining: typeof raw.remaining === 'number' && Number.isFinite(raw.remaining) ? Math.max(1, Math.min(spec.rounds, Math.floor(raw.remaining))) : spec.rounds };
+    if (spec) {
+      owner.research = { id: spec.id, remaining: typeof raw.remaining === 'number' && Number.isFinite(raw.remaining) ? Math.max(1, Math.min(spec.rounds, Math.floor(raw.remaining))) : spec.rounds };
+      if (typeof raw.gain === 'number' && Number.isFinite(raw.gain)) owner.research.gain = Math.max(spec.gain, Math.min(spec.gain * 1.4, raw.gain));
+      if (typeof raw.duration === 'number' && Number.isFinite(raw.duration)) { owner.research.duration = Math.max(1, Math.min(spec.rounds, Math.floor(raw.duration))); owner.research.remaining = Math.min(owner.research.remaining, owner.research.duration); }
+    }
   }
   if (Array.isArray(r.ledger)) owner.ledger = r.ledger.filter((x) => x && typeof x === 'object' && typeof x.label === 'string' && typeof x.amount === 'number' && Number.isFinite(x.amount)).slice(0, 20).map((x) => ({ label: x.label.slice(0, 80), amount: Math.max(-1e12, Math.min(1e12, x.amount)), season: typeof x.season === 'number' && Number.isFinite(x.season) ? Math.max(1, Math.floor(x.season)) : 1, round: typeof x.round === 'number' && Number.isFinite(x.round) ? Math.max(0, Math.floor(x.round)) : 0 }));
   return owner;

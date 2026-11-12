@@ -93,6 +93,24 @@ try {
   await career.locator('.career-name').fill('Tester');
   await career.getByRole('button', { name: /Start career/ }).click();
   await career.locator('.owner-layout').waitFor();
+  await career.getByRole('button', { name: 'Review team decision', exact: true }).click();
+  await career.getByRole('button', { name: 'Promise steady progress', exact: true }).click();
+  assert.equal(await career.evaluate(() => window.__game.career.save.owner.world.decisions.length), 1);
+  await career.screenshot({ path: 'test-results/career-inbox.png' });
+  await career.getByRole('button', { name: 'Personnel', exact: true }).click();
+  await career.getByRole('button', { name: 'Hire Maya Hart', exact: true }).click();
+  assert.equal(await career.evaluate(() => window.__game.career.save.owner.world.staff.technical), 'hart');
+  await career.screenshot({ path: 'test-results/career-personnel.png' });
+  await career.getByRole('button', { name: 'Drivers', exact: true }).click();
+  await career.getByRole('button', { name: 'Train Almeida: Qualifying pace', exact: true }).click();
+  assert.equal(await career.evaluate(() => window.__game.career.save.owner.world.drivers.alm.training.focus), 'pace');
+  await career.screenshot({ path: 'test-results/career-driver-development.png' });
+  await career.getByRole('button', { name: 'Facilities', exact: true }).click();
+  await career.getByRole('button', { name: /Expand Aerodynamics laboratory/ }).click();
+  assert.equal(await career.evaluate(() => window.__game.career.save.owner.world.departments.laboratory), 1);
+  await career.getByRole('button', { name: 'Overview', exact: true }).click();
+  await career.getByRole('button', { name: 'Maximum attack', exact: true }).click();
+  assert.equal(await career.getByRole('button', { name: 'Maximum attack', exact: true }).getAttribute('aria-pressed'), 'true');
   await career.screenshot({ path: 'test-results/owner-desktop.png' });
   const initialDriver = await career.evaluate(() => window.__game.career.save.owner.selected);
   await career.locator('.owner-driver:not(.selected)').click();
@@ -108,6 +126,10 @@ try {
   await career.locator('.grid-overlay:not([hidden])').waitFor();
   assert.equal(await career.locator('.grid-overlay .standings li').count(), 20, 'a full grid of twenty');
   await career.getByRole('button', { name: /Back to the paddock/ }).click();
+  assert.equal(await career.locator('.campaign-approach:disabled').count(), 3, 'weekend management locks after qualifying');
+  await career.reload(); await career.waitForFunction(() => window.__game); await career.keyboard.press('k');
+  assert.equal(await career.evaluate(() => window.__game.career.save.owner.world.staff.technical), 'hart', 'staff survive reload');
+  assert.equal(await career.evaluate(() => window.__game.career.save.owner.world.plan.id), 'attack', 'weekend approach survives reload');
   await career.locator('.owner-preparation summary').click();
   await career.locator('.career-grid').waitFor();
   assert.equal(await career.locator('.career-grid li').count(), 20, 'the grid is kept in the paddock');
@@ -127,6 +149,13 @@ try {
   assert.equal(await career.evaluate(() => window.__game.career.save.owner.sponsor), 'meridian');
   await career.getByRole('button', { name: 'Development', exact: true }).click();
   assert.equal(await career.locator('.research-option').count(), 3);
+  for (const tab of ['Team inbox', 'Personnel', 'Drivers', 'Facilities', 'Legacy']) {
+    await career.getByRole('button', { name: tab, exact: true }).click();
+    assert.equal(await career.locator('.owner-layout').evaluate((el) => el.scrollWidth > el.clientWidth), false, tab + ' fits on a phone');
+    const active = await career.locator('.owner-nav [aria-current="page"]').boundingBox();
+    assert.ok(active && active.x >= 0 && active.x + active.width <= 390, 'the active navigation item remains visible');
+  }
+  await career.screenshot({ path: 'test-results/career-legacy-phone.png' });
   await career.getByRole('button', { name: 'Overview', exact: true }).click();
   for (const size of [{ width: 844, height: 390 }, { width: 1024, height: 768 }, { width: 1440, height: 900 }]) {
     await career.setViewportSize(size);

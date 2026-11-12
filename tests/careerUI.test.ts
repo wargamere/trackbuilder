@@ -148,3 +148,32 @@ test('a custom team season review keeps its identity, hired drivers and twelve-t
   assert.ok(text().includes('Nova Racing'));
   assert.deepEqual(s.entry!.drivers, ['gp-norrin', 'gp-verstallen']);
 });
+
+test('owner campaign actions persist, deliver through a race, and close when qualifying sets the grid', async () => {
+  const { newCareer, setGrid } = await import('../src/career/career.ts');
+  const { takeOwnership } = await import('../src/career/owner.ts');
+  const { dynasty } = await import('../src/career/dynasty.ts');
+  const s = newCareer({ name: 'Owner', team: 'kestrel', difficulty: 60, length: 'short', rounds: 'short' }, 91);
+  takeOwnership(s); screen.exit(); game.career.start(s); current = 'career'; screen.enter();
+  assert.ok(ui.querySelector('[data-testid="campaign-command"]'));
+  click('Review team decision'); click('Invest in the foundations');
+  assert.ok(text().includes('Decision recorded.')); assert.equal(dynasty(s).insight, 1);
+  click('Personnel'); click('Hire Maya Hart'); assert.equal(dynasty(s).staff.technical, 'hart');
+  assert.ok(text().includes('Release Maya Hart'));
+  click('Drivers'); click('Train Almeida: Qualifying pace');
+  assert.equal(dynasty(s).drivers.alm.training?.focus, 'pace');
+  assert.equal(ui.querySelectorAll('.campaign-training-options button:disabled').length, 3);
+  click('Facilities'); buttons().find((b) => b.textContent?.includes('Expand Driver performance centre'))!.click();
+  assert.equal(dynasty(s).departments.simulator, 1);
+  click('Overview'); click('Development weekend');
+  assert.equal(dynasty(s).plan.id, 'development');
+  assert.equal(find('Development weekend')!.getAttribute('aria-pressed'), 'true');
+  assert.equal(new CareerStore().save?.owner?.world?.staff.technical, 'hart');
+  setGrid(s, []); game.career.write(); screen.exit(); screen.enter();
+  assert.equal(ui.querySelectorAll('.campaign-approach:disabled').length, 3);
+  click('Personnel'); assert.equal(ui.querySelectorAll('.campaign-staff-card button:disabled').length, 6);
+  recordRound(s, { order: ['alm', 'whi'], dnf: [], fastest: 'alm' }); game.career.write(); screen.exit(); screen.enter();
+  click('Drivers'); assert.equal(dynasty(s).drivers.alm.pace, 1); assert.equal(dynasty(s).drivers.alm.xp, 49);
+  assert.ok(text().includes('49 CAREER XP')); click('Legacy'); assert.ok(text().includes('ACHIEVED'));
+  assert.ok(dynasty(s).achievements.includes('first-win'));
+});
