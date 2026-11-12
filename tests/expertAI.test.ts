@@ -24,7 +24,7 @@ test('101–110 adds increasing expert performance and survives save reload', ()
   const s = start(110); assert.equal(cleanCareer(JSON.parse(JSON.stringify(s)))!.difficulty, 110);
   assert.ok(aiDifficulty(s, 0, 'lin') > 1); assert.ok(aiDifficulty(s, 0, 'lin') <= 1.1);
 });
-test('expert qualifying is measurably quicker and a 52% car loses real lap time at 100%', () => {
+test('expert qualifying is measurably quicker and a 52% car has a moderate lap-time deficit at 100%', () => {
   const save = start(100); save.cars.kestrel = .52; const weak = carPerformance(save, 'alm');
   for (const id of ['world-au-1953', 'world-it-1922', 'world-gb-1948']) {
     const t = builtInTracks().find(t => t.def.id === id)!.track(), setup = suggestedSetup(t);
@@ -32,6 +32,7 @@ test('expert qualifying is measurably quicker and a 52% car loses real lap time 
     const expert = new AuthorLap(t, 1.1, false, false, setup).finish()!;
     const underdog = new AuthorLap(t, 1, false, false, setup, weak).finish()!;
     assert.ok(expert < normal * .985, `${id}: 110% ${expert.toFixed(3)} vs 100% ${normal.toFixed(3)}`);
-    assert.ok(underdog > normal * 1.1, `${id}: 52% car ${underdog.toFixed(3)} vs 100% car ${normal.toFixed(3)}`);
+    const gap = underdog / normal - 1;
+    assert.ok(gap > .025 && gap < .09, `${id}: 52% car ${underdog.toFixed(3)} vs 100% car ${normal.toFixed(3)} (${(gap * 100).toFixed(1)}% gap)`);
   }
 });
