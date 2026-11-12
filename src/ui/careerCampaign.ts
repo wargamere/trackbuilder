@@ -114,4 +114,4 @@ export function campaignSeasonReview(save: CareerSave): HTMLElement {
     h('small', { text: `Current team operations: ${money(cost)} per race. Your completed board objective bonus, when earned, is already in the finance ledger.` }));
 }
 
-export function reliabilityLabel(save: CareerSave): string { const team = teamsFor(save).find((t) => t.id === save.team)!; return `${(failureChance(save, team.drivers[0]) * 100).toFixed(1)}% AI failure risk`; }
+export function reliabilityLabel(save: CareerSave): string { const team = teamsFor(save).find((t) => t.id === save.team)!, id = team.drivers.find((d) => d !== save.owner?.selected) ?? team.drivers[0]; return `${driverDef(id)!.name} · ${(failureChance(save, id) * 100).toFixed(1)}% failure risk`; }

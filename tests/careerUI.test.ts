@@ -129,6 +129,8 @@ test('advancing the next weekend delivers stock, then fitting updates only the c
   assert.equal(save().owner!.engineering!.stock['aero-1'], 0);
   assert.deepEqual(new CareerStore().save?.owner?.engineering?.fitted, [['aero-1'], []]);
   click('Progress history'); assert.ok(text().includes('fitted to car 1'));
+  click('Overview'); click('Race as Nakamura'); click('Engineering'); click('Vehicle');
+  assert.ok(text().includes('Brennan ·'), 'AI reliability describes the current teammate, not the player-controlled car');
   click('Overview');
 });
 
