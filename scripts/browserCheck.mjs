@@ -178,6 +178,14 @@ try {
   assert.equal(await custom.evaluate(() => window.__game.career.save.entry.name), 'Nova Works');
   await custom.getByRole('button', { name: /Start the race/ }).click();
   await custom.waitForFunction(() => window.__game.screens.race.opponents.length === 23);
+  assert.ok(await custom.evaluate(() => window.__game.screens.race.opponents.every((o) => typeof o.ai.racecraft === 'string')), 'live opponents expose their actual racecraft decision');
+  const duelChecks = await custom.evaluate(async () => {
+    const { cornerDuel } = await import('/tests/helpers/racecraft.ts');
+    const outside = cornerDuel(1, 0, 'inside'), cutback = cornerDuel(0, 6, 'wide-exit');
+    return { outside: outside.peakOverlapSeconds, outsideHits: outside.contacts, switchback: cutback.actions.switchback, exitAttack: cutback.actions['exit-attack'], gap: cutback.finalGap, hits: cutback.contacts, off: outside.off + cutback.off };
+  });
+  assert.ok(duelChecks.outside > 2.5 && duelChecks.switchback > 0 && duelChecks.exitAttack > 0 && duelChecks.gap < -5, 'outside and switchback decisions execute in Chromium');
+  assert.equal(duelChecks.outsideHits + duelChecks.hits + duelChecks.off, 0, 'browser duels remain clean');
   await custom.keyboard.press('Escape');
   await custom.getByRole('button', { name: /Back to the paddock/ }).click();
   await custom.getByRole('button', { name: 'Overview', exact: true }).click();

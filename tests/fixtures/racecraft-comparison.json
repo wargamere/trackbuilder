@@ -1,0 +1,2729 @@
+{
+  "kind": "Deterministic real-physics duel diagnostic, not complete acceptance",
+  "seed": "none for duels: deterministic layouts and fixed inputs; field seed 88",
+  "baseline": "f97c3b4e86615c9823c28a8f9ee09861ef727e93",
+  "gapConvention": "player minus AI metres; negative is AI ahead",
+  "runs": [
+    {
+      "before": {
+        "track": "Sunday Loop",
+        "start": -1,
+        "style": "inside",
+        "actions": {
+          "racing-line": 692
+        },
+        "contacts": 0,
+        "hardest": 0,
+        "off": 0,
+        "resets": 0,
+        "peakOverlapSeconds": 1.63333333333333,
+        "finalGap": 13.356377420692297
+      },
+      "after": {
+        "track": "Sunday Loop",
+        "start": -1,
+        "style": "inside",
+        "actions": {
+          "hold-outside": 245,
+          "racing-line": 455
+        },
+        "contacts": 0,
+        "hardest": 0,
+        "off": 0,
+        "resets": 0,
+        "peakOverlapSeconds": 1.3916666666666642,
+        "finalGap": 15.713631429392535,
+        "incidents": []
+      }
+    },
+    {
+      "before": {
+        "track": "Sunday Loop",
+        "start": -1,
+        "style": "wide-exit",
+        "actions": {
+          "racing-line": 711
+        },
+        "contacts": 0,
+        "hardest": 0,
+        "off": 0,
+        "resets": 0,
+        "peakOverlapSeconds": 1.63333333333333,
+        "finalGap": -3.330345172513262
+      },
+      "after": {
+        "track": "Sunday Loop",
+        "start": -1,
+        "style": "wide-exit",
+        "actions": {
+          "hold-outside": 350,
+          "racing-line": 354
+        },
+        "contacts": 0,
+        "hardest": 0,
+        "off": 0,
+        "resets": 0,
+        "peakOverlapSeconds": 1.3666666666666643,
+        "finalGap": -5.321276391749734,
+        "incidents": []
+      }
+    },
+    {
+      "before": {
+        "track": "Sunday Loop",
+        "start": 0,
+        "style": "inside",
+        "actions": {
+          "racing-line": 692
+        },
+        "contacts": 0,
+        "hardest": 0,
+        "off": 0,
+        "resets": 0,
+        "peakOverlapSeconds": 1.4749999999999972,
+        "finalGap": 14.081114355032241
+      },
+      "after": {
+        "track": "Sunday Loop",
+        "start": 0,
+        "style": "inside",
+        "actions": {
+          "hold-outside": 240,
+          "racing-line": 458
+        },
+        "contacts": 0,
+        "hardest": 0,
+        "off": 0,
+        "resets": 0,
+        "peakOverlapSeconds": 1.3166666666666644,
+        "finalGap": 15.82843987075421,
+        "incidents": []
+      }
+    },
+    {
+      "before": {
+        "track": "Sunday Loop",
+        "start": 0,
+        "style": "wide-exit",
+        "actions": {
+          "racing-line": 703
+        },
+        "contacts": 0,
+        "hardest": 0,
+        "off": 0,
+        "resets": 0,
+        "peakOverlapSeconds": 1.4749999999999972,
+        "finalGap": -4.939896336865331
+      },
+      "after": {
+        "track": "Sunday Loop",
+        "start": 0,
+        "style": "wide-exit",
+        "actions": {
+          "hold-outside": 345,
+          "racing-line": 355
+        },
+        "contacts": 0,
+        "hardest": 0,
+        "off": 0,
+        "resets": 0,
+        "peakOverlapSeconds": 1.2916666666666645,
+        "finalGap": -5.518388932613561,
+        "incidents": []
+      }
+    },
+    {
+      "before": {
+        "track": "Sunday Loop",
+        "start": 1,
+        "style": "inside",
+        "actions": {
+          "racing-line": 694
+        },
+        "contacts": 0,
+        "hardest": 0,
+        "off": 0,
+        "resets": 0,
+        "peakOverlapSeconds": 1.1333333333333317,
+        "finalGap": 15.656681033752193
+      },
+      "after": {
+        "track": "Sunday Loop",
+        "start": 1,
+        "style": "inside",
+        "actions": {
+          "hold-outside": 240,
+          "racing-line": 454
+        },
+        "contacts": 0,
+        "hardest": 0,
+        "off": 0,
+        "resets": 0,
+        "peakOverlapSeconds": 1.2166666666666648,
+        "finalGap": 15.497524226981113,
+        "incidents": []
+      }
+    },
+    {
+      "before": {
+        "track": "Sunday Loop",
+        "start": 1,
+        "style": "wide-exit",
+        "actions": {
+          "racing-line": 705
+        },
+        "contacts": 0,
+        "hardest": 0,
+        "off": 0,
+        "resets": 0,
+        "peakOverlapSeconds": 1.3083333333333311,
+        "finalGap": -3.7610775049638505
+      },
+      "after": {
+        "track": "Sunday Loop",
+        "start": 1,
+        "style": "wide-exit",
+        "actions": {
+          "hold-outside": 341,
+          "racing-line": 355
+        },
+        "contacts": 0,
+        "hardest": 0,
+        "off": 0,
+        "resets": 0,
+        "peakOverlapSeconds": 1.1916666666666649,
+        "finalGap": -6.000754703275788,
+        "incidents": []
+      }
+    },
+    {
+      "before": {
+        "track": "Sunday Loop",
+        "start": 6,
+        "style": "inside",
+        "actions": {
+          "racing-line": 669
+        },
+        "contacts": 0,
+        "hardest": 0,
+        "off": 0,
+        "resets": 0,
+        "peakOverlapSeconds": 0,
+        "finalGap": 11.618727798339023
+      },
+      "after": {
+        "track": "Sunday Loop",
+        "start": 6,
+        "style": "inside",
+        "actions": {
+          "hold-outside": 580,
+          "racing-line": 86
+        },
+        "contacts": 0,
+        "hardest": 0,
+        "off": 0,
+        "resets": 0,
+        "peakOverlapSeconds": 0,
+        "finalGap": 10.821377093386673,
+        "incidents": []
+      }
+    },
+    {
+      "before": {
+        "track": "Sunday Loop",
+        "start": 6,
+        "style": "wide-exit",
+        "actions": {
+          "racing-line": 673
+        },
+        "contacts": 0,
+        "hardest": 0,
+        "off": 0,
+        "resets": 0,
+        "peakOverlapSeconds": 0.8249999999999995,
+        "finalGap": -8.667501039866238
+      },
+      "after": {
+        "track": "Sunday Loop",
+        "start": 6,
+        "style": "wide-exit",
+        "actions": {
+          "hold-outside": 420,
+          "switchback": 25,
+          "exit-attack": 170,
+          "racing-line": 46
+        },
+        "contacts": 0,
+        "hardest": 0,
+        "off": 0,
+        "resets": 0,
+        "peakOverlapSeconds": 0.6583333333333334,
+        "finalGap": -11.733558504241046,
+        "incidents": []
+      }
+    },
+    {
+      "before": {
+        "track": "Paperclip",
+        "start": -1,
+        "style": "inside",
+        "actions": {
+          "racing-line": 898
+        },
+        "contacts": 0,
+        "hardest": 0,
+        "off": 0,
+        "resets": 0,
+        "peakOverlapSeconds": 2.7666666666666595,
+        "finalGap": 4.329843603541576
+      },
+      "after": {
+        "track": "Paperclip",
+        "start": -1,
+        "style": "inside",
+        "actions": {
+          "hold-outside": 480,
+          "racing-line": 449
+        },
+        "contacts": 0,
+        "hardest": 0,
+        "off": 0,
+        "resets": 0,
+        "peakOverlapSeconds": 3.4833333333333236,
+        "finalGap": 12.5193962289718,
+        "incidents": []
+      }
+    },
+    {
+      "before": {
+        "track": "Paperclip",
+        "start": -1,
+        "style": "wide-exit",
+        "actions": {
+          "racing-line": 907
+        },
+        "contacts": 0,
+        "hardest": 0,
+        "off": 0,
+        "resets": 0,
+        "peakOverlapSeconds": 2.6499999999999932,
+        "finalGap": 6.6887722063149795
+      },
+      "after": {
+        "track": "Paperclip",
+        "start": -1,
+        "style": "wide-exit",
+        "actions": {
+          "hold-outside": 465,
+          "racing-line": 479
+        },
+        "contacts": 0,
+        "hardest": 0,
+        "off": 0,
+        "resets": 0,
+        "peakOverlapSeconds": 3.4583333333333237,
+        "finalGap": 17.0826904388407,
+        "incidents": []
+      }
+    },
+    {
+      "before": {
+        "track": "Paperclip",
+        "start": 0,
+        "style": "inside",
+        "actions": {
+          "racing-line": 897
+        },
+        "contacts": 0,
+        "hardest": 0,
+        "off": 0,
+        "resets": 0,
+        "peakOverlapSeconds": 2.5999999999999934,
+        "finalGap": 4.738334892758758
+      },
+      "after": {
+        "track": "Paperclip",
+        "start": 0,
+        "style": "inside",
+        "actions": {
+          "hold-outside": 475,
+          "racing-line": 449
+        },
+        "contacts": 0,
+        "hardest": 0,
+        "off": 0,
+        "resets": 0,
+        "peakOverlapSeconds": 3.4583333333333237,
+        "finalGap": 11.868015357018749,
+        "incidents": []
+      }
+    },
+    {
+      "before": {
+        "track": "Paperclip",
+        "start": 0,
+        "style": "wide-exit",
+        "actions": {
+          "racing-line": 900
+        },
+        "contacts": 0,
+        "hardest": 0,
+        "off": 0,
+        "resets": 0,
+        "peakOverlapSeconds": 2.508333333333327,
+        "finalGap": 5.488500980718982
+      },
+      "after": {
+        "track": "Paperclip",
+        "start": 0,
+        "style": "wide-exit",
+        "actions": {
+          "hold-outside": 460,
+          "racing-line": 476
+        },
+        "contacts": 0,
+        "hardest": 0,
+        "off": 0,
+        "resets": 0,
+        "peakOverlapSeconds": 3.333333333333324,
+        "finalGap": 15.541460865621275,
+        "incidents": []
+      }
+    },
+    {
+      "before": {
+        "track": "Paperclip",
+        "start": 1,
+        "style": "inside",
+        "actions": {
+          "racing-line": 897
+        },
+        "contacts": 0,
+        "hardest": 0,
+        "off": 0,
+        "resets": 0,
+        "peakOverlapSeconds": 2.4333333333333274,
+        "finalGap": 5.415286635416578
+      },
+      "after": {
+        "track": "Paperclip",
+        "start": 1,
+        "style": "inside",
+        "actions": {
+          "hold-outside": 460,
+          "racing-line": 459
+        },
+        "contacts": 0,
+        "hardest": 0,
+        "off": 0,
+        "resets": 0,
+        "peakOverlapSeconds": 3.333333333333324,
+        "finalGap": 11.296687337880712,
+        "incidents": []
+      }
+    },
+    {
+      "before": {
+        "track": "Paperclip",
+        "start": 1,
+        "style": "wide-exit",
+        "actions": {
+          "racing-line": 897
+        },
+        "contacts": 0,
+        "hardest": 0,
+        "off": 0,
+        "resets": 0,
+        "peakOverlapSeconds": 2.3333333333333277,
+        "finalGap": 5.485359831982123
+      },
+      "after": {
+        "track": "Paperclip",
+        "start": 1,
+        "style": "wide-exit",
+        "actions": {
+          "hold-outside": 450,
+          "racing-line": 475
+        },
+        "contacts": 0,
+        "hardest": 0,
+        "off": 0,
+        "resets": 0,
+        "peakOverlapSeconds": 2.4166666666666607,
+        "finalGap": 13.300526658905483,
+        "incidents": []
+      }
+    },
+    {
+      "before": {
+        "track": "Paperclip",
+        "start": 6,
+        "style": "inside",
+        "actions": {
+          "racing-line": 923
+        },
+        "contacts": 0,
+        "hardest": 0,
+        "off": 0,
+        "resets": 0,
+        "peakOverlapSeconds": 0,
+        "finalGap": 16.207469430246874
+      },
+      "after": {
+        "track": "Paperclip",
+        "start": 6,
+        "style": "inside",
+        "actions": {
+          "hold-outside": 795,
+          "racing-line": 108
+        },
+        "contacts": 0,
+        "hardest": 0,
+        "off": 0,
+        "resets": 0,
+        "peakOverlapSeconds": 0,
+        "finalGap": 10.67875216255834,
+        "incidents": []
+      }
+    },
+    {
+      "before": {
+        "track": "Paperclip",
+        "start": 6,
+        "style": "wide-exit",
+        "actions": {
+          "racing-line": 896
+        },
+        "contacts": 0,
+        "hardest": 0,
+        "off": 0,
+        "resets": 0,
+        "peakOverlapSeconds": 0,
+        "finalGap": 8.907886960764245
+      },
+      "after": {
+        "track": "Paperclip",
+        "start": 6,
+        "style": "wide-exit",
+        "actions": {
+          "hold-outside": 510,
+          "switchback": 55,
+          "exit-attack": 55,
+          "racing-line": 277
+        },
+        "contacts": 0,
+        "hardest": 0,
+        "off": 0,
+        "resets": 0,
+        "peakOverlapSeconds": 0.483333333333334,
+        "finalGap": 9.14987966595072,
+        "incidents": []
+      }
+    },
+    {
+      "before": {
+        "track": "Knot Garden",
+        "start": -1,
+        "style": "inside",
+        "actions": {
+          "racing-line": 948
+        },
+        "contacts": 0,
+        "hardest": 0,
+        "off": 0,
+        "resets": 0,
+        "peakOverlapSeconds": 0.7583333333333331,
+        "finalGap": -20.133469543074796
+      },
+      "after": {
+        "track": "Knot Garden",
+        "start": -1,
+        "style": "inside",
+        "actions": {
+          "hold-outside": 70,
+          "racing-line": 873
+        },
+        "contacts": 0,
+        "hardest": 0,
+        "off": 0,
+        "resets": 0,
+        "peakOverlapSeconds": 1.0499999999999987,
+        "finalGap": -20.532770046852363,
+        "incidents": []
+      }
+    },
+    {
+      "before": {
+        "track": "Knot Garden",
+        "start": -1,
+        "style": "wide-exit",
+        "actions": {
+          "racing-line": 948
+        },
+        "contacts": 0,
+        "hardest": 0,
+        "off": 0,
+        "resets": 0,
+        "peakOverlapSeconds": 0.7583333333333331,
+        "finalGap": -16.0211699390465
+      },
+      "after": {
+        "track": "Knot Garden",
+        "start": -1,
+        "style": "wide-exit",
+        "actions": {
+          "hold-outside": 70,
+          "racing-line": 873
+        },
+        "contacts": 0,
+        "hardest": 0,
+        "off": 0,
+        "resets": 0,
+        "peakOverlapSeconds": 1.0499999999999987,
+        "finalGap": -16.46325484671769,
+        "incidents": []
+      }
+    },
+    {
+      "before": {
+        "track": "Knot Garden",
+        "start": 0,
+        "style": "inside",
+        "actions": {
+          "racing-line": 1187
+        },
+        "contacts": 2,
+        "hardest": 2.34511688145603,
+        "off": 0,
+        "resets": 0,
+        "peakOverlapSeconds": 2.066666666666662,
+        "finalGap": 9.532011900902319
+      },
+      "after": {
+        "track": "Knot Garden",
+        "start": 0,
+        "style": "inside",
+        "actions": {
+          "hold-outside": 70,
+          "racing-line": 854
+        },
+        "contacts": 0,
+        "hardest": 0,
+        "off": 0,
+        "resets": 0,
+        "peakOverlapSeconds": 1.166666666666665,
+        "finalGap": -22.58896259853094,
+        "incidents": []
+      }
+    },
+    {
+      "before": {
+        "track": "Knot Garden",
+        "start": 0,
+        "style": "wide-exit",
+        "actions": {
+          "racing-line": 1199
+        },
+        "contacts": 2,
+        "hardest": 2.34511688145603,
+        "off": 0,
+        "resets": 0,
+        "peakOverlapSeconds": 2.041666666666662,
+        "finalGap": 16.56416315398843
+      },
+      "after": {
+        "track": "Knot Garden",
+        "start": 0,
+        "style": "wide-exit",
+        "actions": {
+          "hold-outside": 70,
+          "racing-line": 854
+        },
+        "contacts": 0,
+        "hardest": 0,
+        "off": 0,
+        "resets": 0,
+        "peakOverlapSeconds": 1.166666666666665,
+        "finalGap": -18.607704570771546,
+        "incidents": []
+      }
+    },
+    {
+      "before": {
+        "track": "Knot Garden",
+        "start": 1,
+        "style": "inside",
+        "actions": {
+          "racing-line": 1107
+        },
+        "contacts": 4,
+        "hardest": 3.0837114510118853,
+        "off": 0,
+        "resets": 0,
+        "peakOverlapSeconds": 3.4499999999999904,
+        "finalGap": 7.858475203163664
+      },
+      "after": {
+        "track": "Knot Garden",
+        "start": 1,
+        "style": "inside",
+        "actions": {
+          "hold-outside": 70,
+          "racing-line": 878
+        },
+        "contacts": 0,
+        "hardest": 0,
+        "off": 0,
+        "resets": 0,
+        "peakOverlapSeconds": 1.4999999999999971,
+        "finalGap": -18.466061581441807,
+        "incidents": []
+      }
+    },
+    {
+      "before": {
+        "track": "Knot Garden",
+        "start": 1,
+        "style": "wide-exit",
+        "actions": {
+          "racing-line": 1083
+        },
+        "contacts": 4,
+        "hardest": 3.0837114510118853,
+        "off": 0,
+        "resets": 0,
+        "peakOverlapSeconds": 3.4499999999999904,
+        "finalGap": 7.0524267184276255
+      },
+      "after": {
+        "track": "Knot Garden",
+        "start": 1,
+        "style": "wide-exit",
+        "actions": {
+          "hold-outside": 315,
+          "racing-line": 803
+        },
+        "contacts": 3,
+        "hardest": 3.1515661072919388,
+        "off": 0,
+        "resets": 0,
+        "peakOverlapSeconds": 1.4999999999999971,
+        "finalGap": 13.86928964702821,
+        "incidents": [
+          {
+            "t": 4.983333333333333,
+            "hit": 3.1515661072919388,
+            "action": "racing-line",
+            "gap": -4.98833634192755,
+            "lat": 2.6969820185814304,
+            "playerLat": 4.207313605007228,
+            "speed": 18.52908221692221,
+            "playerSpeed": 21.180305541620374
+          },
+          {
+            "t": 5.025,
+            "hit": 0.5131227482115106,
+            "action": "racing-line",
+            "gap": -4.983934364090999,
+            "lat": 2.594810167362052,
+            "playerLat": 4.1093664409210815,
+            "speed": 19.443708560240264,
+            "playerSpeed": 19.72588527148017
+          },
+          {
+            "t": 5.325,
+            "hit": 0.09073040911472541,
+            "action": "racing-line",
+            "gap": -4.4470030739454955,
+            "lat": 1.3198333444888495,
+            "playerLat": 2.544277362304585,
+            "speed": 19.856439852358058,
+            "playerSpeed": 20.301232218756493
+          }
+        ]
+      }
+    },
+    {
+      "before": {
+        "track": "Knot Garden",
+        "start": 6,
+        "style": "inside",
+        "actions": {
+          "racing-line": 1082
+        },
+        "contacts": 1,
+        "hardest": 3.1721732132220155,
+        "off": 0,
+        "resets": 0,
+        "peakOverlapSeconds": 1.5916666666666635,
+        "finalGap": 8.406580855071127
+      },
+      "after": {
+        "track": "Knot Garden",
+        "start": 6,
+        "style": "inside",
+        "actions": {
+          "hold-outside": 285,
+          "racing-line": 872
+        },
+        "contacts": 0,
+        "hardest": 0,
+        "off": 0,
+        "resets": 0,
+        "peakOverlapSeconds": 1.1749999999999983,
+        "finalGap": 26.674943471945483,
+        "incidents": []
+      }
+    },
+    {
+      "before": {
+        "track": "Knot Garden",
+        "start": 6,
+        "style": "wide-exit",
+        "actions": {
+          "racing-line": 1057
+        },
+        "contacts": 1,
+        "hardest": 3.1721732132220155,
+        "off": 0,
+        "resets": 0,
+        "peakOverlapSeconds": 1.5916666666666635,
+        "finalGap": 7.870433754851831
+      },
+      "after": {
+        "track": "Knot Garden",
+        "start": 6,
+        "style": "wide-exit",
+        "actions": {
+          "hold-outside": 246,
+          "racing-line": 815
+        },
+        "contacts": 0,
+        "hardest": 0,
+        "off": 0,
+        "resets": 0,
+        "peakOverlapSeconds": 1.1749999999999983,
+        "finalGap": 8.359957851258798,
+        "incidents": []
+      }
+    }
+  ],
+  "fields": {
+    "before": {
+      "seed": 88,
+      "track": "Paperclip",
+      "laps": 2,
+      "player": "matched clean classic stand-in at the back",
+      "fields": [
+        {
+          "simulatedSeconds": 90.125,
+          "field": 20,
+          "finishers": 20,
+          "retirements": 0,
+          "firmContacts": 0,
+          "hardContacts": 0,
+          "playerContacts": 0,
+          "order": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19
+          ],
+          "cars": [
+            {
+              "index": 0,
+              "difficulty": 0.9,
+              "brain": "classic",
+              "distance": 2316.9315570222852,
+              "laps": [
+                35.67580094415651,
+                34.282754049411984
+              ],
+              "valid": [
+                true,
+                true
+              ],
+              "best": 34.282754049411984,
+              "finish": 74.07072934501626,
+              "offSeconds": 0,
+              "hardContacts": 0,
+              "highSpeedWallHits": 0,
+              "resets": 0
+            },
+            {
+              "index": 1,
+              "difficulty": 0.9,
+              "brain": "classic",
+              "distance": 2316.9315570222852,
+              "laps": [
+                36.292365161000745,
+                34.19787849735952
+              ],
+              "valid": [
+                true,
+                true
+              ],
+              "best": 34.19787849735952,
+              "finish": 75.00125251628697,
+              "offSeconds": 0,
+              "hardContacts": 0,
+              "highSpeedWallHits": 0,
+              "resets": 0
+            },
+            {
+              "index": 2,
+              "difficulty": 0.9,
+              "brain": "classic",
+              "distance": 2316.9315570222852,
+              "laps": [
+                37.43423272351992,
+                34.870632226813306
+              ],
+              "valid": [
+                true,
+                true
+              ],
+              "best": 34.870632226813306,
+              "finish": 77.2862740081952,
+              "offSeconds": 0,
+              "hardContacts": 0,
+              "highSpeedWallHits": 0,
+              "resets": 0
+            },
+            {
+              "index": 3,
+              "difficulty": 0.9,
+              "brain": "classic",
+              "distance": 2316.9315570222852,
+              "laps": [
+                37.49990012886098,
+                35.646451566139575
+              ],
+              "valid": [
+                true,
+                true
+              ],
+              "best": 35.646451566139575,
+              "finish": 78.49569642787331,
+              "offSeconds": 0,
+              "hardContacts": 0,
+              "highSpeedWallHits": 0,
+              "resets": 0
+            },
+            {
+              "index": 4,
+              "difficulty": 0.9,
+              "brain": "classic",
+              "distance": 2316.9315570222852,
+              "laps": [
+                37.92321664414654,
+                35.91717596136037
+              ],
+              "valid": [
+                true,
+                true
+              ],
+              "best": 35.91717596136037,
+              "finish": 79.54844786158577,
+              "offSeconds": 0,
+              "hardContacts": 0,
+              "highSpeedWallHits": 0,
+              "resets": 0
+            },
+            {
+              "index": 5,
+              "difficulty": 0.9,
+              "brain": "classic",
+              "distance": 2316.9315570222852,
+              "laps": [
+                38.09108267773034,
+                35.888020725930254
+              ],
+              "valid": [
+                true,
+                true
+              ],
+              "best": 35.888020725930254,
+              "finish": 80.13267110149958,
+              "offSeconds": 0,
+              "hardContacts": 0,
+              "highSpeedWallHits": 0,
+              "resets": 0
+            },
+            {
+              "index": 6,
+              "difficulty": 0.9,
+              "brain": "classic",
+              "distance": 2316.9315570222852,
+              "laps": [
+                38.72371843427649,
+                35.79305305258501
+              ],
+              "valid": [
+                true,
+                true
+              ],
+              "best": 35.79305305258501,
+              "finish": 81.02234202508465,
+              "offSeconds": 0,
+              "hardContacts": 0,
+              "highSpeedWallHits": 0,
+              "resets": 0
+            },
+            {
+              "index": 7,
+              "difficulty": 0.9,
+              "brain": "classic",
+              "distance": 2316.9315570222852,
+              "laps": [
+                39.785245461089325,
+                35.588863472977316
+              ],
+              "valid": [
+                true,
+                true
+              ],
+              "best": 35.588863472977316,
+              "finish": 82.37807493521954,
+              "offSeconds": 0,
+              "hardContacts": 0,
+              "highSpeedWallHits": 0,
+              "resets": 0
+            },
+            {
+              "index": 8,
+              "difficulty": 0.9,
+              "brain": "classic",
+              "distance": 2316.9315570222852,
+              "laps": [
+                39.129509636529306,
+                35.692387932286
+              ],
+              "valid": [
+                true,
+                true
+              ],
+              "best": 35.692387932286,
+              "finish": 81.69409419856245,
+              "offSeconds": 0,
+              "hardContacts": 0,
+              "highSpeedWallHits": 0,
+              "resets": 0
+            },
+            {
+              "index": 9,
+              "difficulty": 0.9,
+              "brain": "classic",
+              "distance": 2316.9315570222852,
+              "laps": [
+                41.42924675285731,
+                36.18323397239879
+              ],
+              "valid": [
+                true,
+                true
+              ],
+              "best": 36.18323397239879,
+              "finish": 85.16634634237748,
+              "offSeconds": 0,
+              "hardContacts": 0,
+              "highSpeedWallHits": 0,
+              "resets": 0
+            },
+            {
+              "index": 10,
+              "difficulty": 0.9,
+              "brain": "classic",
+              "distance": 2316.9315570222852,
+              "laps": [
+                40.37557164047744,
+                35.448083319311195
+              ],
+              "valid": [
+                true,
+                true
+              ],
+              "best": 35.448083319311195,
+              "finish": 82.9992484917058,
+              "offSeconds": 0,
+              "hardContacts": 0,
+              "highSpeedWallHits": 0,
+              "resets": 0
+            },
+            {
+              "index": 11,
+              "difficulty": 0.9,
+              "brain": "classic",
+              "distance": 2316.9315570222852,
+              "laps": [
+                41.533422776200226,
+                37.180652812246834
+              ],
+              "valid": [
+                true,
+                true
+              ],
+              "best": 37.180652812246834,
+              "finish": 86.86168647857522,
+              "offSeconds": 0,
+              "hardContacts": 0,
+              "highSpeedWallHits": 0,
+              "resets": 0
+            },
+            {
+              "index": 12,
+              "difficulty": 0.9,
+              "brain": "classic",
+              "distance": 2316.9315570222852,
+              "laps": [
+                40.961291046622684,
+                35.52540220772235
+              ],
+              "valid": [
+                true,
+                true
+              ],
+              "best": 35.52540220772235,
+              "finish": 84.03182885793265,
+              "offSeconds": 0,
+              "hardContacts": 0,
+              "highSpeedWallHits": 0,
+              "resets": 0
+            },
+            {
+              "index": 13,
+              "difficulty": 0.9,
+              "brain": "classic",
+              "distance": 2316.9315570222852,
+              "laps": [
+                42.082136833538655,
+                37.0626428690821
+              ],
+              "valid": [
+                true,
+                true
+              ],
+              "best": 37.0626428690821,
+              "finish": 87.8164501030482,
+              "offSeconds": 0,
+              "hardContacts": 0,
+              "highSpeedWallHits": 0,
+              "resets": 0
+            },
+            {
+              "index": 14,
+              "difficulty": 0.9,
+              "brain": "classic",
+              "distance": 2316.9315570222852,
+              "laps": [
+                41.33203987052718,
+                36.60348106773102
+              ],
+              "valid": [
+                true,
+                true
+              ],
+              "best": 36.60348106773102,
+              "finish": 85.86930584683871,
+              "offSeconds": 0,
+              "hardContacts": 0,
+              "highSpeedWallHits": 0,
+              "resets": 0
+            },
+            {
+              "index": 15,
+              "difficulty": 0.9,
+              "brain": "classic",
+              "distance": 2316.9315570222852,
+              "laps": [
+                42.322378440297705,
+                37.065448357450975
+              ],
+              "valid": [
+                true,
+                true
+              ],
+              "best": 37.065448357450975,
+              "finish": 88.45167107851934,
+              "offSeconds": 0,
+              "hardContacts": 0,
+              "highSpeedWallHits": 0,
+              "resets": 0
+            },
+            {
+              "index": 16,
+              "difficulty": 0.9,
+              "brain": "classic",
+              "distance": 2316.9315570222852,
+              "laps": [
+                42.300925268112415,
+                36.994717378158064
+              ],
+              "valid": [
+                true,
+                true
+              ],
+              "best": 36.994717378158064,
+              "finish": 88.70455215359645,
+              "offSeconds": 0,
+              "hardContacts": 0,
+              "highSpeedWallHits": 0,
+              "resets": 0
+            },
+            {
+              "index": 17,
+              "difficulty": 0.9,
+              "brain": "classic",
+              "distance": 2316.9315570222852,
+              "laps": [
+                42.48047034721692,
+                37.13749658570364
+              ],
+              "valid": [
+                true,
+                true
+              ],
+              "best": 37.13749658570364,
+              "finish": 89.52175881415127,
+              "offSeconds": 0,
+              "hardContacts": 0,
+              "highSpeedWallHits": 0,
+              "resets": 0
+            },
+            {
+              "index": 18,
+              "difficulty": 0.9,
+              "brain": "classic",
+              "distance": 2316.9315570222852,
+              "laps": [
+                39.76200766902688,
+                37.16339028526291
+              ],
+              "valid": [
+                true,
+                true
+              ],
+              "best": 37.16339028526291,
+              "finish": 87.3441134053819,
+              "offSeconds": 0,
+              "hardContacts": 0,
+              "highSpeedWallHits": 0,
+              "resets": 0
+            },
+            {
+              "index": 19,
+              "difficulty": 0.9,
+              "brain": "classic",
+              "distance": 2316.9315570222852,
+              "laps": [
+                42.05742275121696,
+                37.20326528707367
+              ],
+              "valid": [
+                true,
+                true
+              ],
+              "best": 37.20326528707367,
+              "finish": 90.12084427970377,
+              "offSeconds": 0,
+              "hardContacts": 0,
+              "highSpeedWallHits": 0,
+              "resets": 0
+            }
+          ]
+        },
+        {
+          "simulatedSeconds": 92.3,
+          "field": 24,
+          "finishers": 24,
+          "retirements": 0,
+          "firmContacts": 0,
+          "hardContacts": 0,
+          "playerContacts": 0,
+          "order": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19,
+            20,
+            21,
+            22,
+            23
+          ],
+          "cars": [
+            {
+              "index": 0,
+              "difficulty": 0.9,
+              "brain": "classic",
+              "distance": 2316.9315570222852,
+              "laps": [
+                35.67580094415651,
+                34.282754049411984
+              ],
+              "valid": [
+                true,
+                true
+              ],
+              "best": 34.282754049411984,
+              "finish": 74.07072934501626,
+              "offSeconds": 0,
+              "hardContacts": 0,
+              "highSpeedWallHits": 0,
+              "resets": 0
+            },
+            {
+              "index": 1,
+              "difficulty": 0.9,
+              "brain": "classic",
+              "distance": 2316.9315570222852,
+              "laps": [
+                36.292365161000745,
+                34.19787849735952
+              ],
+              "valid": [
+                true,
+                true
+              ],
+              "best": 34.19787849735952,
+              "finish": 75.00125251628697,
+              "offSeconds": 0,
+              "hardContacts": 0,
+              "highSpeedWallHits": 0,
+              "resets": 0
+            },
+            {
+              "index": 2,
+              "difficulty": 0.9,
+              "brain": "classic",
+              "distance": 2316.9315570222852,
+              "laps": [
+                37.43423272351992,
+                34.870632226813306
+              ],
+              "valid": [
+                true,
+                true
+              ],
+              "best": 34.870632226813306,
+              "finish": 77.2862740081952,
+              "offSeconds": 0,
+              "hardContacts": 0,
+              "highSpeedWallHits": 0,
+              "resets": 0
+            },
+            {
+              "index": 3,
+              "difficulty": 0.9,
+              "brain": "classic",
+              "distance": 2316.9315570222852,
+              "laps": [
+                37.49990012886098,
+                35.646451566139575
+              ],
+              "valid": [
+                true,
+                true
+              ],
+              "best": 35.646451566139575,
+              "finish": 78.49569642787331,
+              "offSeconds": 0,
+              "hardContacts": 0,
+              "highSpeedWallHits": 0,
+              "resets": 0
+            },
+            {
+              "index": 4,
+              "difficulty": 0.9,
+              "brain": "classic",
+              "distance": 2316.9315570222852,
+              "laps": [
+                37.92321664414654,
+                35.91717596136037
+              ],
+              "valid": [
+                true,
+                true
+              ],
+              "best": 35.91717596136037,
+              "finish": 79.54844786158577,
+              "offSeconds": 0,
+              "hardContacts": 0,
+              "highSpeedWallHits": 0,
+              "resets": 0
+            },
+            {
+              "index": 5,
+              "difficulty": 0.9,
+              "brain": "classic",
+              "distance": 2316.9315570222852,
+              "laps": [
+                38.09108267773034,
+                35.888020725930254
+              ],
+              "valid": [
+                true,
+                true
+              ],
+              "best": 35.888020725930254,
+              "finish": 80.13267110149958,
+              "offSeconds": 0,
+              "hardContacts": 0,
+              "highSpeedWallHits": 0,
+              "resets": 0
+            },
+            {
+              "index": 6,
+              "difficulty": 0.9,
+              "brain": "classic",
+              "distance": 2316.9315570222852,
+              "laps": [
+                38.72371843427649,
+                35.79305305258501
+              ],
+              "valid": [
+                true,
+                true
+              ],
+              "best": 35.79305305258501,
+              "finish": 81.02234202508465,
+              "offSeconds": 0,
+              "hardContacts": 0,
+              "highSpeedWallHits": 0,
+              "resets": 0
+            },
+            {
+              "index": 7,
+              "difficulty": 0.9,
+              "brain": "classic",
+              "distance": 2316.9315570222852,
+              "laps": [
+                39.785245461089325,
+                35.588863472977316
+              ],
+              "valid": [
+                true,
+                true
+              ],
+              "best": 35.588863472977316,
+              "finish": 82.37807493521954,
+              "offSeconds": 0,
+              "hardContacts": 0,
+              "highSpeedWallHits": 0,
+              "resets": 0
+            },
+            {
+              "index": 8,
+              "difficulty": 0.9,
+              "brain": "classic",
+              "distance": 2316.9315570222852,
+              "laps": [
+                39.129509636529306,
+                35.692387932286
+              ],
+              "valid": [
+                true,
+                true
+              ],
+              "best": 35.692387932286,
+              "finish": 81.69409419856245,
+              "offSeconds": 0,
+              "hardContacts": 0,
+              "highSpeedWallHits": 0,
+              "resets": 0
+            },
+            {
+              "index": 9,
+              "difficulty": 0.9,
+              "brain": "classic",
+              "distance": 2316.9315570222852,
+              "laps": [
+                41.42924675285731,
+                36.18323397239879
+              ],
+              "valid": [
+                true,
+                true
+              ],
+              "best": 36.18323397239879,
+              "finish": 85.16634634237748,
+              "offSeconds": 0,
+              "hardContacts": 0,
+              "highSpeedWallHits": 0,
+              "resets": 0
+            },
+            {
+              "index": 10,
+              "difficulty": 0.9,
+              "brain": "classic",
+              "distance": 2316.9315570222852,
+              "laps": [
+                40.37557164047744,
+                35.448083319311195
+              ],
+              "valid": [
+                true,
+                true
+              ],
+              "best": 35.448083319311195,
+              "finish": 82.9992484917058,
+              "offSeconds": 0,
+              "hardContacts": 0,
+              "highSpeedWallHits": 0,
+              "resets": 0
+            },
+            {
+              "index": 11,
+              "difficulty": 0.9,
+              "brain": "classic",
+              "distance": 2316.9315570222852,
+              "laps": [
+                41.56735007827845,
+                37.07446007781435
+              ],
+              "valid": [
+                true,
+                true
+              ],
+              "best": 37.07446007781435,
+              "finish": 86.78942104622097,
+              "offSeconds": 0,
+              "hardContacts": 0,
+              "highSpeedWallHits": 0,
+              "resets": 0
+            },
+            {
+              "index": 12,
+              "difficulty": 0.9,
+              "brain": "classic",
+              "distance": 2316.9315570222852,
+              "laps": [
+                40.961291046622684,
+                35.52540220772235
+              ],
+              "valid": [
+                true,
+                true
+              ],
+              "best": 35.52540220772235,
+              "finish": 84.03182885793265,
+              "offSeconds": 0,
+              "hardContacts": 0,
+              "highSpeedWallHits": 0,
+              "resets": 0
+            },
+            {
+              "index": 13,
+              "difficulty": 0.9,
+              "brain": "classic",
+              "distance": 2316.9315570222852,
+              "laps": [
+                41.30654502464999,
+                37.3510525936347
+              ],
+              "valid": [
+                true,
+                true
+              ],
+              "best": 37.3510525936347,
+              "finish": 87.32926801871213,
+              "offSeconds": 0,
+              "hardContacts": 0,
+              "highSpeedWallHits": 0,
+              "resets": 0
+            },
+            {
+              "index": 14,
+              "difficulty": 0.9,
+              "brain": "classic",
+              "distance": 2316.9315570222852,
+              "laps": [
+                41.33203987052718,
+                36.714973655068384
+              ],
+              "valid": [
+                true,
+                true
+              ],
+              "best": 36.714973655068384,
+              "finish": 85.98079843417608,
+              "offSeconds": 0,
+              "hardContacts": 0,
+              "highSpeedWallHits": 0,
+              "resets": 0
+            },
+            {
+              "index": 15,
+              "difficulty": 0.9,
+              "brain": "classic",
+              "distance": 2316.9315570222852,
+              "laps": [
+                41.79710510900414,
+                36.91198155593102
+              ],
+              "valid": [
+                true,
+                true
+              ],
+              "best": 36.91198155593102,
+              "finish": 87.77293094570582,
+              "offSeconds": 0,
+              "hardContacts": 0,
+              "highSpeedWallHits": 0,
+              "resets": 0
+            },
+            {
+              "index": 16,
+              "difficulty": 0.9,
+              "brain": "classic",
+              "distance": 2316.9315570222852,
+              "laps": [
+                41.719848016039556,
+                37.66851510224951
+              ],
+              "valid": [
+                true,
+                true
+              ],
+              "best": 37.66851510224951,
+              "finish": 88.79727262561504,
+              "offSeconds": 0,
+              "hardContacts": 0,
+              "highSpeedWallHits": 0,
+              "resets": 0
+            },
+            {
+              "index": 17,
+              "difficulty": 0.9,
+              "brain": "classic",
+              "distance": 2316.9315570222852,
+              "laps": [
+                41.691846256092475,
+                37.82859958584693
+              ],
+              "valid": [
+                true,
+                true
+              ],
+              "best": 37.82859958584693,
+              "finish": 89.42423772317011,
+              "offSeconds": 0,
+              "hardContacts": 0,
+              "highSpeedWallHits": 0,
+              "resets": 0
+            },
+            {
+              "index": 18,
+              "difficulty": 0.9,
+              "brain": "classic",
+              "distance": 2316.9315570222852,
+              "laps": [
+                41.76599022182069,
+                37.42435546320603
+              ],
+              "valid": [
+                true,
+                true
+              ],
+              "best": 37.42435546320603,
+              "finish": 89.60906113611883,
+              "offSeconds": 0,
+              "hardContacts": 0,
+              "highSpeedWallHits": 0,
+              "resets": 0
+            },
+            {
+              "index": 19,
+              "difficulty": 0.9,
+              "brain": "classic",
+              "distance": 2316.9315570222852,
+              "laps": [
+                42.87774300033743,
+                36.58880571359526
+              ],
+              "valid": [
+                true,
+                true
+              ],
+              "best": 36.58880571359526,
+              "finish": 90.32670496613565,
+              "offSeconds": 0,
+              "hardContacts": 0,
+              "highSpeedWallHits": 0,
+              "resets": 0
+            },
+            {
+              "index": 20,
+              "difficulty": 0.9,
+              "brain": "classic",
+              "distance": 2316.9315570222852,
+              "laps": [
+                41.21815969796455,
+                37.00676441841523
+              ],
+              "valid": [
+                true,
+                true
+              ],
+              "best": 37.00676441841523,
+              "finish": 89.99675984458062,
+              "offSeconds": 0,
+              "hardContacts": 0,
+              "highSpeedWallHits": 0,
+              "resets": 0
+            },
+            {
+              "index": 21,
+              "difficulty": 0.9,
+              "brain": "classic",
+              "distance": 2316.9315570222852,
+              "laps": [
+                42.91833677205286,
+                36.68528638430023
+              ],
+              "valid": [
+                true,
+                true
+              ],
+              "best": 36.68528638430023,
+              "finish": 90.95026176661763,
+              "offSeconds": 0,
+              "hardContacts": 0,
+              "highSpeedWallHits": 0,
+              "resets": 0
+            },
+            {
+              "index": 22,
+              "difficulty": 0.9,
+              "brain": "classic",
+              "distance": 2316.9315570222852,
+              "laps": [
+                43.04553715245314,
+                36.68901358009169
+              ],
+              "valid": [
+                true,
+                true
+              ],
+              "best": 36.68901358009169,
+              "finish": 92.29482067326313,
+              "offSeconds": 0,
+              "hardContacts": 0,
+              "highSpeedWallHits": 0,
+              "resets": 0
+            },
+            {
+              "index": 23,
+              "difficulty": 0.9,
+              "brain": "classic",
+              "distance": 2316.9315570222852,
+              "laps": [
+                42.64289298283872,
+                36.85549764031407
+              ],
+              "valid": [
+                true,
+                true
+              ],
+              "best": 36.85549764031407,
+              "finish": 91.7365730538393,
+              "offSeconds": 0,
+              "hardContacts": 0,
+              "highSpeedWallHits": 0,
+              "resets": 0
+            }
+          ]
+        }
+      ]
+    },
+    "after": {
+      "seed": 88,
+      "track": "Paperclip",
+      "laps": 2,
+      "player": "matched clean classic stand-in at the back",
+      "fields": [
+        {
+          "simulatedSeconds": 90.26666666666667,
+          "field": 20,
+          "finishers": 20,
+          "retirements": 0,
+          "firmContacts": 0,
+          "hardContacts": 0,
+          "playerContacts": 0,
+          "order": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19
+          ],
+          "cars": [
+            {
+              "index": 0,
+              "difficulty": 0.9,
+              "brain": "classic",
+              "distance": 2316.9315570222852,
+              "laps": [
+                35.67580094415651,
+                34.282754049411984
+              ],
+              "valid": [
+                true,
+                true
+              ],
+              "best": 34.282754049411984,
+              "finish": 74.07072934501626,
+              "offSeconds": 0,
+              "hardContacts": 0,
+              "highSpeedWallHits": 0,
+              "resets": 0
+            },
+            {
+              "index": 1,
+              "difficulty": 0.9,
+              "brain": "classic",
+              "distance": 2316.9315570222852,
+              "laps": [
+                36.292365161000745,
+                34.19787849735952
+              ],
+              "valid": [
+                true,
+                true
+              ],
+              "best": 34.19787849735952,
+              "finish": 75.00125251628697,
+              "offSeconds": 0,
+              "hardContacts": 0,
+              "highSpeedWallHits": 0,
+              "resets": 0
+            },
+            {
+              "index": 2,
+              "difficulty": 0.9,
+              "brain": "classic",
+              "distance": 2316.9315570222852,
+              "laps": [
+                37.44515933042322,
+                35.0358545730157
+              ],
+              "valid": [
+                true,
+                true
+              ],
+              "best": 35.0358545730157,
+              "finish": 77.4624229613009,
+              "offSeconds": 0,
+              "hardContacts": 0,
+              "highSpeedWallHits": 0,
+              "resets": 0
+            },
+            {
+              "index": 3,
+              "difficulty": 0.9,
+              "brain": "classic",
+              "distance": 2316.9315570222852,
+              "laps": [
+                37.6128160952276,
+                35.39881366262619
+              ],
+              "valid": [
+                true,
+                true
+              ],
+              "best": 35.39881366262619,
+              "finish": 78.36097449072655,
+              "offSeconds": 0,
+              "hardContacts": 0,
+              "highSpeedWallHits": 0,
+              "resets": 0
+            },
+            {
+              "index": 4,
+              "difficulty": 0.9,
+              "brain": "classic",
+              "distance": 2316.9315570222852,
+              "laps": [
+                37.80514564933711,
+                35.56384257054232
+              ],
+              "valid": [
+                true,
+                true
+              ],
+              "best": 35.56384257054232,
+              "finish": 79.07704347595829,
+              "offSeconds": 0,
+              "hardContacts": 0,
+              "highSpeedWallHits": 0,
+              "resets": 0
+            },
+            {
+              "index": 5,
+              "difficulty": 0.9,
+              "brain": "classic",
+              "distance": 2316.9315570222852,
+              "laps": [
+                38.95737813588065,
+                34.82375410456801
+              ],
+              "valid": [
+                true,
+                true
+              ],
+              "best": 34.82375410456801,
+              "finish": 79.93469993828765,
+              "offSeconds": 0,
+              "hardContacts": 0,
+              "highSpeedWallHits": 0,
+              "resets": 0
+            },
+            {
+              "index": 6,
+              "difficulty": 0.9,
+              "brain": "classic",
+              "distance": 2316.9315570222852,
+              "laps": [
+                39.4675080913491,
+                35.5061275434567
+              ],
+              "valid": [
+                true,
+                true
+              ],
+              "best": 35.5061275434567,
+              "finish": 81.47920617302896,
+              "offSeconds": 0,
+              "hardContacts": 0,
+              "highSpeedWallHits": 0,
+              "resets": 0
+            },
+            {
+              "index": 7,
+              "difficulty": 0.9,
+              "brain": "classic",
+              "distance": 2316.9315570222852,
+              "laps": [
+                39.925485564780736,
+                36.88901108199732
+              ],
+              "valid": [
+                true,
+                true
+              ],
+              "best": 36.88901108199732,
+              "finish": 83.81846264793096,
+              "offSeconds": 0,
+              "hardContacts": 0,
+              "highSpeedWallHits": 0,
+              "resets": 0
+            },
+            {
+              "index": 8,
+              "difficulty": 0.9,
+              "brain": "classic",
+              "distance": 2316.9315570222852,
+              "laps": [
+                39.28927443273105,
+                35.898723180657306
+              ],
+              "valid": [
+                true,
+                true
+              ],
+              "best": 35.898723180657306,
+              "finish": 82.0601942431355,
+              "offSeconds": 0,
+              "hardContacts": 0,
+              "highSpeedWallHits": 0,
+              "resets": 0
+            },
+            {
+              "index": 9,
+              "difficulty": 0.9,
+              "brain": "classic",
+              "distance": 2316.9315570222852,
+              "laps": [
+                41.676418142977845,
+                37.32631869264651
+              ],
+              "valid": [
+                true,
+                true
+              ],
+              "best": 37.32631869264651,
+              "finish": 86.55660245274574,
+              "offSeconds": 0,
+              "hardContacts": 0,
+              "highSpeedWallHits": 0,
+              "resets": 0
+            },
+            {
+              "index": 10,
+              "difficulty": 0.9,
+              "brain": "classic",
+              "distance": 2316.9315570222852,
+              "laps": [
+                40.302366045863344,
+                37.64469129637352
+              ],
+              "valid": [
+                true,
+                true
+              ],
+              "best": 37.64469129637352,
+              "finish": 85.12265087415403,
+              "offSeconds": 0,
+              "hardContacts": 0,
+              "highSpeedWallHits": 0,
+              "resets": 0
+            },
+            {
+              "index": 11,
+              "difficulty": 0.9,
+              "brain": "classic",
+              "distance": 2316.9315570222852,
+              "laps": [
+                42.022267172528274,
+                38.09055853731988
+              ],
+              "valid": [
+                true,
+                true
+              ],
+              "best": 38.09055853731988,
+              "finish": 88.26043659997632,
+              "offSeconds": 0,
+              "hardContacts": 0,
+              "highSpeedWallHits": 0,
+              "resets": 0
+            },
+            {
+              "index": 12,
+              "difficulty": 0.9,
+              "brain": "classic",
+              "distance": 2316.9315570222852,
+              "laps": [
+                41.176731826639646,
+                36.88781263342558
+              ],
+              "valid": [
+                true,
+                true
+              ],
+              "best": 36.88781263342558,
+              "finish": 85.60968006365285,
+              "offSeconds": 0,
+              "hardContacts": 0,
+              "highSpeedWallHits": 0,
+              "resets": 0
+            },
+            {
+              "index": 13,
+              "difficulty": 0.9,
+              "brain": "classic",
+              "distance": 2316.9315570222852,
+              "laps": [
+                42.921537896259935,
+                37.227816254325845
+              ],
+              "valid": [
+                true,
+                true
+              ],
+              "best": 37.227816254325845,
+              "finish": 88.82102455101322,
+              "offSeconds": 0,
+              "hardContacts": 0,
+              "highSpeedWallHits": 0,
+              "resets": 0
+            },
+            {
+              "index": 14,
+              "difficulty": 0.9,
+              "brain": "classic",
+              "distance": 2316.9315570222852,
+              "laps": [
+                41.81813726929815,
+                37.589251028205005
+              ],
+              "valid": [
+                true,
+                true
+              ],
+              "best": 37.589251028205005,
+              "finish": 87.34117320608367,
+              "offSeconds": 0,
+              "hardContacts": 0,
+              "highSpeedWallHits": 0,
+              "resets": 0
+            },
+            {
+              "index": 15,
+              "difficulty": 0.9,
+              "brain": "classic",
+              "distance": 2316.9315570222852,
+              "laps": [
+                43.90441578550134,
+                37.098783816832984
+              ],
+              "valid": [
+                true,
+                true
+              ],
+              "best": 37.098783816832984,
+              "finish": 90.06704388310499,
+              "offSeconds": 0,
+              "hardContacts": 0,
+              "highSpeedWallHits": 0,
+              "resets": 0
+            },
+            {
+              "index": 16,
+              "difficulty": 0.9,
+              "brain": "classic",
+              "distance": 2316.9315570222852,
+              "laps": [
+                43.14261431422498,
+                37.12462510240065
+              ],
+              "valid": [
+                true,
+                true
+              ],
+              "best": 37.12462510240065,
+              "finish": 89.6761489239516,
+              "offSeconds": 0,
+              "hardContacts": 0,
+              "highSpeedWallHits": 0,
+              "resets": 0
+            },
+            {
+              "index": 17,
+              "difficulty": 0.9,
+              "brain": "classic",
+              "distance": 2316.9315570222852,
+              "laps": [
+                40.95648298406893,
+                36.914378197095154
+              ],
+              "valid": [
+                true,
+                true
+              ],
+              "best": 36.914378197095154,
+              "finish": 87.77465306239479,
+              "offSeconds": 0,
+              "hardContacts": 0,
+              "highSpeedWallHits": 0,
+              "resets": 0
+            },
+            {
+              "index": 18,
+              "difficulty": 0.9,
+              "brain": "classic",
+              "distance": 2316.9315570222852,
+              "laps": [
+                41.686870159927985,
+                37.327446686799696
+              ],
+              "valid": [
+                true,
+                true
+              ],
+              "best": 37.327446686799696,
+              "finish": 89.43303229781979,
+              "offSeconds": 0,
+              "hardContacts": 0,
+              "highSpeedWallHits": 0,
+              "resets": 0
+            },
+            {
+              "index": 19,
+              "difficulty": 0.9,
+              "brain": "classic",
+              "distance": 2316.9315570222852,
+              "laps": [
+                42.856948019820486,
+                36.545339737233135
+              ],
+              "valid": [
+                true,
+                true
+              ],
+              "best": 36.545339737233135,
+              "finish": 90.26244399137343,
+              "offSeconds": 0,
+              "hardContacts": 0,
+              "highSpeedWallHits": 0,
+              "resets": 0
+            }
+          ]
+        },
+        {
+          "simulatedSeconds": 93.68333333333334,
+          "field": 24,
+          "finishers": 24,
+          "retirements": 0,
+          "firmContacts": 0,
+          "hardContacts": 0,
+          "playerContacts": 0,
+          "order": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19,
+            20,
+            21,
+            22,
+            23
+          ],
+          "cars": [
+            {
+              "index": 0,
+              "difficulty": 0.9,
+              "brain": "classic",
+              "distance": 2316.9315570222852,
+              "laps": [
+                35.67580094415651,
+                34.282754049411984
+              ],
+              "valid": [
+                true,
+                true
+              ],
+              "best": 34.282754049411984,
+              "finish": 74.07072934501626,
+              "offSeconds": 0,
+              "hardContacts": 0,
+              "highSpeedWallHits": 0,
+              "resets": 0
+            },
+            {
+              "index": 1,
+              "difficulty": 0.9,
+              "brain": "classic",
+              "distance": 2316.9315570222852,
+              "laps": [
+                36.292365161000745,
+                34.19787849735952
+              ],
+              "valid": [
+                true,
+                true
+              ],
+              "best": 34.19787849735952,
+              "finish": 75.00125251628697,
+              "offSeconds": 0,
+              "hardContacts": 0,
+              "highSpeedWallHits": 0,
+              "resets": 0
+            },
+            {
+              "index": 2,
+              "difficulty": 0.9,
+              "brain": "classic",
+              "distance": 2316.9315570222852,
+              "laps": [
+                37.44515933042322,
+                35.0358545730157
+              ],
+              "valid": [
+                true,
+                true
+              ],
+              "best": 35.0358545730157,
+              "finish": 77.4624229613009,
+              "offSeconds": 0,
+              "hardContacts": 0,
+              "highSpeedWallHits": 0,
+              "resets": 0
+            },
+            {
+              "index": 3,
+              "difficulty": 0.9,
+              "brain": "classic",
+              "distance": 2316.9315570222852,
+              "laps": [
+                37.6128160952276,
+                35.39881366262619
+              ],
+              "valid": [
+                true,
+                true
+              ],
+              "best": 35.39881366262619,
+              "finish": 78.36097449072655,
+              "offSeconds": 0,
+              "hardContacts": 0,
+              "highSpeedWallHits": 0,
+              "resets": 0
+            },
+            {
+              "index": 4,
+              "difficulty": 0.9,
+              "brain": "classic",
+              "distance": 2316.9315570222852,
+              "laps": [
+                37.80514564933711,
+                35.56384257054232
+              ],
+              "valid": [
+                true,
+                true
+              ],
+              "best": 35.56384257054232,
+              "finish": 79.07704347595829,
+              "offSeconds": 0,
+              "hardContacts": 0,
+              "highSpeedWallHits": 0,
+              "resets": 0
+            },
+            {
+              "index": 5,
+              "difficulty": 0.9,
+              "brain": "classic",
+              "distance": 2316.9315570222852,
+              "laps": [
+                38.95737813588065,
+                34.82375410456801
+              ],
+              "valid": [
+                true,
+                true
+              ],
+              "best": 34.82375410456801,
+              "finish": 79.93469993828765,
+              "offSeconds": 0,
+              "hardContacts": 0,
+              "highSpeedWallHits": 0,
+              "resets": 0
+            },
+            {
+              "index": 6,
+              "difficulty": 0.9,
+              "brain": "classic",
+              "distance": 2316.9315570222852,
+              "laps": [
+                39.4675080913491,
+                35.5061275434567
+              ],
+              "valid": [
+                true,
+                true
+              ],
+              "best": 35.5061275434567,
+              "finish": 81.47920617302896,
+              "offSeconds": 0,
+              "hardContacts": 0,
+              "highSpeedWallHits": 0,
+              "resets": 0
+            },
+            {
+              "index": 7,
+              "difficulty": 0.9,
+              "brain": "classic",
+              "distance": 2316.9315570222852,
+              "laps": [
+                39.925485564780736,
+                36.88901108199732
+              ],
+              "valid": [
+                true,
+                true
+              ],
+              "best": 36.88901108199732,
+              "finish": 83.81846264793096,
+              "offSeconds": 0,
+              "hardContacts": 0,
+              "highSpeedWallHits": 0,
+              "resets": 0
+            },
+            {
+              "index": 8,
+              "difficulty": 0.9,
+              "brain": "classic",
+              "distance": 2316.9315570222852,
+              "laps": [
+                39.28927443273105,
+                35.898723180657306
+              ],
+              "valid": [
+                true,
+                true
+              ],
+              "best": 35.898723180657306,
+              "finish": 82.0601942431355,
+              "offSeconds": 0,
+              "hardContacts": 0,
+              "highSpeedWallHits": 0,
+              "resets": 0
+            },
+            {
+              "index": 9,
+              "difficulty": 0.9,
+              "brain": "classic",
+              "distance": 2316.9315570222852,
+              "laps": [
+                41.655238137995205,
+                36.91716709318206
+              ],
+              "valid": [
+                true,
+                true
+              ],
+              "best": 36.91716709318206,
+              "finish": 86.12627084829865,
+              "offSeconds": 0,
+              "hardContacts": 0,
+              "highSpeedWallHits": 0,
+              "resets": 0
+            },
+            {
+              "index": 10,
+              "difficulty": 0.9,
+              "brain": "classic",
+              "distance": 2316.9315570222852,
+              "laps": [
+                40.302366045863344,
+                37.68604389684944
+              ],
+              "valid": [
+                true,
+                true
+              ],
+              "best": 37.68604389684944,
+              "finish": 85.16400347462995,
+              "offSeconds": 0,
+              "hardContacts": 0,
+              "highSpeedWallHits": 0,
+              "resets": 0
+            },
+            {
+              "index": 11,
+              "difficulty": 0.9,
+              "brain": "classic",
+              "distance": 2316.9315570222852,
+              "laps": [
+                42.2427356344852,
+                36.5583055488606
+              ],
+              "valid": [
+                true,
+                true
+              ],
+              "best": 36.5583055488606,
+              "finish": 86.94865207347397,
+              "offSeconds": 0,
+              "hardContacts": 0,
+              "highSpeedWallHits": 0,
+              "resets": 0
+            },
+            {
+              "index": 12,
+              "difficulty": 0.9,
+              "brain": "classic",
+              "distance": 2316.9315570222852,
+              "laps": [
+                41.176731826639646,
+                36.93830644011514
+              ],
+              "valid": [
+                true,
+                true
+              ],
+              "best": 36.93830644011514,
+              "finish": 85.6601738703424,
+              "offSeconds": 0,
+              "hardContacts": 0,
+              "highSpeedWallHits": 0,
+              "resets": 0
+            },
+            {
+              "index": 13,
+              "difficulty": 0.9,
+              "brain": "classic",
+              "distance": 2316.9315570222852,
+              "laps": [
+                42.141553887179796,
+                36.971274795821486
+              ],
+              "valid": [
+                true,
+                true
+              ],
+              "best": 36.971274795821486,
+              "finish": 87.78449908342873,
+              "offSeconds": 0,
+              "hardContacts": 0,
+              "highSpeedWallHits": 0,
+              "resets": 0
+            },
+            {
+              "index": 14,
+              "difficulty": 0.9,
+              "brain": "classic",
+              "distance": 2316.9315570222852,
+              "laps": [
+                42.02238853844952,
+                36.667189963615506
+              ],
+              "valid": [
+                true,
+                true
+              ],
+              "best": 36.667189963615506,
+              "finish": 86.62336341064554,
+              "offSeconds": 0,
+              "hardContacts": 0,
+              "highSpeedWallHits": 0,
+              "resets": 0
+            },
+            {
+              "index": 15,
+              "difficulty": 0.9,
+              "brain": "classic",
+              "distance": 2316.9315570222852,
+              "laps": [
+                43.27411203995623,
+                36.79856828436962
+              ],
+              "valid": [
+                true,
+                true
+              ],
+              "best": 36.79856828436962,
+              "finish": 89.13652460509651,
+              "offSeconds": 0,
+              "hardContacts": 0,
+              "highSpeedWallHits": 0,
+              "resets": 0
+            },
+            {
+              "index": 16,
+              "difficulty": 0.9,
+              "brain": "classic",
+              "distance": 2316.9315570222852,
+              "laps": [
+                42.18027582509625,
+                36.99141731838015
+              ],
+              "valid": [
+                true,
+                true
+              ],
+              "best": 36.99141731838015,
+              "finish": 88.58060265080238,
+              "offSeconds": 0,
+              "hardContacts": 0,
+              "highSpeedWallHits": 0,
+              "resets": 0
+            },
+            {
+              "index": 17,
+              "difficulty": 0.9,
+              "brain": "classic",
+              "distance": 2316.9315570222852,
+              "laps": [
+                42.94989839311131,
+                37.02568425612133
+              ],
+              "valid": [
+                true,
+                true
+              ],
+              "best": 37.02568425612133,
+              "finish": 89.87937453046335,
+              "offSeconds": 0,
+              "hardContacts": 0,
+              "highSpeedWallHits": 0,
+              "resets": 0
+            },
+            {
+              "index": 18,
+              "difficulty": 0.9,
+              "brain": "classic",
+              "distance": 2316.9315570222852,
+              "laps": [
+                43.45110567066305,
+                38.09165771274028
+              ],
+              "valid": [
+                true,
+                true
+              ],
+              "best": 38.09165771274028,
+              "finish": 91.96147883449544,
+              "offSeconds": 0,
+              "hardContacts": 0,
+              "highSpeedWallHits": 0,
+              "resets": 0
+            },
+            {
+              "index": 19,
+              "difficulty": 0.9,
+              "brain": "classic",
+              "distance": 2316.9315570222852,
+              "laps": [
+                44.638937042972834,
+                37.80353628609144
+              ],
+              "valid": [
+                true,
+                true
+              ],
+              "best": 37.80353628609144,
+              "finish": 93.30262958126724,
+              "offSeconds": 0,
+              "hardContacts": 0,
+              "highSpeedWallHits": 0,
+              "resets": 0
+            },
+            {
+              "index": 20,
+              "difficulty": 0.9,
+              "brain": "classic",
+              "distance": 2316.9315570222852,
+              "laps": [
+                41.59110319906118,
+                37.92984793803392
+              ],
+              "valid": [
+                true,
+                true
+              ],
+              "best": 37.92984793803392,
+              "finish": 91.29278686529594,
+              "offSeconds": 0,
+              "hardContacts": 0,
+              "highSpeedWallHits": 0,
+              "resets": 0
+            },
+            {
+              "index": 21,
+              "difficulty": 0.9,
+              "brain": "classic",
+              "distance": 2316.9315570222852,
+              "laps": [
+                42.94735950064943,
+                38.267449295383216
+              ],
+              "valid": [
+                true,
+                true
+              ],
+              "best": 38.267449295383216,
+              "finish": 92.56144740629719,
+              "offSeconds": 0,
+              "hardContacts": 0,
+              "highSpeedWallHits": 0,
+              "resets": 0
+            },
+            {
+              "index": 22,
+              "difficulty": 0.9,
+              "brain": "classic",
+              "distance": 2316.9315570222852,
+              "laps": [
+                42.53374499574333,
+                37.713404333775294
+              ],
+              "valid": [
+                true,
+                true
+              ],
+              "best": 37.713404333775294,
+              "finish": 92.82851516191596,
+              "offSeconds": 0,
+              "hardContacts": 0,
+              "highSpeedWallHits": 0,
+              "resets": 0
+            },
+            {
+              "index": 23,
+              "difficulty": 0.9,
+              "brain": "classic",
+              "distance": 2316.9315570222852,
+              "laps": [
+                43.71947638978652,
+                37.71493933433796
+              ],
+              "valid": [
+                true,
+                true
+              ],
+              "best": 37.71493933433796,
+              "finish": 93.6784162200136,
+              "offSeconds": 0,
+              "hardContacts": 0,
+              "highSpeedWallHits": 0,
+              "resets": 0
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

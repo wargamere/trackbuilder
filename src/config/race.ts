@@ -577,6 +577,10 @@ export const TRAFFIC = {
   gapGain: 0.8,
   /** Brake hard if not hitting the car in our way needs more than this (m/s²). */
   emergencyDecel: 6,
+  /** A player cutting across an existing overlap: close the longitudinal gap only after its rear clears us. */
+  cutAcrossSpeed: 0.8,
+  cutAcrossMinTime: 0.15,
+  cutAcrossLook: 0.6,
   /** Rejoin the road only when no car is coming within this far behind (m). */
   rejoinClear: 60,
   /**
@@ -591,12 +595,12 @@ export const TRAFFIC = {
    * dropped defendDrop m back.
    */
   defendWithin: 20,
-  defendGap: 5,
+  defendGap: 8,
   /** (…× this if you're already pulling out to the inside.) Not if the line already has it within this much (m) of the inside at the braking point. */
   defendPulling: 1.6,
   defendMin: 1.5,
   /** …and only into a bend that slows the line to this share of its speed at the braking point, unless you're already pulling out to the inside. */
-  defendSlow: 0.72,
+  defendSlow: 0.82,
   /** Covering the inside it keeps this much (m) further in from the edge than a lane would (not quite on the kerb: no room for a car, either way), and eases back onto the line over defendPast m after the apex. */
   coverGap: 0.4,
   defendPast: 25,
@@ -625,6 +629,44 @@ export const TRAFFIC = {
    */
   fightAhead: 9,
   fightSide: 0.3,
+} as const;
+
+/** Committed wheel-to-wheel tactics. Distances are metres; decisions still obey the ordinary path limits. */
+export const RACECRAFT = {
+  minSpeed: 8,
+  maxSlip: 2.5,
+  lookahead: 180,
+  minCornerDistance: 25,
+  minEntryDistance: 8,
+  rearRange: 10,
+  attackRange: 18,
+  switchbackRange: 12,
+  overlapMargin: 1,
+  sideGap: 0.7,
+  edgeMargin: 0.7,
+  attackOffset: 6,
+  exitOffset: 1.2,
+  minBlend: 18,
+  attackLead: 2.5,
+  attackCurve: 1 / 70,
+  attackSlip: 1,
+  speedTolerance: 3,
+  cutbackBefore: 30,
+  cutbackAfter: 12,
+  cutbackGap: 18,
+  crossBehind: 1,
+  outwardDrift: 0.3,
+  insideOccupied: 0.5,
+  cutbackLength: 28,
+  lateApex: 8,
+  releaseFrom: 8,
+  cutbackRelease: 22,
+  exitBlend: 40,
+  wonBy: 8,
+  dropDistance: 38,
+  thirdCarRange: 12,
+  sameCorner: 35,
+  retryAfter: 1,
 } as const;
 
 /**
