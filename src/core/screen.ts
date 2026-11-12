@@ -1,4 +1,5 @@
 import type { CareerStore } from '../career/career.ts';
+import type { CarPerformance } from '../car/physics.ts';
 import type { Compound } from '../config/race.ts';
 import type { TimeOfDay } from '../config/track.ts';
 import type { RecordBook, RunResult } from '../race/records.ts';
@@ -53,6 +54,8 @@ export interface EventCar {
   secondary?: number;
   /** How hard it drives, 0..1 (see aiPace). */
   difficulty: number;
+  /** This seat's hardware, shared by qualifying and the race. */
+  tune?: Readonly<CarPerformance>;
   /** Its pit box (teammates share one; see pitBox). */
   box: number;
   /** A mechanical failure this race: it breaks down this far through the distance (a share), if at all. */

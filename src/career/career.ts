@@ -1,4 +1,5 @@
 import { CAREER, YOU_ID, type DriverDef, type RaceLength, type SeasonLength, type TeamDef } from '../config/career.ts';
+import { STANDARD_CAR, type CarPerformance } from '../car/physics.ts';
 import type { Compound } from '../config/race.ts';
 import { clamp } from '../core/math.ts';
 import { hashString, rng } from '../core/random.ts';
@@ -7,7 +8,7 @@ import { cleanOwner, settleOwnerRound, type OwnerState } from './owner.ts';
 import { cleanEntry, driverDef, teamsFor, type RosterSave } from './roster.ts';
 import { GP_TEAMS } from '../config/grandPrix.ts';
 import { createDynasty, driverProgress, driverRating, dynasty, failureChance, settleDynastyRound, startDynastySeason, weekendApproach } from './dynasty.ts';
-import { advanceToWeekend, announceRegulations, carDevelopment, performanceGain, startEngineeringSeason, teamDevelopment } from './engineering.ts';
+import { advanceToWeekend, announceRegulations, carDevelopment, startEngineeringSeason, teamDevelopment } from './engineering.ts';
 
 /**
  * The career's rules, as plain data and functions (no screen, no tracks):
@@ -198,25 +199,32 @@ export function carRank(save: Pick<CareerSave, 'cars'> & RosterSave, id: string)
 
 /**
  * How hard AI driver `id` drives in round `round` (0-based), 0..1 (see
- * aiPace): the career's difficulty for the best driver in the quickest car,
- * less for a slower car and a weaker driver, give or take the weekend's form.
+ * aiPace): ability and weekend form only. The car's hardware is passed to
+ * the physics and the driver's speed plan through carPerformance().
  */
 export function aiDifficulty(save: CareerSave, round: number, id: string): number {
   const d = driverDef(id);
   const t = teamsFor(save).find((x) => x.drivers.includes(id));
   if (!d || !t) return save.difficulty / 100;
-  const car = t.id === save.team && save.owner?.engineering ? clamp(save.cars[t.id] + performanceGain(save, id), 0, 1) : carRating(save, t.id);
-  const rating = CAREER.carShare * car + (1 - CAREER.carShare) * driverRating(save, id);
   const form = (dice(save, `${save.season}:${round}:form:${id}`) * 2 - 1) * CAREER.form;
-  return clamp(save.difficulty / 100 - CAREER.spread * (1 - rating) + form + (save.owner && t.id === save.team ? weekendApproach(save, round).pace : 0), 0.01, 1);
+  return clamp(save.difficulty / 100 - CAREER.spread * (1 - driverRating(save, id)) + form + (save.owner && t.id === save.team ? weekendApproach(save, round).pace : 0), 0.01, 1);
 }
 
-/** Your own car this season: the share of the standard car's grip, engine pull and top speed your team's car has. */
-export function playerCar(save: CareerSave): { grip: number; pull: number; top: number } {
-  const off = 1 - carRating({ cars: save.cars }, save.team);
-  const progress = save.owner ? driverProgress(save, save.owner.selected) : null;
-  const parts = carDevelopment(save, save.owner?.selected ?? YOU_ID);
-  return { grip: 1 - CAREER.carGrip * off + parts.aero * .35 + parts.chassis * .25 + (progress ? Math.floor(progress.xp / 100) * 0.0005 : 0), pull: 1 - CAREER.carPull * off + parts.powertrain * .4 + parts.chassis * .08 + (save.owner ? weekendApproach(save).pace * 2 / 3 : 0), top: 1 - CAREER.carTop * off + parts.powertrain * .18 + parts.aero * .04 };
+/** Physical hardware for this driver's seat, whether driven by the player or AI. */
+export function carPerformance(save: CareerSave, id: string): CarPerformance {
+  const t = id === YOU_ID ? teamsFor(save).find((t) => t.id === save.team) : teamsFor(save).find((t) => t.drivers.includes(id));
+  if (!t) return { ...STANDARD_CAR };
+  // Use the base rating here: fitted parts are seat-specific and must not be counted twice.
+  const off = 1 - carRating({ cars: save.cars }, t.id);
+  const parts = carDevelopment(save, id);
+  const experience = save.owner && t.id === save.team ? Math.floor(driverProgress(save, id).xp / 100) * .0005 : 0;
+  const approach = save.owner && t.id === save.team ? weekendApproach(save).pace * 2 / 3 : 0;
+  return { grip: 1 - CAREER.carGrip * off + parts.aero * .7 + parts.chassis * .5 + experience, pull: 1 - CAREER.carPull * off + parts.powertrain * .8 + parts.chassis * .16 + approach, top: 1 - CAREER.carTop * off + parts.powertrain * .36 + parts.aero * .08 };
+}
+
+/** Hardware in the car selected for the player this weekend. */
+export function playerCar(save: CareerSave): CarPerformance {
+  return carPerformance(save, save.owner?.selected ?? YOU_ID);
 }
 
 /** The weather for round `round` (0-based) of this season. */

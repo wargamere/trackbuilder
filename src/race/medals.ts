@@ -1,10 +1,10 @@
-import { CarPhysics } from '../car/physics.ts';
+import { CarPhysics, STANDARD_CAR, type CarPerformance } from '../car/physics.ts';
 import { HANDLING } from '../config/handling.ts';
 import type { Track } from '../track/track.ts';
-import { AI, DEFAULT_SETUP, SETUP, type CarSetup } from '../config/race.ts';
+import { AI, DEFAULT_SETUP, type CarSetup } from '../config/race.ts';
 import { aiPace, wetPace } from './ai.ts';
 import { RacingDriver } from './driver.ts';
-import { roadPace, topSpeed } from './racingLine.ts';
+import { carPace, roadPace } from './racingLine.ts';
 
 export type MedalId = 'gold' | 'silver' | 'bronze';
 
@@ -16,7 +16,7 @@ export const MEDALS: readonly { id: MedalId; factor: number }[] = [
 ];
 
 /** Bump when the physics or the bot change, so stored author times are recomputed. */
-export const AUTHOR_VERSION = 5;
+export const AUTHOR_VERSION = 6;
 
 export type MedalTimes = Record<MedalId, number>;
 
@@ -66,13 +66,13 @@ export class AuthorLap {
   readonly trace: number[] = [];
   private readonly record: boolean;
 
-  constructor(track: Track, difficulty: number = AI.medalDifficulty, record = false, wet = false, setup: CarSetup = DEFAULT_SETUP) {
+  constructor(track: Track, difficulty: number = AI.medalDifficulty, record = false, wet = false, setup: CarSetup = DEFAULT_SETUP, tune: Readonly<CarPerformance> = STANDARD_CAR) {
     this.record = record;
-    const wing = SETUP.wing[setup.wing];
     const base = aiPace(difficulty, track);
-    const pace = roadPace({ ...base, maxSpeed: base.maxSpeed * (topSpeed(wing.drag) / topSpeed()), downforce: wing.downforce, drag: wing.drag }, track);
+    const pace = roadPace(carPace(base, setup, tune), track);
     this.driver = new RacingDriver(track, wet ? wetPace(pace) : pace);
     this.car = new CarPhysics(track);
+    this.car.tune = tune;
     this.car.wet = wet;
     this.car.setup = setup;
     this.length = track.center.length;

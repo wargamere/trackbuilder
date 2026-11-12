@@ -115,6 +115,23 @@ test('split deltas compare against the best lap', () => {
   for (const e of splits) if (e.type === 'split') assert.ok(e.delta !== null && e.delta < 0, 'faster car is ahead at every split');
 });
 
+test('a checkpoint exactly on a projected vertex counts despite sub-nanometre rounding', () => {
+  const L = 1931.040790003997;
+  const session = new RaceSession(L, null, 1, 12, 0), events: RaceEvent[] = [];
+  const p = (s: number): Progress => ({ s, lateral: 0, along: 27 });
+  session.step(p(L - .1), p(.1), events);
+  for (let k = 1; k < RACE.checkpoints; k++) {
+    const mark = L * k / RACE.checkpoints;
+    // The locator can land on the same vertex rounded a little below the gate.
+    session.step(p(mark - .1405254158664), p(mark - 1e-13), events);
+    session.step(p(mark - 1e-13), p(mark + .15), events);
+  }
+  session.step(p(L - .1), p(.1), events);
+  assert.deepEqual(session.lapValid, [true]);
+  assert.equal(events.filter(e => e.type === 'split').length, RACE.checkpoints - 1, 'each gate counts once');
+  assert.ok(!events.some(e => e.type === 'missedCheckpoint'));
+});
+
 test('the bot completes three valid laps, and the ghost replays the best one', () => {
   const t = getSampleTrack(0);
   const car = new CarPhysics(t);

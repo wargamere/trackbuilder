@@ -1,14 +1,14 @@
-import { CarPhysics, NO_INPUT, type CarState, type DriveInput } from '../car/physics.ts';
+import { CarPhysics, NO_INPUT, STANDARD_CAR, type CarPerformance, type CarState, type DriveInput } from '../car/physics.ts';
 import { standardBrake, standardGrip } from '../car/tyres.ts';
 import { HANDLING } from '../config/handling.ts';
-import { AI, CONDITIONS, DAMAGE, FLAGS, PIT_LANE, SETUP, TRAFFIC, WEATHER, type Compound } from '../config/race.ts';
+import { AI, CONDITIONS, DAMAGE, FLAGS, PIT_LANE, TRAFFIC, WEATHER, type Compound } from '../config/race.ts';
 import { clamp, wrap } from '../core/math.ts';
 import { outerAt, type PitLane } from '../track/pitLane.ts';
 import { edgeOffsets } from '../track/spline.ts';
 import type { Track } from '../track/track.ts';
 import { RacingDriver } from './driver.ts';
 import { along, PitCrew } from './pitStop.ts';
-import { planLapTime, racingLine, roadPace, speedProfile, topSpeed, type Pace } from './racingLine.ts';
+import { carPace, planLapTime, racingLine, roadPace, speedProfile, type Pace } from './racingLine.ts';
 import { pickCompound, preferredCompound, suggestedSetup, trackTyreLife } from './strategy.ts';
 import { RaceSession } from './session.ts';
 import { aiCars, TrafficPlanner } from './traffic.ts';
@@ -195,7 +195,7 @@ export class AiDriver {
    * `slot`: its place on the grid; `box`: whose pit box it uses (see pitBox:
    * 0 is yours; by default slot + 1).
    */
-  constructor(track: Track, opts: { name: string; paint: number; difficulty: number; laps: number; slot: number; box?: number; wet?: boolean; tyreWear?: boolean; damage?: boolean; mediumLife?: number }) {
+  constructor(track: Track, opts: { name: string; paint: number; difficulty: number; laps: number; slot: number; box?: number; wet?: boolean; tyreWear?: boolean; damage?: boolean; mediumLife?: number; tune?: Readonly<CarPerformance> }) {
     const wet = !!opts.wet;
     this.name = opts.name;
     this.paint = opts.paint;
@@ -204,12 +204,13 @@ export class AiDriver {
     // (Its top speed is scaled with the wing's, so the field keeps its spread of straight-line
     // speed: with more drag every car's top end comes down, not just the quick ones'.)
     const setup = suggestedSetup(track);
-    const wing = SETUP.wing[setup.wing];
+    const tune = opts.tune ?? STANDARD_CAR;
     const base = aiPace(opts.difficulty, track);
-    const pace = roadPace({ ...base, maxSpeed: base.maxSpeed * (topSpeed(wing.drag) / topSpeed()), downforce: wing.downforce, drag: wing.drag }, track);
+    const pace = roadPace(carPace(base, setup, tune), track);
     this.driver = new RacingDriver(track, opts.wet ? wetPace(pace) : pace);
     this.planner = new TrafficPlanner(this.driver, track, opts.difficulty);
     this.car = new CarPhysics(track);
+    this.car.tune = tune;
     this.car.setup = setup;
     this.car.wet = wet;
     this.planWetness = wet ? 1 : 0;
@@ -506,7 +507,14 @@ export class AiDriver {
     // Sliding (knocked, or ran wide): easing off the throttle until it gathers itself. No braking,
     // which would only surprise the car behind. (Being off its path is already taken care of:
     // the speed then comes from the path it's really on.)
-    this.recover = st.slip > TRAFFIC.recoverSlip ? TRAFFIC.recoverTime : Math.max(0, this.recover - dt);
+    // A small slip angle is normal through a fast chicane. The old fixed 3 m/s
+    // threshold repeatedly cut the throttle during a controlled direction change.
+    // Still catch a real slide, leaving the path or running off the road promptly.
+    const pathLat = route ? route(st.s) : this.driver.lateralAt(st.s, this.lane);
+    const i = Math.max(0, st.trackIndex), line = this.driver.line;
+    const atEdge = !pit?.offRoad && (st.lateral < line.lo[i] || st.lateral > line.hi[i]);
+    const sliding = st.slip > TRAFFIC.recoverSlip && (st.slip > Math.abs(st.speed) * TRAFFIC.recoverSlipRatio || Math.abs(st.lateral - pathLat) > TRAFFIC.recoverOffLine || atEdge || st.offTrack);
+    this.recover = sliding ? TRAFFIC.recoverTime : Math.max(0, this.recover - dt);
     // (Backing out of a side-by-side it can't win is in the cap: a touch slower than the other
     // car.) Letting a quicker car by, once it's pulled out beside us: lift a little, even while
     // accelerating.

@@ -1,5 +1,6 @@
 import {
   aiDifficulty,
+  carPerformance,
   carOrder,
   carRank,
   cleanName,
@@ -651,7 +652,7 @@ export class CareerScreen implements Screen {
     const entrants = lineup(save);
     const field: EventCar[] = entrants
       .filter((e) => !e.you)
-      .map((e) => ({ id: e.id, name: e.name, paint: e.team.paint, ...(e.team.secondary !== undefined ? { secondary: e.team.secondary } : {}), difficulty: aiDifficulty(save, round, e.id), box: teams.findIndex((t) => t.id === e.team.id), failAt: fails[e.id] }))
+      .map((e) => ({ id: e.id, name: e.name, paint: e.team.paint, ...(e.team.secondary !== undefined ? { secondary: e.team.secondary } : {}), difficulty: aiDifficulty(save, round, e.id), tune: carPerformance(save, e.id), box: teams.findIndex((t) => t.id === e.team.id), failAt: fails[e.id] }))
       .sort((a, b) => b.difficulty - a.difficulty);
     const practice = session === 'practice';
     const laps = raceLaps(save.length, trackLapTime(t));

@@ -130,6 +130,10 @@ try {
   assert.notEqual(await career.evaluate(() => window.__game.career.save.owner.selected), initialDriver);
   await career.getByRole('button', { name: 'Qualifying', exact: true }).click();
   await career.waitForFunction(() => document.documentElement.dataset.screen === 'race');
+  assert.ok(await career.evaluate(() => {
+    const g = window.__game, race = g.screens.race;
+    return JSON.stringify(race.car.tune) === JSON.stringify(g.event.car) && g.event.field.every((f, i) => JSON.stringify(race.qualSims[i].car.tune) === JSON.stringify(f.tune));
+  }), 'player and AI qualifying simulations receive their own career hardware');
   await career.keyboard.press('Escape');
   await career.getByRole('button', { name: /Skip qualifying/ }).click();
   await career.locator('.grid-overlay:not([hidden])').waitFor();
@@ -219,6 +223,10 @@ try {
   assert.equal(await custom.evaluate(() => window.__game.career.save.entry.name), 'Nova Works');
   await custom.getByRole('button', { name: /Start the race/ }).click();
   await custom.waitForFunction(() => window.__game.screens.race.opponents.length === 23);
+  assert.ok(await custom.evaluate(() => {
+    const g = window.__game, race = g.screens.race;
+    return JSON.stringify(race.car.tune) === JSON.stringify(g.event.car) && race.opponents.every(o => JSON.stringify(o.ai.car.tune) === JSON.stringify(g.event.field.find(f => f.id === o.id).tune));
+  }), 'all 24 race cars retain the hardware used in qualifying');
   assert.ok(await custom.evaluate(() => window.__game.screens.race.opponents.every((o) => typeof o.ai.racecraft === 'string')), 'live opponents expose their actual racecraft decision');
   const duelChecks = await custom.evaluate(async () => {
     const { cornerDuel } = await import('/tests/helpers/racecraft.ts');

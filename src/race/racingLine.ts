@@ -1,5 +1,6 @@
 import { HANDLING } from '../config/handling.ts';
-import { RACING_LINE, SETUP } from '../config/race.ts';
+import { STANDARD_CAR, type CarPerformance } from '../car/physics.ts';
+import { RACING_LINE, SETUP, type CarSetup } from '../config/race.ts';
 import { kerbAt, kerbLayout } from '../track/kerbs.ts';
 import { edgeOffsets, leftOf } from '../track/spline.ts';
 import type { Track } from '../track/track.ts';
@@ -211,6 +212,16 @@ export interface Pace {
   maxSpeed: number;
   downforce?: number;
   drag?: number;
+  /** Physical engine pull and speed ceiling, independent of driver ability. */
+  pull?: number;
+  top?: number;
+}
+
+/** A driver's pace in its actual car and setup, before road/weather/tyre adjustments. */
+export function carPace(p: Pace, setup: CarSetup, tune: Readonly<CarPerformance> = STANDARD_CAR): Pace {
+  const wing = SETUP.wing[setup.wing], gears = SETUP.gears[setup.gears];
+  const engine = { pull: tune.pull * gears.pull, top: tune.top * gears.top };
+  return { ...p, ...engine, grip: p.grip * tune.grip, maxSpeed: p.maxSpeed * topSpeed(wing.drag, engine) / topSpeed(), downforce: wing.downforce, drag: wing.drag };
 }
 
 /** The same pace on `track`'s road surface: the share of the grip and the brakes dirt or snow gives (HANDLING.roads). */
@@ -236,13 +247,19 @@ export const brakingDecel = (brake: number, v: number, grade: number, drag = 1):
   HANDLING.brakeDecel * brake + HANDLING.rollingDrag + HANDLING.aeroDrag * drag * v * v + G * HANDLING.slopeFactor * grade;
 
 /** The car's top speed on the flat (m/s) with drag × `drag` (the wing): where the engine's pull meets the drag. */
-export function topSpeed(drag = 1): number {
+export function topSpeed(drag = 1, tune: Pick<CarPerformance, 'pull' | 'top'> = STANDARD_CAR): number {
   const H = HANDLING;
   // engineAccel (1 − v / maxSpeed) = rollingDrag + aeroDrag·drag·v²
   const a = H.aeroDrag * drag;
-  const b = H.engineAccel / H.maxSpeed;
-  const c = H.rollingDrag - H.engineAccel;
+  const b = H.engineAccel * tune.pull / (H.maxSpeed * tune.top);
+  const c = H.rollingDrag - H.engineAccel * tune.pull;
   return (-b + Math.sqrt(b * b - 4 * a * c)) / (2 * a);
+}
+
+/** Full-throttle acceleration used by both the racing line and overtaking lane plans. */
+export function drivingAccel(v: number, pace: Pace, grade: number): number {
+  const H = HANDLING;
+  return H.engineAccel * (pace.pull ?? 1) * Math.max(0, 1 - v / (H.maxSpeed * (pace.top ?? 1))) - H.rollingDrag - H.aeroDrag * (pace.drag ?? 1) * v * v - G * H.slopeFactor * grade;
 }
 
 /**
@@ -275,7 +292,6 @@ export interface SpeedPlan {
  */
 export function speedProfile(track: Track, line: RacingLine, pace: Pace): SpeedPlan {
   const drag = pace.drag ?? 1;
-  const H = HANDLING;
   const c = track.center;
   const n = c.points.length;
   const v = new Float32Array(n);
@@ -300,7 +316,7 @@ export function speedProfile(track: Track, line: RacingLine, pace: Pace): SpeedP
     for (let i = 0; i < n; i++) {
       const j = (i + 1) % n;
       const vi = v[i];
-      const acc = H.engineAccel * Math.max(0, 1 - vi / H.maxSpeed) - H.rollingDrag - H.aeroDrag * drag * vi * vi - G * H.slopeFactor * c.grade[i];
+      const acc = drivingAccel(vi, pace, c.grade[i]);
       const reach = Math.sqrt(Math.max(0, vi * vi + 2 * acc * line.ds[i]));
       if (reach < v[j]) v[j] = reach;
     }

@@ -8,7 +8,7 @@ for (const key of ['window', 'document', 'HTMLElement', 'HTMLInputElement', 'HTM
   Object.defineProperty(globalThis, key, { configurable: true, value: key === 'window' ? win : Reflect.get(win, key) });
 }
 const { CareerScreen } = await import('../src/ui/careerScreen.ts');
-const { CareerStore, lineup, nextRound, recordRound } = await import('../src/career/career.ts');
+const { CareerStore, carPerformance, lineup, nextRound, playerCar, recordRound } = await import('../src/career/career.ts');
 const { getSampleTrack } = await import('../src/editor/pipeline.ts');
 const { RecordBook } = await import('../src/race/records.ts');
 const { TrackLibrary } = await import('../src/track/library.ts');
@@ -87,6 +87,8 @@ test('valid practice signals earn programmes once and qualifying retains the cho
   practice.leave();
   click('Qualifying'); const e = handed();
   assert.equal(e.you.id, 'nak'); assert.equal(e.field.length, 19);
+  assert.deepEqual(e.car, playerCar(save()));
+  for (const rival of e.field) assert.deepEqual(rival.tune, carPerformance(save(), rival.id));
   const order = ['lin', 'nak', 'bre', ...e.field.map((d) => d.id).filter((id) => !['lin', 'bre'].includes(id))];
   e.qualified(order, {}); e.leave();
   assert.deepEqual(save().grid, order);

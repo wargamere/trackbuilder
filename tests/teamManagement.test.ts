@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { aiDifficulty, cleanCareer, lineup, newCareer, nextSeason, recordRound, setGrid, team, teamStandings } from '../src/career/career.ts';
+import { aiDifficulty, carPerformance, cleanCareer, lineup, newCareer, nextSeason, recordRound, setGrid, team, teamStandings } from '../src/career/career.ts';
 import { takeOwnership, selectDriver } from '../src/career/owner.ts';
 import { createCustomCareer, hireDriver, recruitmentOpen, updateTeamIdentity } from '../src/career/teamManagement.ts';
 import { driverFee, FOUNDING_BUDGET, teamsFor } from '../src/career/roster.ts';
@@ -40,8 +40,11 @@ test('poaching both drivers from one rival fills both vacancies with unique rese
 test('selected hires use the custom team car rating and both score for its constructor', () => {
   const s = start();
   const before = aiDifficulty(s, 0, 'gp-verstallen');
+  const hardware = carPerformance(s, 'gp-verstallen');
   s.cars.privateer = .95;
-  assert.ok(aiDifficulty(s, 0, 'gp-verstallen') > before);
+  assert.equal(aiDifficulty(s, 0, 'gp-verstallen'), before, 'a car upgrade does not change driver ability');
+  assert.ok(carPerformance(s, 'gp-verstallen').grip > hardware.grip);
+  assert.ok(carPerformance(s, 'gp-verstallen').pull > hardware.pull);
   finish(s);
   assert.equal(teamStandings(s).find((t) => t.yours)!.points, 43);
   const points = s.done[0].order.slice();
