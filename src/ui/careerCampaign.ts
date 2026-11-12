@@ -30,7 +30,7 @@ function helmet(paint: number, accent: number, code: string): SVGSVGElement {
   return svg;
 }
 
-export function campaignPulse(save: CareerSave, navigate: (tab: 'inbox' | 'legacy') => void): HTMLElement {
+export function campaignPulse(save: CareerSave, navigate: (tab: 'inbox' | 'legacy') => void, showDecision = true): HTMLElement {
   const w = dynasty(save), pending = managementOpen(save) && currentDecision(save);
   const standings = teamStandings(save), rival = standings.find((r) => r.team.id === w.rival.id), mine = standings.find((r) => r.yours)!;
   const pulse = h('div', { class: 'campaign-pulse' },
@@ -38,7 +38,7 @@ export function campaignPulse(save: CareerSave, navigate: (tab: 'inbox' | 'legac
   const decision = action('', () => navigate('inbox'), false, `campaign-inbox-teaser${pending ? ' pending' : ''}`);
   decision.setAttribute('aria-label', pending ? 'Review team decision' : 'Open team inbox');
   decision.append(h('span', { class: 'campaign-envelope', text: pending ? '01' : '↗' }), h('span', {}, label(pending ? 'YOUR DECISION IS NEEDED' : 'INSIDE THE TEAM'), h('strong', { text: pending ? pending.title : w.news[0]?.title ?? 'Your team is ready.' }), h('small', { text: pending ? `${pending.from} · Before qualifying` : 'Headlines, team updates and your decisions' })), h('b', { text: '↗' }));
-  return h('section', { class: 'campaign-command', 'data-testid': 'campaign-command' }, pulse, decision,
+  return h('section', { class: 'campaign-command', 'data-testid': 'campaign-command' }, pulse, showDecision ? decision : null,
     h('div', { class: 'campaign-rival-strip' }, label('THE SEASON BATTLE'), h('strong', { text: rival?.team.name ?? 'Your nearest rival' }), h('span', { text: `${mine.points} : ${rival?.points ?? 0} POINTS` }), action(`${w.rival.won}W · ${w.rival.lost}L ↗`, () => navigate('legacy'))));
 }
 

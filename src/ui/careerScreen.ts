@@ -230,6 +230,13 @@ export class CareerScreen implements Screen {
     if (save?.owner) {
       const identity = teamDef(save.team, save), accent = colour(identity.secondary ?? identity.paint);
       this.root.style.setProperty('--dynasty-accent', accent); this.root.style.setProperty('--dynasty-glow', `${accent}16`);
+      this.root.style.setProperty('--team-primary', colour(identity.paint));
+      this.root.style.setProperty('--team-secondary', accent);
+      const luminance = [16, 8, 0].reduce((sum, shift, i) => {
+        const channel = ((identity.paint >> shift) & 255) / 255;
+        return sum + (channel <= .04045 ? channel / 12.92 : ((channel + .055) / 1.055) ** 2.4) * [.2126, .7152, .0722][i];
+      }, 0);
+      this.root.style.setProperty('--team-on-primary', luminance > .179 ? '#090c14' : '#ffffff');
     }
     this.primary = null;
     const view = !save ? 'new' : this.shown ? 'result' : nextRound(save) === null ? 'review' : 'hub';
