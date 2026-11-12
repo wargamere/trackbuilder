@@ -22,7 +22,8 @@
     "train:ai": "node training/train.ts",
     "eval:ai": "node training/evaluate.ts",
     "bench:ai": "node training/bench.ts",
-    "test:ai:browser": "node scripts/aiBrowserCheck.mjs"
+    "test:ai:browser": "node scripts/aiBrowserCheck.mjs",
+    "eval:racecraft": "node scripts/racecraftCheck.ts"
   },
   "dependencies": {
     "three": "0.186.1"

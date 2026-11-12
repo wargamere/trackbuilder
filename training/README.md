@@ -2,6 +2,8 @@
 
 The live game still uses **classic** driving. This is the first migration increment: phase 0 and an experimental phase 1 training path. It does not fix the deployed race starts yet. See [DESIGN.md](DESIGN.md) for the release gates and later phases.
 
+Classic wheel-to-wheel behaviour has subsequently been upgraded with committed corner tactics; see [live AI racecraft](../docs/ai-racecraft.md). The phase-1 reports below retain their original source/teacher provenance. Recollect teacher data and baselines for comparisons against the updated gameplay.
+
 Implemented:
 
 - Deterministic 120 Hz environment using the actual car physics, lap/checkpoint rules, three contact passes, drafting, race control and weather. Classic cars also use their existing pit crews and strategy. Supports 1–24 cars.
@@ -11,7 +13,7 @@ Implemented:
 - Checksummed binary datasets and phase-boundary checkpoints containing the actual weights, optimizer moments, settings and collection history. Seeded minibatch sampling resumes from the optimizer step.
 - Classic/learned evaluation and inference benchmarking. Requesting learned evaluation with missing, invalid or incompatible weights fails explicitly.
 
-Not implemented in this increment: PPO/value head/GAE, worker-thread training, self-play league, learned pit driving and marshal recovery, difficulty calibration, quantized export, live brain selection or learned qualifying. These remain phases 2–5; medal `AuthorLap`, assists, preview cars and all classic driving code are unchanged. No experimental weights are imported into the production bundle.
+Not implemented in this increment: PPO/value head/GAE, worker-thread training, self-play league, learned pit driving and marshal recovery, difficulty calibration, quantized export, live brain selection or learned qualifying. These remain phases 2–5; the original foundation preserved classic driving, and later classic racecraft changes are documented separately above. Medal `AuthorLap`, assists and preview cars remain unchanged. No experimental weights are imported into the production bundle.
 
 ## Commands (Node 22.18+)
 

@@ -12,6 +12,7 @@ import { planLapTime, racingLine, roadPace, speedProfile, topSpeed, type Pace } 
 import { pickCompound, preferredCompound, suggestedSetup, trackTyreLife } from './strategy.ts';
 import { RaceSession } from './session.ts';
 import { aiCars, TrafficPlanner } from './traffic.ts';
+import type { RacecraftAction } from './racecraft.ts';
 
 /** Linear interpolation in `knots` (evenly spaced over 0..1) at `f`. */
 function knotAt(knots: readonly number[], f: number): number {
@@ -187,6 +188,8 @@ export class AiDriver {
   /** Race control: the most it may go (the safety car), and yellow flags where it is. */
   raceCap = Infinity;
   yellow = false;
+  /** Current committed racecraft decision, exposed for replay/debugging. */
+  get racecraft(): RacecraftAction { return this.planner.action; }
 
   /**
    * `slot`: its place on the grid; `box`: whose pit box it uses (see pitBox:
@@ -447,6 +450,7 @@ export class AiDriver {
     this.planIn -= dt;
     if (this.planIn <= 0) {
       this.planIn = TRAFFIC.planEvery;
+      this.planner.tacticsEnabled = !pit && !finished && !this.yellow && !Number.isFinite(this.raceCap);
       this.planner.plan(st, cars, this.lane);
     }
     // Move across smoothly: ease into the move and out of it (a kink at speed would unsettle
