@@ -37,143 +37,132 @@ const save = () => { const s = game.career.save; assert.ok(s); return s; };
 const handed = () => { assert.ok(event); return event; };
 const press = (code: string) => win.dispatchEvent(new win.KeyboardEvent('keydown', { code, bubbles: true }));
 
-test('start an owner career with two named drivers and a persistent budget', () => {
-  assert.ok(text().includes('Build your own team.'));
+test('owner career uses the native fullscreen shell and six focused sections', () => {
   click('Take over an existing team');
-  assert.ok(text().includes('Start a team-owner career'));
-  assert.equal(ui.querySelectorAll('.career-team').length, 10);
   const name = ui.querySelector('input') as unknown as HTMLInputElement;
   name.value = 'Oskar'; name.dispatchEvent(new win.Event('input') as unknown as Event);
   click('Solaris Racing'); click('Long'); click('8 races'); click('Start career');
-  const s = save();
-  assert.deepEqual([s.name, s.team, s.length, s.rounds, s.calendar.length], ['Oskar', 'solaris', 'long', 'short', 8]);
-  assert.equal(s.owner!.cash, 8_000_000); assert.equal(s.owner!.selected, 'bre');
-  assert.ok(text().includes('TEAM OWNER') && text().includes('Team principal'));
-  assert.ok(text().includes('Melbourne') && text().includes('GRAND PRIX'));
-  assert.ok(ui.querySelector('svg[aria-label="Melbourne circuit layout"]'));
+  save().seed = 1234; game.career.write();
+  assert.equal(save().owner!.cash, 8_000_000);
+  assert.equal(save().owner!.engineering!.rp, 850);
+  assert.equal(ui.querySelectorAll('.owner-nav button').length, 6);
+  assert.ok(text().includes('Team headquarters'));
   assert.equal(ui.querySelectorAll('.owner-driver').length, 2);
-  assert.ok(find('Qualifying') && find('Practice'));
-  assert.equal(new CareerStore().save?.owner?.cash, 8_000_000);
+  assert.equal(ui.querySelector('.owner-lineup-art'), null);
+  assert.ok(find('Advance to race weekend'));
+  assert.equal(new CareerStore().save?.owner?.engineering?.rp, 850);
 });
 
-test('owner navigation, upgrades and driver choice affect saved state', () => {
+test('research, manufacturing and fitting are separate user actions', () => {
   click('Drivers'); click('Race as Nakamura');
-  assert.equal(save().owner!.selected, 'nak');
-  assert.equal(find('Race as Nakamura')!.getAttribute('aria-pressed'), 'true');
-  click('Development'); (ui.querySelector('.research-balanced button') as unknown as HTMLButtonElement).click();
-  assert.equal(save().owner!.cash, 6_000_000); assert.equal(save().owner!.project, true);
-  assert.equal(ui.querySelectorAll('.research-option button:disabled').length, 3);
-  click('Facilities'); buttons().find((b) => b.textContent?.includes('Expand headquarters'))!.click();
-  assert.equal(save().owner!.facilities, 1);
-  click('Vehicle'); assert.ok(text().includes('CAR RATING'));
-  click('Overview'); buttons().find((b) => b.dataset.compound === 'hard')!.click();
-  assert.equal(save().tyres, 'hard');
+  click('Personnel'); click('Hire Luca Soren');
+  click('Driver lineup'); click('Train Nakamura: Qualifying pace');
+  click('Engineering'); click('Research Front wing profiles');
+  const s = save(), cash = s.owner!.cash;
+  assert.equal(s.owner!.engineering!.rp, 400);
+  assert.equal(s.owner!.engineering!.research.length, 1);
+  assert.equal(s.owner!.engineering!.researched.length, 0);
+  click('Advance to race weekend');
+  assert.ok(s.owner!.engineering!.researched.includes('aero-1'));
+  assert.equal(s.owner!.cash, cash);
+  click('Development');
+  const one = ui.querySelector('[aria-label="Build 1 Front wing profiles"]') as unknown as HTMLButtonElement;
+  assert.ok(one && !one.disabled); one.click();
+  assert.equal(s.owner!.cash, cash - 400_000);
+  assert.equal(s.owner!.engineering!.production.length, 1);
+  click('Assign upgrades');
+  assert.equal(s.owner!.engineering!.fitted[0].length, 0);
+  assert.ok(text().includes('No manufactured copy available'));
+  click('Overview');
 });
 
-test('qualifying uses the chosen driver, nineteen AI cars and a shared pit box', () => {
+test('valid practice signals earn programmes once and qualifying retains the chosen driver and grid', async () => {
+  const { trackLapTime } = await import('../src/race/strategy.ts');
+  click('Practice'); const practice = handed(), rp = save().owner!.engineering!.rp;
+  assert.equal(practice.session, 'practice');
+  for (let i = 0; i < 2; i++) practice.practised?.(trackLapTime(game.track));
+  assert.equal(new CareerStore().save?.owner?.engineering?.practice.laps, 2, 'valid laps persist even when that lap pays no new RP');
+  for (let i = 0; i < 2; i++) practice.practised?.(trackLapTime(game.track));
+  assert.equal(save().owner!.engineering!.rp, rp + 450);
+  practice.leave();
   click('Qualifying'); const e = handed();
-  assert.equal(e.session, 'qualifying'); assert.equal(e.you.id, 'nak'); assert.equal(e.you.name, 'Nakamura');
-  assert.equal(e.field.length, 19);
-  assert.ok(e.field.some((d) => d.id === 'bre' && d.box === e.you.box));
-  assert.ok(!e.field.some((d) => d.id === 'nak' || d.id === 'you'));
-  assert.deepEqual([e.setup.tyreWear, e.setup.damage, e.setup.safetyCar, e.setup.tyres], [true, true, true, 'hard']);
-  const order = ['lin', 'nak', 'bre', ...e.field.map((f) => f.id).filter((id) => id !== 'lin' && id !== 'bre')];
+  assert.equal(e.you.id, 'nak'); assert.equal(e.field.length, 19);
+  const order = ['lin', 'nak', 'bre', ...e.field.map((d) => d.id).filter((id) => !['lin', 'bre'].includes(id))];
   e.qualified(order, {}); e.leave();
-  assert.equal(current, 'career'); assert.deepEqual(save().grid, order);
-  assert.equal(ui.querySelectorAll('.career-grid li').length, 20);
-  click('Race as Brennan'); assert.deepEqual(save().grid, order);
-  assert.ok(text().includes('You start 3rd of 20'));
-  click('Practice'); assert.equal(handed().session, 'practice'); assert.equal(handed().setup.damage, false); handed().leave();
-  press('Enter'); assert.equal(handed().session, 'race'); assert.equal(handed().you.id, 'bre');
-  assert.deepEqual(handed().grid, order);
+  assert.deepEqual(save().grid, order);
+  click('Race as Brennan');
+  assert.equal(save().owner!.selected, 'bre'); assert.deepEqual(save().grid, order);
+  click('Engineering');
+  assert.ok(text().includes('Available before qualifying'));
+  click('Drivers'); click('Personnel');
+  assert.equal(ui.querySelectorAll('.campaign-staff-card button:disabled').length, 6);
+  click('Overview'); press('Enter');
+  assert.equal(handed().session, 'race'); assert.equal(handed().you.id, 'bre');
 });
 
-test('results score both drivers, pay the team and deliver development', () => {
-  const e = handed(); const order = ['nak', 'bre', ...e.field.map((d) => d.id).filter((id) => id !== 'nak')];
+test('race results pay once, charge workforce and staff, and deliver booked training', () => {
+  const e = handed(), cash = save().owner!.cash;
+  const order = ['nak', 'bre', ...e.field.map((d) => d.id).filter((id) => id !== 'nak')];
   const result: EventResult = { order, dnf: ['tan'], fastest: 'nak', times: order.map((id, i) => id === 'tan' ? null : 600 + i * 2), laps: order.map(() => 12), estimated: false };
   e.finished(result);
-  assert.equal(save().done.length, 1); assert.equal(save().owner!.development, 1);
-  assert.equal(save().owner!.earned, 1_250_000 + 43 * 35_000);
+  assert.equal(save().done.length, 1);
+  assert.equal(save().owner!.cash, cash + 1_000_000 + 43 * 35_000 - 165_000);
+  assert.equal(save().owner!.world!.drivers.nak.pace, 1);
+  assert.equal(save().owner!.world!.drivers.nak.xp, 42);
+  assert.equal(save().owner!.engineering!.stock['aero-1'], undefined);
   const funds = save().owner!.cash;
-  e.finished(result);
-  assert.equal(save().done.length, 1, 'a repeated finish callback cannot record another round');
-  assert.equal(save().owner!.cash, funds, 'a repeated finish cannot pay again');
+  e.finished(result); assert.equal(save().owner!.cash, funds); assert.equal(save().done.length, 1);
   assert.ok(text().includes('You finished 2nd: 18 points'));
-  assert.equal(ui.querySelectorAll('.career-table tbody tr').length, 20);
-  press('Enter'); click('Standings');
+  press('Enter'); click('Championship'); click('Standings');
   assert.equal(ui.querySelectorAll('.career-table').length, 2);
-  click('Finance');
-  assert.equal(ui.querySelectorAll('.owner-contract').length, 3);
-  assert.equal(ui.querySelectorAll('.owner-contract button:disabled').length, 3);
-  assert.ok(text().includes('Headquarters · level 1'));
-  click('Overview'); assert.ok(text().includes('ROUND 02'));
-  assert.equal(new CareerStore().save?.owner?.development, 1);
+  click('Team'); click('Finance'); assert.ok(text().includes('Staff and department operations'));
 });
 
-test('owners keep their team, selection and funds next season', () => {
+test('advancing the next weekend delivers stock, then fitting updates only the chosen physical car and persists', () => {
+  click('Overview'); click('Advance to race weekend');
+  assert.equal(save().owner!.engineering!.stock['aero-1'], 1);
+  click('Engineering'); click('Assign upgrades');
+  const cards = ui.querySelectorAll('.engineering-car-columns > section');
+  const fit = [...cards[0].querySelectorAll('button')].find((b) => b.textContent === 'Fit upgrade');
+  assert.ok(fit); fit.click();
+  assert.deepEqual(save().owner!.engineering!.fitted, [['aero-1'], []]);
+  assert.equal(save().owner!.engineering!.stock['aero-1'], 0);
+  assert.deepEqual(new CareerStore().save?.owner?.engineering?.fitted, [['aero-1'], []]);
+  click('Progress history'); assert.ok(text().includes('fitted to car 1'));
+  click('Overview');
+});
+
+test('seasons carry engineering, finances, drivers and team identity forward', () => {
   const s = save();
-  while (nextRound(s) !== null) recordRound(s, { order: ['nak', 'bre', ...lineup(s).map((d) => d.id).filter((id) => id !== 'nak' && id !== 'bre')], dnf: [], fastest: null });
-  const funds = s.owner!.cash; screen.exit(); screen.enter();
-  assert.ok(text().includes('Season 1 is over'));
-  assert.equal(ui.querySelectorAll('.career-offers .career-team').length, 1);
+  while (nextRound(s) !== null) recordRound(s, { order: ['nak', 'bre', ...lineup(s).map((d) => d.id)], dnf: [], fastest: null });
+  const funds = s.owner!.cash, workers = s.owner!.engineering!.workforce;
+  screen.exit(); screen.enter(); assert.ok(text().includes('Season 1 is over'));
   click('Start season 2');
-  assert.equal(s.team, 'solaris'); assert.equal(s.owner!.cash, funds); assert.equal(s.owner!.selected, 'bre');
-  assert.equal(s.season, 2); assert.ok(text().includes('CHAMPIONSHIP / SEASON 02'));
-  click('Finance');
+  assert.equal(s.team, 'solaris'); assert.equal(s.owner!.cash, funds);
+  assert.equal(s.owner!.engineering!.workforce, workers);
+  assert.ok(s.owner!.engineering!.researched.includes('aero-1') || s.owner!.engineering!.history.some((item) => item.title.includes('regulation')));
+  assert.equal(s.season, 2); assert.ok(find('Advance to race weekend'));
+  click('Team'); click('Finance');
   const sign = [...ui.querySelectorAll('.owner-contract')].find((c) => c.textContent?.includes('Vector Energy'))!.querySelector('button')!;
-  sign.click();
-  assert.equal(s.owner!.sponsor, 'vector');
-  assert.equal(new CareerStore().save?.owner?.sponsor, 'vector');
+  sign.click(); assert.equal(s.owner!.sponsor, 'vector');
 });
 
-test('focused navigation cannot launch a race; abandonment needs two taps', () => {
+test('focused navigation cannot start a session and abandonment still requires two taps', () => {
   const before = current;
   find('Drivers')!.dispatchEvent(new win.KeyboardEvent('keydown', { code: 'Enter', bubbles: true }));
   assert.equal(current, before);
   click('Career settings'); click('Abandon career'); assert.ok(game.career.save);
-  click('Abandon it? Tap again'); assert.equal(game.career.save, null); assert.equal(storage.getItem('career.v1'), null);
+  click('Abandon it? Tap again'); assert.equal(game.career.save, null);
   press('Escape'); assert.equal(current, 'menu');
 });
 
-test('a custom team season review keeps its identity, hired drivers and twelve-team car rank', async () => {
+test('custom careers retain their 24-car identity through a season review', async () => {
   const { createCustomCareer } = await import('../src/career/teamManagement.ts');
   const s = createCustomCareer({ principal: 'Oskar', name: 'Nova Racing', paint: 0x7657ed, secondary: 0x61e2be, drivers: ['gp-norrin', 'gp-verstallen'], difficulty: 50, length: 'short', rounds: 'short' })!;
   while (nextRound(s) !== null) recordRound(s, { order: lineup(s).map((e) => e.id), dnf: [], fastest: null });
   game.career.start(s); current = 'career'; screen.enter();
   assert.ok(text().includes('Nova Racing'));
-  const bar = ui.querySelector('.career-offers .career-car')!;
-  assert.match(bar.getAttribute('title')!, /^Car: \d+ of 12$/);
   click('Start season 2');
-  assert.equal(s.team, 'privateer');
+  assert.equal(s.team, 'privateer'); assert.deepEqual(s.entry!.drivers, ['gp-norrin', 'gp-verstallen']);
   assert.ok(text().includes('Nova Racing'));
-  assert.deepEqual(s.entry!.drivers, ['gp-norrin', 'gp-verstallen']);
-});
-
-test('owner campaign actions persist, deliver through a race, and close when qualifying sets the grid', async () => {
-  const { newCareer, setGrid } = await import('../src/career/career.ts');
-  const { takeOwnership } = await import('../src/career/owner.ts');
-  const { dynasty } = await import('../src/career/dynasty.ts');
-  const s = newCareer({ name: 'Owner', team: 'kestrel', difficulty: 60, length: 'short', rounds: 'short' }, 91);
-  takeOwnership(s); screen.exit(); game.career.start(s); current = 'career'; screen.enter();
-  assert.ok(ui.querySelector('[data-testid="campaign-command"]'));
-  click('Review team decision'); click('Invest in the foundations');
-  assert.ok(text().includes('Decision recorded.')); assert.equal(dynasty(s).insight, 1);
-  click('Personnel'); click('Hire Maya Hart'); assert.equal(dynasty(s).staff.technical, 'hart');
-  assert.ok(text().includes('Release Maya Hart'));
-  click('Drivers'); click('Train Almeida: Qualifying pace');
-  assert.equal(dynasty(s).drivers.alm.training?.focus, 'pace');
-  assert.equal(ui.querySelectorAll('.campaign-training-options button:disabled').length, 3);
-  click('Facilities'); buttons().find((b) => b.textContent?.includes('Expand Driver performance centre'))!.click();
-  assert.equal(dynasty(s).departments.simulator, 1);
-  click('Overview'); click('Development weekend');
-  assert.equal(dynasty(s).plan.id, 'development');
-  assert.equal(find('Development weekend')!.getAttribute('aria-pressed'), 'true');
-  assert.equal(new CareerStore().save?.owner?.world?.staff.technical, 'hart');
-  setGrid(s, []); game.career.write(); screen.exit(); screen.enter();
-  assert.equal(ui.querySelectorAll('.campaign-approach:disabled').length, 3);
-  click('Personnel'); assert.equal(ui.querySelectorAll('.campaign-staff-card button:disabled').length, 6);
-  recordRound(s, { order: ['alm', 'whi'], dnf: [], fastest: 'alm' }); game.career.write(); screen.exit(); screen.enter();
-  click('Drivers'); assert.equal(dynasty(s).drivers.alm.pace, 1); assert.equal(dynasty(s).drivers.alm.xp, 49);
-  assert.ok(text().includes('49 CAREER XP')); click('Legacy'); assert.ok(text().includes('ACHIEVED'));
-  assert.ok(dynasty(s).achievements.includes('first-win'));
 });

@@ -7,6 +7,7 @@ import { cleanOwner, settleOwnerRound, type OwnerState } from './owner.ts';
 import { cleanEntry, driverDef, teamsFor, type RosterSave } from './roster.ts';
 import { GP_TEAMS } from '../config/grandPrix.ts';
 import { createDynasty, driverProgress, driverRating, dynasty, failureChance, settleDynastyRound, startDynastySeason, weekendApproach } from './dynasty.ts';
+import { advanceToWeekend, announceRegulations, carDevelopment, performanceGain, startEngineeringSeason, teamDevelopment } from './engineering.ts';
 
 /**
  * The career's rules, as plain data and functions (no screen, no tracks):
@@ -180,9 +181,9 @@ export function lineup(save: Pick<CareerSave, 'team' | 'name' | 'owner' | 'entry
 }
 
 /** How good team `id`'s car is this season, 0..1. */
-export function carRating(save: Pick<CareerSave, 'cars'>, id: string): number {
+export function carRating(save: Pick<CareerSave, 'cars'> & Partial<Pick<CareerSave, 'owner' | 'team' | 'roster' | 'entry'>>, id: string): number {
   const c = save.cars[id];
-  return typeof c === 'number' ? clamp(c, 0, 1) : team(id).car;
+  return typeof c === 'number' ? clamp(c + (id === save.team ? teamDevelopment(save) : 0), 0, 1) : team(id).car;
 }
 
 /** The teams by how good their cars are this season, the quickest first. */
@@ -204,16 +205,18 @@ export function aiDifficulty(save: CareerSave, round: number, id: string): numbe
   const d = driverDef(id);
   const t = teamsFor(save).find((x) => x.drivers.includes(id));
   if (!d || !t) return save.difficulty / 100;
-  const rating = CAREER.carShare * carRating(save, t.id) + (1 - CAREER.carShare) * driverRating(save, id);
+  const car = t.id === save.team && save.owner?.engineering ? clamp(save.cars[t.id] + performanceGain(save, id), 0, 1) : carRating(save, t.id);
+  const rating = CAREER.carShare * car + (1 - CAREER.carShare) * driverRating(save, id);
   const form = (dice(save, `${save.season}:${round}:form:${id}`) * 2 - 1) * CAREER.form;
   return clamp(save.difficulty / 100 - CAREER.spread * (1 - rating) + form + (save.owner && t.id === save.team ? weekendApproach(save, round).pace : 0), 0.01, 1);
 }
 
 /** Your own car this season: the share of the standard car's grip, engine pull and top speed your team's car has. */
 export function playerCar(save: CareerSave): { grip: number; pull: number; top: number } {
-  const off = 1 - carRating(save, save.team);
+  const off = 1 - carRating({ cars: save.cars }, save.team);
   const progress = save.owner ? driverProgress(save, save.owner.selected) : null;
-  return { grip: 1 - CAREER.carGrip * off + (progress ? Math.floor(progress.xp / 100) * 0.0005 : 0), pull: 1 - CAREER.carPull * off + (save.owner ? weekendApproach(save).pace * 2 / 3 : 0), top: 1 - CAREER.carTop * off };
+  const parts = carDevelopment(save, save.owner?.selected ?? YOU_ID);
+  return { grip: 1 - CAREER.carGrip * off + parts.aero * .35 + parts.chassis * .25 + (progress ? Math.floor(progress.xp / 100) * 0.0005 : 0), pull: 1 - CAREER.carPull * off + parts.powertrain * .4 + parts.chassis * .08 + (save.owner ? weekendApproach(save).pace * 2 / 3 : 0), top: 1 - CAREER.carTop * off + parts.powertrain * .18 + parts.aero * .04 };
 }
 
 /** The weather for round `round` (0-based) of this season. */
@@ -340,6 +343,7 @@ export function setGrid(save: CareerSave, order: readonly string[]): void {
 export function recordRound(save: CareerSave, result: { order: readonly string[]; dnf: readonly string[]; fastest: string | null }): RoundResult | null {
   if (nextRound(save) === null) return null;
   if (save.owner) dynasty(save);
+  if (save.owner?.engineering) advanceToWeekend(save, true);
   const whole = wholeOrder(save, result.order);
   const dnf = whole.filter((id) => result.dnf.includes(id));
   const round: RoundResult = {
@@ -351,6 +355,7 @@ export function recordRound(save: CareerSave, result: { order: readonly string[]
   save.done.push(round);
   settleOwnerRound(save, round);
   if (save.owner) settleDynastyRound(save, round, teamStandings(save).findIndex((t) => t.yours) + 1, driverStandings(save)[0]?.id ?? null);
+  announceRegulations(save);
   save.grid = null;
   return round;
 }
@@ -400,13 +405,15 @@ export function nextSeason(save: CareerSave, teamId: string): void {
   });
   if (save.history.length > 50) save.history.splice(0, save.history.length - 50);
   const allowed = !save.owner && offers(save).some((t) => t.id === teamId);
+  const carriedParts = teamDevelopment(save);
   save.cars = nextCars(save);
+  if (save.owner?.engineering) save.cars[save.team] = Math.max(0, save.cars[save.team] - carriedParts);
   if (allowed) save.team = teamId;
   save.season++;
   save.calendar = seasonCalendar(save.rounds, save.season);
   save.done = [];
   save.grid = null;
-  if (save.owner) { save.owner.development = 0; save.owner.target = carRank(save, save.team); startDynastySeason(save); }
+  if (save.owner) { save.owner.development = 0; startEngineeringSeason(save); save.owner.target = carRank(save, save.team); startDynastySeason(save); }
 }
 
 /** Saved data made safe: a career as this version understands it, or null if it isn't one. */

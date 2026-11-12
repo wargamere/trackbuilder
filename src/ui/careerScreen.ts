@@ -46,6 +46,7 @@ import { teamsFor } from '../career/roster.ts';
 import { freshTeamDraft, teamCreation } from './teamCreation.ts';
 import { dynasty } from '../career/dynasty.ts';
 import { campaignDebrief, campaignSeasonReview } from './careerCampaign.ts';
+import { advanceToWeekend, awardPractice, engineering } from '../career/engineering.ts';
 
 type Tab = OwnerTab;
 const TABS: readonly Tab[] = OWNER_TABS.map(([id]) => id);
@@ -163,8 +164,10 @@ export class CareerScreen implements Screen {
         } else if (!typing && this.save && !this.shown && nextRound(this.save) !== null) {
           const k = /^Digit([1-8])$/.exec(e.code);
           if (!k) return;
+          const tab = TABS[Number(k[1]) - 1];
+          if (!tab) return;
           e.preventDefault();
-          this.tab = TABS[Number(k[1]) - 1];
+          this.tab = tab;
           this.render();
         }
       },
@@ -226,17 +229,13 @@ export class CareerScreen implements Screen {
     const contentScroll = this.panel.querySelector('.owner-overview, .owner-card')?.scrollTop ?? 0;
     const layoutScroll = this.panel.querySelector('.owner-layout')?.scrollTop ?? 0;
     const navScroll = this.panel.querySelector('.owner-nav')?.scrollLeft ?? 0;
+    const subScroll = this.panel.querySelector('.owner-subnav')?.scrollLeft ?? 0;
     const save = this.save;
+    if (save?.owner && !save.owner.engineering) { engineering(save); this.game.career.write(); }
     if (save?.owner) {
       const identity = teamDef(save.team, save), accent = colour(identity.secondary ?? identity.paint);
-      this.root.style.setProperty('--dynasty-accent', accent); this.root.style.setProperty('--dynasty-glow', `${accent}16`);
       this.root.style.setProperty('--team-primary', colour(identity.paint));
       this.root.style.setProperty('--team-secondary', accent);
-      const luminance = [16, 8, 0].reduce((sum, shift, i) => {
-        const channel = ((identity.paint >> shift) & 255) / 255;
-        return sum + (channel <= .04045 ? channel / 12.92 : ((channel + .055) / 1.055) ** 2.4) * [.2126, .7152, .0722][i];
-      }, 0);
-      this.root.style.setProperty('--team-on-primary', luminance > .179 ? '#090c14' : '#ffffff');
     }
     this.primary = null;
     const view = !save ? 'new' : this.shown ? 'result' : nextRound(save) === null ? 'review' : 'hub';
@@ -257,11 +256,12 @@ export class CareerScreen implements Screen {
     if (content && oldTab === this.tab) content.scrollTop = contentScroll;
     const layout = this.panel.querySelector('.owner-layout');
     if (layout && oldTab === this.tab) layout.scrollTop = layoutScroll;
-    const nav = this.panel.querySelector('.owner-nav'), active = nav?.querySelector<HTMLElement>('[aria-current="page"]');
-    if (nav) {
-      nav.scrollLeft = navScroll;
+    for (const [selector, scroll] of [['.owner-nav', navScroll], ['.owner-subnav', subScroll]] as const) {
+      const nav = this.panel.querySelector<HTMLElement>(selector), active = nav?.querySelector<HTMLElement>('[aria-current="page"], [aria-pressed="true"]');
+      if (!nav) continue;
+      nav.scrollLeft = scroll;
       if (active) {
-        const left = active.offsetLeft - (nav as HTMLElement).offsetLeft;
+        const left = active.offsetLeft - nav.offsetLeft;
         if (left < nav.scrollLeft) nav.scrollLeft = left;
         else if (left + active.offsetWidth > nav.scrollLeft + nav.clientWidth) nav.scrollLeft = left + active.offsetWidth - nav.clientWidth;
       }
@@ -486,6 +486,11 @@ export class CareerScreen implements Screen {
     this.sessions = grid
       ? [button(C.requalify, go('qualifying'), { icon: '⏱' }), button(C.practice, go('practice'), { icon: '⟳' }), button(C.race, go('race'), { icon: '🏁', class: 'primary', key: 'Enter' })]
       : [button(C.practice, go('practice'), { icon: '⟳' }), button(C.qualifying, go('qualifying'), { icon: '⏱', class: 'primary', key: 'Enter' })];
+    if (save.owner?.engineering && !grid && save.owner.engineering.advanced !== `${save.season}:${round}`) {
+      const advance = () => { advanceToWeekend(save); this.game.career.write(); this.render(); };
+      this.primary = advance;
+      this.sessions = [button('Advance to race weekend', advance, { class: 'primary', key: 'Enter' })];
+    }
     const line = (label: string, summary: string, open: string, icon: string, act: () => void) =>
       h('div', { class: 'setup-assists' }, h('span', { class: 'label', text: label }), h('span', { class: 'assists-summary', text: summary }), button(open, act, { icon, class: 'compact' }));
     return [
@@ -639,6 +644,7 @@ export class CareerScreen implements Screen {
     const round = save ? nextRound(save) : null;
     const t = this.roundTrack();
     if (!save || round === null || !t) return;
+    advanceToWeekend(save); this.game.career.write();
     const weather = roundWeather(save, round);
     const fails = roundFailures(save, round);
     const teams = teamsFor(save);
@@ -681,6 +687,7 @@ export class CareerScreen implements Screen {
         this.game.career.write();
       },
       finished: (result) => this.finished(save, round, t, result),
+      practised: (time) => { if (session === 'practice' && nextRound(save) === round && !save.grid) { awardPractice(save, time, trackLapTime(t)); this.game.career.write(); } },
       leave: () => this.game.go('career'),
     };
     this.game.setTrack(t);

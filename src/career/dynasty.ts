@@ -3,6 +3,7 @@ import { clamp } from '../core/math.ts';
 import { hashString, rng } from '../core/random.ts';
 import type { CareerSave, RoundResult } from './career.ts';
 import { driverDef, teamsFor } from './roster.ts';
+import { carDevelopment } from './engineering.ts';
 
 export type StaffRole = 'technical' | 'coach' | 'engineer';
 export type Department = 'laboratory' | 'simulator' | 'commercial';
@@ -26,15 +27,15 @@ export interface DynastyState {
 }
 
 export const STAFF = [
-  { id: 'hart', role: 'technical', name: 'Maya Hart', title: 'Technical director', level: 1, fee: 650_000, salary: 90_000, reputation: 0, detail: '8% cheaper research and 6% more performance per package.' },
-  { id: 'mercer', role: 'technical', name: 'Ada Mercer', title: 'Technical director', level: 2, fee: 1_600_000, salary: 160_000, reputation: 40, detail: '14% cheaper research and 12% more performance per package.' },
+  { id: 'hart', role: 'technical', name: 'Maya Hart', title: 'Technical director', level: 1, fee: 650_000, salary: 90_000, reputation: 0, detail: '8% lower research RP cost and 6% more performance from new designs.' },
+  { id: 'mercer', role: 'technical', name: 'Ada Mercer', title: 'Technical director', level: 2, fee: 1_600_000, salary: 160_000, reputation: 40, detail: '14% lower research RP cost and 12% more performance from new designs.' },
   { id: 'soren', role: 'coach', name: 'Luca Soren', title: 'Driver coach', level: 1, fee: 550_000, salary: 75_000, reputation: 0, detail: '+10 XP to each commissioned driver training programme.' },
   { id: 'kade', role: 'coach', name: 'Rina Kade', title: 'Driver coach', level: 2, fee: 1_400_000, salary: 140_000, reputation: 40, detail: '+20 XP to training and a stronger driver-development programme.' },
   { id: 'vale', role: 'engineer', name: 'Noah Vale', title: 'Race engineer', level: 1, fee: 700_000, salary: 95_000, reputation: 0, detail: 'Reduces your AI cars’ mechanical failure chance by 0.6 percentage points.' },
   { id: 'tan', role: 'engineer', name: 'Esme Tan', title: 'Race engineer', level: 2, fee: 1_750_000, salary: 170_000, reputation: 40, detail: 'Reduces your AI cars’ mechanical failure chance by 1.2 percentage points.' },
 ] as const;
 export const DEPARTMENTS = [
-  { id: 'laboratory', name: 'Aerodynamics laboratory', icon: '↗', detail: 'Each level cuts research cost by 3% and increases package gains by 3%. Level 3 shortens long projects by one round.' },
+  { id: 'laboratory', name: 'Aerodynamics laboratory', icon: '↗', detail: 'Each level cuts research RP costs by 3% and increases the performance of new designs by 3%.' },
   { id: 'simulator', name: 'Driver performance centre', icon: '◈', detail: 'Each level adds 5 XP to training. Build your two drivers into a lasting advantage.' },
   { id: 'commercial', name: 'Commercial studio', icon: '◎', detail: 'Each level earns $75k and attracts 10% more fans after each race.' },
 ] as const;
@@ -96,6 +97,7 @@ export function driverRating(save: CareerSave, id: string): number {
   return clamp((driverDef(id)?.skill ?? 0.5) + Math.floor(p.xp / 100) * 0.008 + p.pace * 0.002 + p.racecraft * 0.001 + (p.morale - 65) * 0.0002, 0, 1);
 }
 export function weekendApproach(save: CareerSave, round = save.done.length) {
+  if (save.owner?.engineering) return APPROACHES[0];
   const plan = save.owner?.world?.plan;
   return APPROACHES.find((p) => p.id === (plan?.season === save.season && plan.round === round ? plan.id : 'balanced')) ?? APPROACHES[0];
 }
@@ -109,11 +111,11 @@ export function researchMultiplier(save: CareerSave): number { return 1 + (staff
 export function researchDuration(save: CareerSave, rounds: number): number { return Math.max(1, rounds - ((save.owner?.world?.departments.laboratory ?? 0) === 3 && rounds > 1 ? 1 : 0)); }
 export function failureChance(save: CareerSave, id: string, round = save.done.length): number {
   if (!save.owner || !owned(save, id)) return CAREER.failure;
-  return clamp(CAREER.failure + weekendApproach(save, round).risk - (staffMember(save, 'engineer')?.level ?? 0) * 0.006 - driverProgress(save, id).consistency * 0.0006, 0.004, 0.12);
+  return clamp(CAREER.failure + weekendApproach(save, round).risk - (staffMember(save, 'engineer')?.level ?? 0) * 0.006 - driverProgress(save, id).consistency * 0.0006 - carDevelopment(save, id).durability, 0.004, 0.12);
 }
 export function operatingCosts(save: CareerSave): number {
   const w = save.owner?.world;
-  return w ? STAFF.filter((p) => w.staff[p.role] === p.id).reduce((n, p) => n + p.salary, 0) + Object.values(w.departments).reduce((n, level) => n + level * 25_000, 0) : 0;
+  return (w ? STAFF.filter((p) => w.staff[p.role] === p.id).reduce((n, p) => n + p.salary, 0) + Object.values(w.departments).reduce((n, level) => n + level * 25_000, 0) : 0) + (save.owner?.engineering?.workforce ?? 0) * 4500;
 }
 function book(save: CareerSave, label: string, amount: number): boolean {
   const o = save.owner!;

@@ -1115,6 +1115,7 @@ export class RaceScreen implements Screen {
         if (e.delta !== null) this.hud.showSplit(formatDelta(e.delta), e.delta < 0);
         break;
       case 'lap': {
+        if (e.valid && this.game.event?.session === 'practice') this.game.event.practised?.(e.time);
         const rec = this.game.records.get(this.game.track.def.id);
         if (e.best) {
           rec.best = s.best;
