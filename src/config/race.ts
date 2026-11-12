@@ -313,6 +313,10 @@ export const ASSISTS = {
 } as const;
 
 export const AI = {
+  maxDifficulty: 110,
+  /** Extra challenge above 100%; the original 1–100 pace curve is unchanged.
+   * At 110 the AI receives these hardware bonuses and uses the full brakes. */
+  expert: { grip: .08, pull: .1, top: .04, brake: .1 },
   /** Up to this many AI cars in a single race (12 cars with you). */
   maxOpponents: 11,
   /** Eleven GP-inspired rivals and a custom team: up to 24 cars with you. */
@@ -488,17 +492,21 @@ export const TRAFFIC = {
   /** …and a car behind counts as beside it once less than this far back (m, centre to centre: its nose past our rear wheels), plus this many seconds of the speed it's closing at. */
   keepBehind: 3,
   keepClosing: 0.6,
+  /** Counter a developing sideways drift before the car reaches its neighbour. */
+  keepDriftTime: .25,
+  keepDriftMax: 1.5,
   /**
    * Passing a slower car that isn't an AI (you) within passAhead m: from
    * passClose m back it keeps this much (m) between the sides (plus the extra
    * for a bend), moving over at most passStep m ahead of where it is at a time.
    */
   passAhead: 40,
-  passClose: 10,
+  passClose: 30,
   passGap: 0.8,
   passStep: 1.5,
   /** …and counts as clear of it (not following it any more) this much (m) short of that room. */
   passSlack: 0.3,
+  passAdvantage: 1.25,
   /**
    * Push to pass (a help for overtaking you): held up (below pushBelow of its
    * plan, with a slower car that isn't an AI within pushWithin m ahead) for
@@ -546,6 +554,8 @@ export const TRAFFIC = {
   laneLook: 80,
   /** …and being stuck behind a slower car it can't get past, what it loses over this long (s). */
   stuckFor: 8,
+  /** Race position has value even when passing costs some lap time. */
+  playerPositionCost: 2.5,
   /** Only switch lane for a gain of at least this much (s); for a while after a real change of lane (a pass), only for this much. */
   switchGain: 0.08,
   commitTime: 1.5,
@@ -598,19 +608,19 @@ export const TRAFFIC = {
    * most defendAccel m/s² of sideways pull. It gives up once the car has
    * dropped defendDrop m back.
    */
-  defendWithin: 20,
-  defendGap: 8,
+  defendWithin: 30,
+  defendGap: 18,
   /** (…× this if you're already pulling out to the inside.) Not if the line already has it within this much (m) of the inside at the braking point. */
   defendPulling: 1.6,
   defendMin: 1.5,
   /** …and only into a bend that slows the line to this share of its speed at the braking point, unless you're already pulling out to the inside. */
-  defendSlow: 0.82,
+  defendSlow: 0.9,
   /** Covering the inside it keeps this much (m) further in from the edge than a lane would (not quite on the kerb: no room for a car, either way), and eases back onto the line over defendPast m after the apex. */
   coverGap: 0.4,
   defendPast: 25,
   defendLook: 220,
   cornerDrop: 6,
-  defendLead: 4,
+  defendLead: 5,
   defendLatest: 1,
   defendAccel: 7,
   /** …on a run to the braking point no more curved than this (1/m), with the car sliding no more than this (m/s). */
@@ -639,11 +649,12 @@ export const TRAFFIC = {
 export const RACECRAFT = {
   minSpeed: 8,
   maxSlip: 2.5,
+  maxSlipRatio: .14,
   lookahead: 180,
   minCornerDistance: 25,
   minEntryDistance: 8,
   rearRange: 10,
-  attackRange: 18,
+  attackRange: 28,
   switchbackRange: 12,
   overlapMargin: 1,
   sideGap: 0.7,
@@ -652,6 +663,10 @@ export const RACECRAFT = {
   exitOffset: 1.2,
   minBlend: 18,
   attackLead: 2.5,
+  setupLead: 4.5,
+  setupTime: 1.2,
+  setupOffset: 3.5,
+  maxAttackLoss: .5,
   attackCurve: 1 / 70,
   attackSlip: 1,
   speedTolerance: 3,

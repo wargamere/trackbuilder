@@ -266,7 +266,7 @@ export class RacingDriver {
     let lim = Infinity;
     for (let d = 0; d <= DRIVER.pathLook; d += h) {
       const s1 = s + d;
-      const k = this.pathCurvature(s1, lat, keepOnRoad);
+      const k = this.pathCurvature(s1, lat, keepOnRoad, true);
       // Off the line it keeps some grip in hand (for moving across, and for others).
       const vc = Math.min(this.pace.maxSpeed, cornerSpeed(k, this.at(c.bank, s1), this.pace.grip * grip, this.pace.downforce));
       const allowed = Math.sqrt(vc * vc + 2 * brakingDecel(brake, vc, this.at(c.grade, s1), this.pace.drag) * d);
@@ -282,14 +282,24 @@ export class RacingDriver {
    * lane beside the line meets the road's edge, or bends round a car) costs
    * what rounding it off does, not what taking it square would.
    */
-  pathCurvature(s: number, lat: (s: number) => number, keepOnRoad = true): number {
+  pathCurvature(s: number, lat: (s: number) => number, keepOnRoad = true, worldSpace = false): number {
     const h = DRIVER.pathStep;
     const w = DRIVER.pathSmooth;
     const at = (x: number) => (keepOnRoad ? this.clampLat(x, lat(x)) : lat(x));
+    // Smooth the actual path in world space. Smoothing lateral offsets first
+    // changes the path where the centre line turns sharply: even the ideal
+    // racing line could appear to need half its normal speed in a duel.
+    const point = (x: number) => {
+      let px = 0, pz = 0;
+      for (const d of [-w, -w / 2, 0, w / 2, w]) { const p = this.worldAt(x + d, at(x + d)); px += p.x; pz += p.z; }
+      return { x: px / 5, z: pz / 5 };
+    };
+    // Steering feed and the established lane plans retain their road-relative
+    // smoothing. A route's speed limit must measure its actual world geometry.
     const L = (x: number) => (at(x - w) + at(x - w / 2) + at(x) + at(x + w / 2) + at(x + w)) / 5;
-    const a = this.worldAt(s - h, L(s - h));
-    const b = this.worldAt(s, L(s));
-    const q = this.worldAt(s + h, L(s + h));
+    const a = worldSpace ? point(s - h) : this.worldAt(s - h, L(s - h));
+    const b = worldSpace ? point(s) : this.worldAt(s, L(s));
+    const q = worldSpace ? point(s + h) : this.worldAt(s + h, L(s + h));
     const ux = b.x - a.x;
     const uz = b.z - a.z;
     const vx = q.x - b.x;
@@ -333,7 +343,7 @@ export class RacingDriver {
     const sk = st.s + v * DRIVER.curvaturePreview;
     // (Bent round a car beside us: wherever the stretch we keep to cuts the path.)
     const bent = route !== null || (kept !== null && Math.abs(path(st.s + look) - this.lateralAt(st.s + look, lane)) > 0.05);
-    const kAhead = bent || Math.abs(lane) > DRIVER.offLine ? this.pathCurvature(sk, path, !offRoad) : this.at(this.line.curvature, sk);
+    const kAhead = bent || Math.abs(lane) > DRIVER.offLine ? this.pathCurvature(sk, path, !offRoad, route !== null) : this.at(this.line.curvature, sk);
     const k = (2 * Math.sin(alpha)) / dist + DRIVER.curvatureFeed * kAhead;
     const lock = H.maxSteerAngle / (1 + Math.abs(st.speed) / H.steerFalloff);
     o.steer = clamp(Math.atan(k * H.wheelBase) / lock, -1, 1);

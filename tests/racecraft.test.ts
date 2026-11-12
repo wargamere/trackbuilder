@@ -20,6 +20,24 @@ function duel() {
   return { track, driver, bend, side, car, rival, near, corner, craft: new Racecraft(driver, track.center.length) };
 }
 
+test('an existing outside overlap remains a fight after braking starts', () => {
+  const d = duel(); d.corner.brake = 0;
+  d.craft.plan(d.car.state, [d.near], d.corner, true, true);
+  assert.equal(d.craft.action, 'hold-outside');
+});
+
+test('inside defence anticipates a close tow before the player pulls out', () => {
+  const d = duel(); let covered = false;
+  for (let before = 180; before >= 80; before -= 10) {
+    const s = d.bend.brake - before;
+    d.car.placeAt(s, d.driver.lateralAt(s)); d.car.state.speed = d.driver.speedAt(s);
+    d.rival.placeAt(s - 20, d.driver.lateralAt(s - 20)); d.rival.state.speed = d.car.state.speed + .1;
+    const p = new TrafficPlanner(d.driver, d.track, .9); p.plan(d.car.state, [d.car.state, d.rival.state], 0);
+    covered ||= p.action === 'defend-inside';
+  }
+  assert.ok(covered);
+});
+
 test('racecraft commits to the outside instead of surrendering a legitimate overlap', () => {
   const d = duel();
   d.craft.plan(d.car.state, [d.near], d.corner, true, true);
@@ -72,7 +90,7 @@ test('racecraft takes an open inside before turn-in and respects race-control su
 test('racecraft does not invent a late dive, act on the opening AI pack or retain a missing rival', () => {
   for (const reason of ['late', 'pack', 'missing'] as const) {
     const d = duel();
-    if (reason === 'late') d.corner.brake = 0;
+    if (reason === 'late') { d.corner.brake = 0; d.car.placeAt(d.car.state.s, d.side * 3); d.near.lat = -d.side * 3; }
     if (reason === 'pack') d.near.ai = true;
     d.craft.plan(d.car.state, [d.near], d.corner, reason !== 'pack', true);
     if (reason === 'missing') d.craft.plan(d.car.state, [], null, true, true);

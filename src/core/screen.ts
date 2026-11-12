@@ -26,7 +26,7 @@ export interface RaceSetup {
   ghost: boolean;
   /** AI cars in a race, 0–11 (never in practice). */
   opponents: number;
-  /** How fast the AI cars are, 1–100 (%). */
+  /** How fast the AI cars are, 1–110 (%). */
   difficulty: number;
   /** How the grid is decided: a qualifying session, a random draw, or the slot you pick. */
   grid: 'qualifying' | 'random' | 'pick';

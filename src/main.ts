@@ -89,7 +89,7 @@ class Game implements GameContext {
       laps: bootTrack.options.laps,
       ghost: saved?.ghost ?? true,
       opponents: clamp(Math.round(saved?.opponents ?? 3), 0, AI.maxOpponents),
-      difficulty: clamp(Math.round(saved?.difficulty ?? 50), 1, 100),
+      difficulty: clamp(Math.round(saved?.difficulty ?? 50), 1, AI.maxDifficulty),
       grid: saved?.grid === 'qualifying' || saved?.grid === 'random' ? saved.grid : 'pick',
       startSlot: clamp(Math.round(saved?.startSlot ?? 99), 1, AI.maxOpponents + 1),
       weather: saved?.weather === 'rain' || saved?.weather === 'changing' ? saved.weather : 'dry',

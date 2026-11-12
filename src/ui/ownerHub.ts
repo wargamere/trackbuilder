@@ -11,6 +11,7 @@ import { driverDevelopmentView, inboxView, legacyView, personnelView } from './c
 import { currentDecision, driverRating, dynasty, managementOpen } from '../career/dynasty.ts';
 import { engineering, PARTS } from '../career/engineering.ts';
 import { engineeringView, practiceProgrammes } from './engineeringScreen.ts';
+import { calendarOpen } from '../career/calendar.ts';
 
 export type OwnerTab = 'race' | 'drivers' | 'development' | 'manufacturing' | 'upgrades' | 'engineeringHistory' | 'facilities' | 'vehicle' | 'teams' | 'finance' | 'identity' | 'calendar' | 'career' | 'inbox' | 'personnel' | 'legacy';
 export const OWNER_TABS: [OwnerTab, string][] = [['race', 'Overview'], ['development', 'Engineering'], ['drivers', 'Drivers'], ['teams', 'Championship'], ['finance', 'Team'], ['inbox', 'Inbox']];
@@ -82,6 +83,7 @@ export function ownerBody(save: CareerSave, round: number, tab: OwnerTab, action
     const atRisk = e.regulation ? e.researched.filter((id) => PARTS.find((p) => p.id === id)?.area === e.regulation!.area && !e.regulation!.adapted.includes(id)).length : 0;
     if (atRisk) inbox.append(h('p', { class: 'owner-ready-parts', text: `${atRisk} ${atRisk === 1 ? 'design needs' : 'designs need'} regulation adaptation before the final qualifying session.` }), focusable(button('Review regulation changes', () => actions.navigate('development'))));
     content = h('section', { class: 'owner-overview' }, h('div', { class: 'owner-page-heading' }, h('h1', { text: 'Team headquarters' }), h('p', { text: 'Prepare both cars, choose your driver, then go racing.' })),
+      calendarOpen(save) ? h('div', { class: 'season-calendar-invite' }, h('span', { text: `Preseason · ${save.calendar.length} rounds scheduled` }), focusable(button('Configure season calendar', () => actions.navigate('calendar')))) : null,
       h('div', { class: 'owner-overview-grid' }, h('section', { class: 'owner-next-event' },
         h('div', { class: 'owner-race-copy' }, label(`ROUND ${round + 1} / ${track?.def.place ?? 'GRAND PRIX'}`), h('h2', {}, track?.def.name ?? 'Race', h('span', { text: 'Grand Prix' })), h('p', { class: 'owner-race-status', text: save.grid ? 'Grid confirmed' : e.advanced === `${save.season}:${round}` ? 'At the race weekend' : 'Planning before the race weekend' })),
         track ? h('div', { class: 'owner-map-wrap' }, circuitMap(track)) : null,

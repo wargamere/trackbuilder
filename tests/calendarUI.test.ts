@@ -1,0 +1,26 @@
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+import { Window } from 'happy-dom';
+import { newCareer } from '../src/career/career.ts';
+import { SeasonCalendarEditor } from '../src/ui/seasonCalendar.ts';
+const win = new Window();
+Object.defineProperty(globalThis, 'document', { configurable: true, value: win.document });
+test('calendar controls edit a draft, save atomically, add optional circuits and prevent removing the last round', () => {
+  const save = newCareer({ name: 'Calendar', team: 'kestrel', difficulty: 100, length: 'short', rounds: 'short' }, 44);
+  const initial = [...save.calendar], editor = new SeasonCalendarEditor(); let writes = 0;
+  const root = document.body;
+  const render = () => root.replaceChildren(editor.view(save, render, () => { writes++; render(); }));
+  const click = (name: string) => { const b = Array.from(root.querySelectorAll('button')).find(b => (b.getAttribute('aria-label') ?? b.textContent) === name)!; assert.ok(b, name); b.click(); };
+  render(); click('Move Melbourne later'); assert.deepEqual(save.calendar, initial, 'moving a draft never mutates race data');
+  click('Save season calendar'); assert.equal(writes, 1); assert.equal(save.calendar[1], 'world-au-1953');
+  const add = root.querySelector('[aria-label="Circuit to add"]') as unknown as HTMLSelectElement;
+  add.value = 'world-pt-2008'; click('Add circuit'); click('Save season calendar');
+  assert.equal(save.calendar.at(-1), 'world-pt-2008'); assert.equal(writes, 2);
+  click('Remove Portimão'); click('Discard calendar changes'); assert.equal(root.querySelector('[data-track="world-pt-2008"]') !== null, true);
+  const preset = root.querySelector('[aria-label="Calendar preset"]') as unknown as HTMLSelectElement;
+  preset.value = 'all'; preset.dispatchEvent(new win.Event('change') as unknown as Event); assert.equal(root.querySelectorAll('.season-calendar-rounds > li').length, 30);
+  click('Discard calendar changes');
+  for (const li of Array.from(root.querySelectorAll('.season-calendar-rounds > li')).slice(1)) click(`Remove ${li.querySelector('strong')!.textContent}`);
+  assert.equal(root.querySelectorAll('.season-calendar-rounds > li').length, 1);
+  assert.ok(Array.from(root.querySelectorAll('button')).find(b => b.getAttribute('aria-label')?.startsWith('Remove '))!.disabled);
+});

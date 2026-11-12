@@ -382,7 +382,7 @@ export class TrafficPlanner {
     const m = this.meet(me, c, off0, o, TRAFFIC.passHorizon, reachS, reachL);
     if (!m.reached) return 0;
     const slower = Math.max(0, 1 - m.r);
-    if (m.stuck || !m.alongside) return TRAFFIC.stuckFor * slower + TRAFFIC.closeCost;
+    if (m.stuck || !m.alongside) return TRAFFIC.stuckFor * slower + TRAFFIC.closeCost + (!o.ai && slower > .015 ? TRAFFIC.playerPositionCost : 0);
     return m.held * slower + TRAFFIC.closeCost * (m.held > 0 ? 1 : 0.5);
   }
 
@@ -420,10 +420,11 @@ export class TrafficPlanner {
     // A slower car ahead that isn't an AI: go by it on either side, wherever it is on the road.
     // (No new pass in the middle of a tight bend.)
     const noPass = this.inBend && !this.choice.pass;
-    const slow = noPass ? undefined : this.near.find((o) => !o.ai && o.ds > 0 && o.ds < TRAFFIC.passAhead && o.v < v);
+    const slow = this.near.find((o) => !o.ai && o.ds > 0 && o.ds < TRAFFIC.passAhead && o.v < v && (!noPass || Math.abs(me.lateral - o.lat) > this.passRoom()));
     if (slow) {
       for (const side of [1, -1]) {
-        const at = slow.lat + side * this.passRoom();
+        if (noPass && (me.lateral - slow.lat) * side < this.passRoom()) continue;
+        const at = this.driver.lateralAt(ahead, slow.off) + side * this.passRoom();
         const edge = this.driver.lateralAt(ahead, side * 99);
         if ((edge - at) * side >= 0) options.push({ offset: 0, pass: { car: slow.car, side } });
       }
@@ -449,8 +450,29 @@ export class TrafficPlanner {
         return aside;
       }
     }
-    // You close behind, a bend coming: cover the inside of it (if that doesn't squeeze anyone
-    // else; you, behind, it's watching in defendLane()).
+    // Pull out while the tow is still useful, rather than waiting until the
+    // following-speed cap has already matched the slower player's speed.
+    const leader = !this.inBend && !this.racecraft.active && !this.defending && this.tacticsEnabled
+      ? this.near.find(o => !o.ai && o.ds > 2 * CONTACT.halfLength + 1 && o.ds < TRAFFIC.passAhead && o.v + TRAFFIC.passAdvantage < this.driver.speedAt(me.s)) : undefined;
+    const nextBrake = leader ? this.nextCorner(me.s) : null;
+    const catchTime = leader ? (leader.ds + 2 * CONTACT.halfLength + TRAFFIC.marginAlong) / Math.max(1, this.driver.speedAt(me.s) - leader.v) : Infinity;
+    if (leader && (!nextBrake || nextBrake.brake / Math.max(8, me.speed) > catchTime + .3)) {
+      const sides = this.choice.pass?.car === leader.car ? [this.choice.pass.side] : [1, -1];
+      let passChoice: LaneChoice | null = null, passCost = Infinity;
+      for (const side of sides) {
+        const offset = leader.off + side * this.passRoom();
+        const ahead = me.s + TRAFFIC.roomLook;
+        const target = this.driver.lateralAt(ahead, offset);
+        if ((target - this.driver.lateralAt(ahead, leader.off)) * side < this.passRoom() - TRAFFIC.passSlack) continue;
+        if ((this.driver.lateralAt(me.s, offset) - this.driver.lateralAt(me.s, leader.off)) * side < this.passRoom() - TRAFFIC.passSlack) continue;
+        const c: LaneChoice = { offset, pass: { car: leader.car, side } };
+        const cost = this.cost(me, c, v, off0, leader.car);
+        if (cost < passCost) { passChoice = c; passCost = cost; }
+        if (passChoice && this.choice.pass?.car === leader.car && side === this.choice.pass.side) break;
+      }
+      if (passChoice) { this.choice = passChoice; this.committed = TRAFFIC.commitTime; return passChoice; }
+    }
+    // You close behind, a bend coming: cover the inside without squeezing an overlap.
     const def = this.tacticsEnabled && !this.racecraft.active ? this.defendLane(me) : null;
     if (def !== null) {
       const c: LaneChoice = { offset: def };
@@ -470,7 +492,7 @@ export class TrafficPlanner {
         this.choice = c;
         // A legitimate outside overlap can contest the braking zone too. Only a
         // switchback deliberately gives up entry speed to concentrate on the exit.
-        this.fighting = this.racecraft.action === 'attack-inside' || (this.racecraft.action === 'hold-outside' && this.fighting);
+        this.fighting = this.racecraft.action === 'attack-inside' || this.racecraft.action === 'attack-outside' || (this.racecraft.action === 'hold-outside' && this.fighting);
         return c;
       }
       this.racecraft.reject();
@@ -568,7 +590,12 @@ export class TrafficPlanner {
       }
       // In our way: we'd reach it before we're clear of it across the road (pulling out to
       // pass, we don't hold back for it).
-      const inWay = (gap < 2 && overlapNow) || this.wouldHit(me, this.choice, lane, other, reachS, reachL);
+      // Once a committed attack has earned lateral room, don't keep imposing
+      // a nose-to-tail gap because both ideal lines converge at a future apex.
+      // Overlap corridors and the cut-across guard still reserve physical room.
+      const committed = this.racecraft.target === o;
+      const predicted = committed ? this.meet(me, this.choice, lane, other, TRAFFIC.sideTime, reachS, reachL).held > 0 : this.wouldHit(me, this.choice, lane, other, reachS, reachL);
+      const inWay = (gap < 2 && overlapNow) || predicted;
       if (!inWay) continue;
       // (Right up behind you, in your tow, ready to pounce; further back behind another AI.)
       const want = TRAFFIC.gapBase + (human ? TRAFFIC.gapTimeHuman : TRAFFIC.gapTime) * v;
@@ -608,6 +635,8 @@ export class TrafficPlanner {
     // You get a car's width and a little: hard, but fair.
     const roomHuman = 2 * CONTACT.halfWidth + TRAFFIC.keepGapHuman + this.bendRoom;
     const reach = 2 * CONTACT.halfLength + TRAFFIC.keepReach;
+    const left = leftOf(this.track.center.tangents[Math.max(0, me.trackIndex)]);
+    const myAcross = me.vx * left.x + me.vz * left.y;
     for (const o of cars) {
       if (o === me || Math.abs(o.y - me.y) > CONTACT.heightGap) continue;
       const ds = along(me.s, o.s, this.L);
@@ -620,15 +649,23 @@ export class TrafficPlanner {
       // Right in line, nose to tail: that's for following, not for room beside.
       if (Math.abs(side) < CONTACT.halfWidth) continue;
       const r = aiCars.has(o) ? room : roomHuman;
-      if (side > 0) hi = Math.min(hi, Math.max(o.lateral - r, me.lateral));
-      else lo = Math.max(lo, Math.min(o.lateral + r, me.lateral));
+      const theirAcross = o.vx * left.x + o.vz * left.y;
+      const closing = Math.max(0, (myAcross - theirAcross) * Math.sign(side));
+      const driftRoom = Math.min(TRAFFIC.keepDriftMax, closing * TRAFFIC.keepDriftTime);
+      if (side > 0) hi = Math.min(hi, Math.max(o.lateral - r, me.lateral - driftRoom));
+      else lo = Math.max(lo, Math.min(o.lateral + r, me.lateral + driftRoom));
     }
     // Passing a car that isn't an AI: stay on our side of it, with room.
     const pass = this.choice.pass;
     if (pass) {
       const ds = along(me.s, pass.car.s, this.L);
       if (ds > -2 * CONTACT.halfLength && ds < TRAFFIC.passClose) {
-        const bound = pass.car.lateral + pass.side * this.passRoom();
+        // A car 20 m ahead is at a different point in the bend. Translate its
+        // observed offset to our station; copying its raw lateral coordinate
+        // steered an early pass towards the wrong edge of a chicane.
+        const off = pass.car.lateral - this.driver.lateralAt(pass.car.s);
+        const otherLat = ds > reach ? this.driver.lateralAt(me.s, off) : pass.car.lateral;
+        const bound = otherLat + pass.side * this.passRoom();
         if (pass.side > 0) lo = Math.max(lo, Math.min(bound, me.lateral + TRAFFIC.passStep));
         else hi = Math.min(hi, Math.max(bound, me.lateral - TRAFFIC.passStep));
       }
@@ -707,6 +744,7 @@ export class TrafficPlanner {
     if (!atk) return null;
     const gap = -atk.ds - 2 * CONTACT.halfLength;
     if (gap > T.defendWithin) return null;
+    if (gap > T.defendGap * .5 && atk.v < me.speed - 1.5) return null;
     const bend = this.nextCorner(me.s);
     if (!bend) return null;
     // An inside overlap already earned is not an invitation to make a reactive block.

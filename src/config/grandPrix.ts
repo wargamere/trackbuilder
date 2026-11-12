@@ -23,7 +23,7 @@ export const GP_DRIVERS: readonly DriverDef[] = [
   { id: 'gp-hamilford', first: 'Lewin', name: 'Hamilford', code: 'HAM', skill: .91 },
   { id: 'gp-verstallen', first: 'Maxim', name: 'Verstallen', code: 'VER', skill: 1 },
   { id: 'gp-hadjar', first: 'Isak', name: 'Hadjard', code: 'HAD', skill: .8 },
-  { id: 'gp-norrin', first: 'Landon', name: 'Norrin', code: 'NOR', skill: .96 },
+  { id: 'gp-norrin', first: 'Landon', name: 'Norrin', code: 'NOR', skill: .9 },
   { id: 'gp-piastra', first: 'Oskar', name: 'Piastra', code: 'PIA', skill: .94 },
   { id: 'gp-lawsley', first: 'Leon', name: 'Lawsley', code: 'LAW', skill: .75 },
   { id: 'gp-lindberg', first: 'Arven', name: 'Lindberg', code: 'LIN', skill: .66 },

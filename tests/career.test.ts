@@ -205,7 +205,7 @@ test('career driver ability and physical car performance are independent; the pl
   // Your car: the standard one in the best team, a little down in the worst.
   assert.deepEqual(playerCar(start({ team: 'aurora' })), { grip: 1, pull: 1, top: 1 });
   const slow = playerCar(start({ team: 'goldcrest' }));
-  assert.ok(slow.grip < .8 && slow.grip > .75 && slow.pull < .73 && slow.pull > .7 && slow.top < .91 && slow.top > .9);
+  assert.ok(slow.grip < .55 && slow.grip > .5 && slow.pull < .45 && slow.pull > .4 && slow.top < .78 && slow.top > .75);
   const mid = playerCar(start({ team: 'kestrel' }));
   assert.ok(mid.grip > slow.grip && mid.grip < 1);
   assert.deepEqual(carPerformance(start({ team: 'goldcrest' }), 'oha'), slow);
@@ -338,7 +338,7 @@ test('the career is saved as it goes and comes back the same; damaged saves are 
   const mended = cleanCareer({ v: 1, team: 'vento', name: 42, difficulty: 900, length: 'endless', done: [{ order: ['lin', 'lin', 'ghost', YOU_ID], dnf: ['ghost', 'lin'] }, 'junk'], grid: ['zzz'], history: [{ team: 'nope' }, { team: 'vento', position: 3 }] });
   assert.ok(mended);
   assert.equal(mended.name, 'You');
-  assert.equal(mended.difficulty, 100);
+  assert.equal(mended.difficulty, 110);
   assert.equal(mended.length, 'medium');
   assert.equal(mended.calendar.length, 16);
   assert.equal(mended.done.length, 1);

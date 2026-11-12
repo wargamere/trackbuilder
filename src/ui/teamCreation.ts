@@ -1,4 +1,5 @@
 import { CAREER, type DriverDef, type RaceLength, type SeasonLength } from '../config/career.ts';
+import { AI } from '../config/race.ts';
 import { GP_DRIVERS, GP_TEAMS, RESERVE_DRIVERS } from '../config/grandPrix.ts';
 import type { CareerSave } from '../career/career.ts';
 import { money } from '../career/owner.ts';
@@ -57,7 +58,7 @@ export function teamCreation(draft: TeamDraft, render: () => void, start: (save:
   for (const input of [principal, name]) input.addEventListener('keydown', (e) => { if (!['Escape', 'Enter', 'NumpadEnter'].includes(e.code)) e.stopPropagation(); });
   const lengths = segmented<RaceLength>([['short', 'Short'], ['medium', 'Medium'], ['long', 'Long']], (value) => { draft.length = value; render(); }); lengths.set(draft.length);
   const seasons = segmented<SeasonLength>([['short', '8 races'], ['standard', '16 races'], ['full', '24 races']], (value) => { draft.rounds = value; render(); }); seasons.set(draft.rounds);
-  const speed = slider(1, 100, 1, (n) => draft.difficulty = n, () => {}, (n) => `${n}%`); speed.set(draft.difficulty);
+  const speed = slider(1, AI.maxDifficulty, 1, (n) => draft.difficulty = n, () => {}, (n) => `${n}%`); speed.set(draft.difficulty);
   const seats = h('div', { class: 'team-seat-selection' });
   for (const i of [0, 1] as const) {
     const d = driverDef(draft.drivers[i])!;

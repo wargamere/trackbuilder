@@ -73,9 +73,9 @@ export const CAREER = {
    * much less grip, engine pull and engine speed ceiling. Installed parts
    * improve their own car on top of this baseline.
    */
-  carGrip: 0.22,
-  carPull: 0.3,
-  carTop: 0.1,
+  carGrip: 0.5,
+  carPull: 0.6,
+  carTop: 0.25,
   /** The weather for a round: this often rain all race, this often changing (rain on the way), else dry. */
   rain: 0.08,
   changing: 0.22,

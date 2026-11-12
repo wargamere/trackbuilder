@@ -1,4 +1,20 @@
 /* Career shares the editor's paper, blue ink, yellow actions and native controls. */
+.season-calendar-invite, .season-calendar-heading, .season-calendar-add, .season-calendar-save { display: flex; align-items: center; flex-wrap: wrap; gap: .7rem; }
+.season-calendar-invite { justify-content: space-between; padding: .8rem; border: 1px solid var(--ink); margin-bottom: .8rem; }
+.season-calendar-heading { justify-content: space-between; align-items: flex-start; margin-bottom: 1rem; }
+.season-calendar-heading > div { flex: 1 1 20rem; }
+.season-calendar-editor select { max-width: 100%; min-width: 0; padding: .6rem; color: var(--ink); background: var(--paper); border: 1px solid var(--ink); border-radius: .25rem; font: inherit; }
+.season-calendar-rounds { list-style: none; margin: 0 0 1rem; padding: 0; }
+.season-calendar-rounds > li { display: grid; grid-template-columns: 2rem minmax(0, 1fr) auto; align-items: center; gap: .6rem; padding: .6rem 0; border-bottom: 1px solid #203a8b26; }
+.season-calendar-track { display: flex; flex-direction: column; min-width: 0; overflow-wrap: anywhere; }
+.season-calendar-track small { opacity: .7; }
+.season-calendar-actions { display: flex; gap: .3rem; }
+.season-calendar-actions .btn { padding: .4rem .6rem; min-width: 2.1rem; }
+.season-calendar-add select { flex: 1 1 16rem; }
+.season-calendar-save { position: sticky; bottom: 0; z-index: 2; padding: .8rem 0; margin-top: .5rem; border-top: 1px solid #203a8b26; background: var(--paper); }
+.season-calendar-save > span { flex: 1 1 100%; }
+.season-calendar-editor .btn:disabled { opacity: .35; }
+@media (max-width: 540px) { .season-calendar-rounds > li { grid-template-columns: 1.5rem minmax(0, 1fr); } .season-calendar-actions { grid-column: 2; } .season-calendar-heading > select { width: 100%; } }
 .career.owner-mode, .career.creating-team { color: var(--ink); background: var(--paper); }
 .career.owner-mode[data-view='hub'] > .panel { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; width: 100%; height: 100%; max-height: 100%; min-width: 0; padding: 0; border: 0; border-radius: 0; box-shadow: none; text-align: left; background: var(--paper); }
 .owner-mode .panel > *, .owner-layout > * { min-width: 0; }

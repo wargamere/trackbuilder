@@ -20,3 +20,13 @@ Race results update board confidence, morale, reputation and supporters. A seaso
 Existing saves retain money, drivers, results, grids and earned car performance. A previously paid generic package still completes under its original rules and is shown in Research until delivery. Engineering initializes without a fee or replaying old rewards. Research designs, stock, physical-car fitments, projects, resource points, workforce and facilities persist; unadapted parts in a regulation-affected department are removed at the season boundary. The seasonal spending allowance resets.
 
 Mechanical failure probabilities apply to AI-controlled cars. The selected player's car is never forced to retire by a scripted failure. Operating expenses settle once per completed race. Insufficient cash releases specialist contracts after charging the available balance; no hidden debt is created.
+
+## Season calendars
+
+Before the first on-track session of each season, open **Configure season calendar** on Overview or **Championship → Calendar**. Choose any 1–30 unique real circuits, add or remove races, reorder them, or start from an 8/16/24/30-round preset. Save applies the whole draft at once; Discard leaves the saved schedule intact. Starting practice, qualifying or the race locks the season, including practice with no completed lap. Completed results cannot be moved to different circuits. A custom schedule carries into the next preseason and can be edited again; the season-review action opens that editor.
+
+## Car performance and expert difficulty
+
+The physical car gap is larger for every entrant, including the selected driver and AI teammate. A 52% base car has 76% of the reference grip, 71.2% of its engine pull and 88% of its engine speed ceiling, before fitted parts and driver development. Qualifying, race cars, lane planning and the player's braking advice use those capabilities. No finishing position is assigned from the car rating.
+
+The existing 1–100 difficulty pace curve remains unchanged. Levels 101–110 are an additional expert challenge: at 110 the AI receives 8% more grip, 10% more engine pull and a 4% higher engine ceiling, and uses the full brakes. The bonus scales in over those ten levels and applies consistently to qualifying and racing; it is not a catch-up adjustment. Difficulty up to 110 persists in career and quick-race settings. Norrin's base roster rating is 90.

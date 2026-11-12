@@ -81,7 +81,7 @@ export class RaceSetupScreen implements Screen {
     // Cars counts you too: 1 = just you, 12 = you and eleven AI cars.
     this.carsSlider = slider(1, AI.maxOpponents + 1, 1, (n) => this.set({ opponents: n - 1 }, false), () => this.render(), (n) => (n === 1 ? S.carsSolo : fmt(S.carsValue, { n })));
     this.carsHint = h('p', { class: 'setup-hint' });
-    this.diffSlider = slider(1, 100, 1, (n) => this.set({ difficulty: n }, false), () => {}, (n) => fmt(S.difficultyValue, { n }));
+    this.diffSlider = slider(1, AI.maxDifficulty, 1, (n) => this.set({ difficulty: n }, false), () => {}, (n) => fmt(S.difficultyValue, { n }));
     this.diffHint = h('p', { class: 'setup-hint' });
     this.gridChoice = segmented<GridKind>(
       [
@@ -283,7 +283,7 @@ export class RaceSetupScreen implements Screen {
     this.ghostHint.textContent = hasGhost ? S.ghostHint : S.ghostNone;
     const hints = S.difficultyHints;
     const k = d.difficulty >= 95 ? 4 : d.difficulty >= 75 ? 3 : d.difficulty >= 45 ? 2 : d.difficulty >= 20 ? 1 : 0;
-    this.diffHint.textContent = hints[k];
+    this.diffHint.textContent = this.draft.difficulty > 100 ? S.expertDifficultyHint : hints[k];
     this.gridHint.textContent = fmt(S.gridHints[d.grid], { n: AI.qualifyingLaps });
     this.assistsLine.textContent = assistsSummary(settings().assists);
     this.conditionsLine.textContent = conditionsSummary(d, this.game.track.options.time);
