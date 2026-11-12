@@ -14,7 +14,8 @@ test('duelling on the same racing line does not invent phantom braking corners',
   }
 });
 for (const [id, approach] of [['world-au-1953', 260], ['world-gb-1948', 130]] as const) {
-  test(`${id}: a stronger AI car races a 52% player car at full pace instead of staying in its wake`, () => {
+  test(`${id}: a stronger AI car races a slower player car at full pace instead of staying in its wake`, () => {
+    // Deliberately slow traffic fixture, independent of career balance values.
     const run = approachBattle(circuit(id), { mode: 'attack', approach, playerDifficulty: 1, playerHardware: { grip: .76, pull: .712, top: .88 } });
     if (id === 'world-au-1953') assert.ok(run.finalGap < -5, `actually clears the player: ${run.finalGap.toFixed(2)} m`);
     else { assert.ok(run.minGap < 2, 'earns a real overlap into the corner'); assert.ok(run.finalGap < 12, 'keeps attacking the defending player'); }

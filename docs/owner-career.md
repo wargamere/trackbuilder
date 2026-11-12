@@ -27,6 +27,6 @@ Before the first on-track session of each season, open **Configure season calend
 
 ## Car performance and expert difficulty
 
-The physical car gap is larger for every entrant, including the selected driver and AI teammate. A 52% base car has 76% of the reference grip, 71.2% of its engine pull and 88% of its engine speed ceiling, before fitted parts and driver development. Qualifying, race cars, lane planning and the player's braking advice use those capabilities. No finishing position is assigned from the car rating.
+Car performance uses the earlier, milder balance for every entrant, including the selected driver and AI teammate. A 52% base car has 89.44% of the reference grip, 85.6% of its engine pull and 95.2% of its engine speed ceiling, before fitted parts and driver development. Qualifying, race cars, lane planning and the player's braking advice use those capabilities. No finishing position is assigned from the car rating.
 
 The existing 1–100 difficulty pace curve remains unchanged. Levels 101–110 are an additional expert challenge: at 110 the AI receives 8% more grip, 10% more engine pull and a 4% higher engine ceiling, and uses the full brakes. The bonus scales in over those ten levels and applies consistently to qualifying and racing; it is not a catch-up adjustment. Difficulty up to 110 persists in career and quick-race settings. Norrin's base roster rating is 90.
