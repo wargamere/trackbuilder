@@ -2,8 +2,10 @@ import { CAREER, YOU_ID } from '../config/career.ts';
 import type { CareerSave, RoundResult } from './career.ts';
 import { teamsFor } from './roster.ts';
 import { cleanDynasty, createDynasty, researchDiscount, researchDuration, researchMultiplier, weekendApproach, type DynastyState } from './dynasty.ts';
+import { cleanEngineering, type EngineeringState } from './engineering.ts';
 
 export interface OwnerState {
+  engineering?: EngineeringState;
   world?: DynastyState;
   selected: string;
   cash: number;
@@ -162,6 +164,7 @@ export function cleanOwner(raw: unknown, team: string, teamSeats?: readonly [str
     development: Math.floor(num('development', 5)), facilities: Math.floor(num('facilities', 3)), project: r.project === true,
   };
   const world = cleanDynasty(r.world); if (world) owner.world = world;
+  const engineering = cleanEngineering(r.engineering); if (engineering) owner.engineering = engineering;
   if (typeof r.target === 'number' && Number.isFinite(r.target)) owner.target = Math.max(1, Math.min(12, Math.floor(r.target)));
   if (typeof r.sponsor === 'string' && SPONSORS.some((s) => s.id === r.sponsor)) owner.sponsor = r.sponsor;
   if (r.research && typeof r.research === 'object' && owner.project) {

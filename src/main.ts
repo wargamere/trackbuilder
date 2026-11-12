@@ -1,7 +1,6 @@
 import css from './ui/style.css?inline';
 import ownerCss from './ui/owner.css?inline';
 import campaignCss from './ui/campaign.css?inline';
-import ownerSceneCss from './ui/ownerScene.css?inline';
 import { installCommonFixes } from './core/browserInput.ts';
 import { audio } from './audio/audio.ts';
 import { STR } from './config/strings.ts';
@@ -38,7 +37,7 @@ import { RaceSetupScreen } from './ui/raceSetupScreen.ts';
  */
 
 const style = document.createElement('style');
-style.textContent = css + ownerCss + campaignCss + ownerSceneCss;
+style.textContent = css + ownerCss + campaignCss;
 document.head.append(style);
 document.documentElement.dataset.platform = PLATFORM;
 document.title = STR.gameName;

@@ -100,6 +100,8 @@ export interface RaceEventSpec {
   qualified(order: string[], times: Record<string, number | null>): void;
   /** The race is over. */
   finished(result: EventResult): void;
+  /** A valid practice lap, used by owner-career research programmes. */
+  practised?(time: number): void;
   /** Leave the session without finishing it (back to the paddock). */
   leave(): void;
 }

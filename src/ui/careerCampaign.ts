@@ -1,6 +1,5 @@
 import type { CareerSave } from '../career/career.ts';
-import { teamStandings } from '../career/career.ts';
-import { ACHIEVEMENTS, APPROACHES, currentDecision, departmentCost, DEPARTMENTS, driverProgress, driverRating, dynasty, failureChance, hireStaff, managementOpen, operatingCosts, releaseStaff, resolveDecision, selectApproach, STAFF, staffMember, trainDriver, TRAINING, upgradeDepartment, weekendApproach } from '../career/dynasty.ts';
+import { ACHIEVEMENTS, currentDecision, departmentCost, DEPARTMENTS, driverProgress, driverRating, dynasty, failureChance, hireStaff, managementOpen, operatingCosts, releaseStaff, resolveDecision, STAFF, staffMember, trainDriver, TRAINING, upgradeDepartment } from '../career/dynasty.ts';
 import { money } from '../career/owner.ts';
 import { driverDef, teamsFor } from '../career/roster.ts';
 import { button, h } from './dom.ts';
@@ -30,28 +29,6 @@ function helmet(paint: number, accent: number, code: string): SVGSVGElement {
   return svg;
 }
 
-export function campaignPulse(save: CareerSave, navigate: (tab: 'inbox' | 'legacy') => void, showDecision = true): HTMLElement {
-  const w = dynasty(save), pending = managementOpen(save) && currentDecision(save);
-  const standings = teamStandings(save), rival = standings.find((r) => r.team.id === w.rival.id), mine = standings.find((r) => r.yours)!;
-  const pulse = h('div', { class: 'campaign-pulse' },
-    stat('BOARD CONFIDENCE', `${Math.round(w.confidence)}%`), stat('TEAM MORALE', mood(w.morale)), stat('REPUTATION', `${Math.round(w.reputation)} / 100`), stat('YOUR SUPPORTERS', number(w.fans)));
-  const decision = action('', () => navigate('inbox'), false, `campaign-inbox-teaser${pending ? ' pending' : ''}`);
-  decision.setAttribute('aria-label', pending ? 'Review team decision' : 'Open team inbox');
-  decision.append(h('span', { class: 'campaign-envelope', text: pending ? '01' : '↗' }), h('span', {}, label(pending ? 'YOUR DECISION IS NEEDED' : 'INSIDE THE TEAM'), h('strong', { text: pending ? pending.title : w.news[0]?.title ?? 'Your team is ready.' }), h('small', { text: pending ? `${pending.from} · Before qualifying` : 'Headlines, team updates and your decisions' })), h('b', { text: '↗' }));
-  return h('section', { class: 'campaign-command', 'data-testid': 'campaign-command' }, pulse, showDecision ? decision : null,
-    h('div', { class: 'campaign-rival-strip' }, label('THE SEASON BATTLE'), h('strong', { text: rival?.team.name ?? 'Your nearest rival' }), h('span', { text: `${mine.points} : ${rival?.points ?? 0} POINTS` }), action(`${w.rival.won}W · ${w.rival.lost}L ↗`, () => navigate('legacy'))));
-}
-
-export function weekendPlanView(save: CareerSave, changed: Changed): HTMLElement {
-  const selected = weekendApproach(save), group = h('div', { class: 'campaign-approaches' }); group.setAttribute('role', 'group'); group.setAttribute('aria-label', 'Weekend approach');
-  for (const spec of APPROACHES) {
-    const b = action('', () => { if (selectApproach(save, spec.id)) changed(); }, !managementOpen(save), `campaign-approach${selected.id === spec.id ? ' selected' : ''}`);
-    b.setAttribute('aria-label', spec.name); b.setAttribute('aria-pressed', String(selected.id === spec.id));
-    b.append(label(spec.short), h('strong', { text: spec.name }), h('small', { text: { balanced: 'Keep every option open', attack: 'More pace · more risk', development: 'Double workshop progress' }[spec.id] })); group.append(b);
-  }
-  return h('section', { class: 'campaign-weekend' }, h('div', { class: 'owner-section-heading' }, label('SET THE WEEKEND DIRECTION'), h('span', { text: save.grid ? 'LOCKED AFTER QUALIFYING' : 'One choice. Both cars.' })), group, h('p', { class: 'campaign-approach-detail', text: selected.detail }));
-}
-
 export function inboxView(save: CareerSave, changed: Changed): HTMLElement {
   const w = dynasty(save), decision = currentDecision(save), feed = h('ol', { class: 'campaign-news' });
   for (const item of w.news) feed.append(h('li', { class: `news-${item.kind}` }, h('div', { class: 'campaign-news-meta' }, label(item.kind.toUpperCase()), h('span', { text: `S${item.season} · ${item.round ? `AFTER R${item.round}` : 'PRE-SEASON'}` })), h('h3', { text: item.title }), h('p', { text: item.body })));
@@ -66,9 +43,9 @@ export function inboxView(save: CareerSave, changed: Changed): HTMLElement {
     if (!managementOpen(save)) desk.append(h('p', { class: 'campaign-notice', text: 'The decision window closed when qualifying set the grid. A new situation arrives next round.' }));
   } else {
     const last = w.decisions.find((d) => d.season === save.season && d.round === save.done.length);
-    desk.append(label('PRINCIPAL’S DESK'), h('h2', { text: last ? 'Decision recorded.' : 'The next chapter is yours.' }), h('p', { text: last ? 'Your decision is saved. Its consequences are already part of your team. New situations arrive between races.' : 'Season decisions, team news and milestones will appear here as the career unfolds.' }));
+    desk.append(label('PRINCIPAL’S DESK'), h('h2', { text: last ? 'Decision recorded.' : 'No decisions pending' }), h('p', { text: last ? 'Your choice is saved. New decisions arrive between races.' : 'Team decisions, news and milestones are recorded here.' }));
   }
-  return h('section', { class: 'owner-card campaign-inbox' }, heading('THE PADDOCK / TEAM INBOX', 'A team with a story.', 'These are your decisions. Money, morale, reputation and development all have a part to play.'), desk, h('div', { class: 'campaign-feed-heading' }, label('LATEST FROM THE FACTORY'), h('span', { text: 'Your saved career journal' })), feed);
+  return h('section', { class: 'owner-card campaign-inbox' }, heading('TEAM', 'Team inbox', 'Review decisions and recent updates from your team.'), desk, h('div', { class: 'campaign-feed-heading' }, label('RECENT UPDATES'), h('span', { text: 'Saved career history' })), feed);
 }
 
 export function driverDevelopmentView(save: CareerSave, changed: Changed): HTMLElement {
@@ -93,7 +70,7 @@ export function personnelView(save: CareerSave, changed: Changed): HTMLElement {
   const w = dynasty(save), cards = h('div', { class: 'campaign-staff-grid' });
   for (const role of ['technical', 'coach', 'engineer'] as const) {
     const current = staffMember(save, role), column = h('section', { class: 'campaign-staff-role' });
-    column.append(label({ technical: 'TECHNICAL LEADERSHIP', coach: 'DRIVER DEVELOPMENT', engineer: 'RACE OPERATIONS' }[role]), h('h2', { text: current?.name ?? 'Build your team.' }), h('p', { class: 'owner-muted', text: current ? `${current.title} · ${money(current.salary)} per race` : 'No specialist appointed. Compare two candidates below.' }));
+    column.append(label({ technical: 'TECHNICAL LEADERSHIP', coach: 'DRIVER DEVELOPMENT', engineer: 'RACE OPERATIONS' }[role]), h('h2', { text: current?.name ?? 'Vacant role' }), h('p', { class: 'owner-muted', text: current ? `${current.title} · ${money(current.salary)} per race` : 'No specialist appointed. Compare the candidates below.' }));
     for (const person of STAFF.filter((p) => p.role === role)) {
       const hired = current?.id === person.id, locked = w.reputation < person.reputation;
       const b = action(hired ? `Release ${person.name}` : locked ? `Requires ${person.reputation} reputation` : `Hire ${person.name}`, () => { if (hired ? releaseStaff(save, role) : hireStaff(save, person.id)) changed(); }, !managementOpen(save) || (!hired && (locked || save.owner!.cash < person.fee + person.salary)), hired ? '' : 'primary');
@@ -101,7 +78,7 @@ export function personnelView(save: CareerSave, changed: Changed): HTMLElement {
     }
     cards.append(column);
   }
-  return h('section', { class: 'owner-card campaign-personnel' }, heading('PEOPLE / YOUR FACTORY', 'Great teams need great people.', 'One specialist per role. Signing fees are paid immediately; salary is paid after each race. Hiring requires the fee plus one salary in reserve. Replacing a specialist does not refund the old signing fee.'),
+  return h('section', { class: 'owner-card campaign-personnel' }, heading('DRIVERS & STAFF', 'Personnel', 'One specialist per role. Pay a signing fee now and a salary after each race. Keep one salary in reserve when hiring. Signing fees are not refunded on replacement.'),
     h('div', { class: 'campaign-pulse' }, stat('APPOINTED', `${Object.keys(w.staff).length} / 3`), stat('OPERATIONS / RACE', money(operatingCosts(save))), stat('REPUTATION', `${w.reputation} / 100`)), cards);
 }
 
@@ -118,7 +95,7 @@ export function departmentsView(save: CareerSave, changed: Changed): HTMLElement
 export function legacyView(save: CareerSave): HTMLElement {
   const w = dynasty(save), rival = teamsFor(save).find((t) => t.id === w.rival.id), trophies = h('div', { class: 'campaign-achievements' });
   for (const [id, name, detail] of ACHIEVEMENTS) trophies.append(h('article', { class: w.achievements.includes(id) ? 'earned' : '' }, h('span', { class: 'campaign-trophy', text: w.achievements.includes(id) ? '◆' : '◇' }), label(w.achievements.includes(id) ? 'ACHIEVED' : 'THE NEXT CHAPTER'), h('h3', { text: name }), h('p', { text: detail })));
-  return h('section', { class: 'owner-card campaign-legacy' }, heading('YOUR CAREER / YOUR LEGACY', 'Make your name mean something.', 'A first point. A first podium. A championship-winning team. Your milestones and your people carry forward.'),
+  return h('section', { class: 'owner-card campaign-legacy' }, heading('CHAMPIONSHIP', 'Career record', 'Season records, team rivalry and career milestones.'),
     h('div', { class: 'campaign-pulse' }, stat('SEASONS COMPLETED', String(save.history.length)), stat('SUPPORTERS', number(w.fans)), stat('MILESTONES', `${w.achievements.length} / ${ACHIEVEMENTS.length}`)),
     h('div', { class: 'campaign-rival-card' }, label('THIS SEASON’S RIVAL'), h('h2', { text: rival?.name ?? 'The next challenger' }), h('strong', { text: `${w.rival.won} WINS · ${w.rival.lost} LOSSES · ${w.rival.tied} DRAWS` }), h('p', { text: 'Each completed race compares both teams’ combined points. Finish the season ahead in the head-to-head to earn the rivalry milestone.' })), trophies);
 }
@@ -131,10 +108,10 @@ export function campaignDebrief(save: CareerSave): HTMLElement {
 
 export function campaignSeasonReview(save: CareerSave): HTMLElement {
   const w = dynasty(save), cost = operatingCosts(save);
-  return h('section', { class: 'campaign-review' }, label('THE OWNER’S SEASON REVIEW'), h('h2', { text: 'The story continues.' }),
+  return h('section', { class: 'campaign-review' }, label('THE OWNER’S SEASON REVIEW'), h('h2', { text: 'Team progress' }),
     h('div', { class: 'campaign-pulse' }, stat('BOARD CONFIDENCE', `${Math.round(w.confidence)}%`), stat('REPUTATION', `${w.reputation} / 100`), stat('FANS', number(w.fans))),
     h('p', { text: `${w.rival.won}–${w.rival.lost} in your rivalry. ${w.achievements.length} career milestones. Your staff, department levels, driver development and remaining funds carry into next season.` }),
     h('small', { text: `Current team operations: ${money(cost)} per race. Your completed board objective bonus, when earned, is already in the finance ledger.` }));
 }
 
-export function reliabilityLabel(save: CareerSave): string { const team = teamsFor(save).find((t) => t.id === save.team)!; return `${(failureChance(save, team.drivers[0]) * 100).toFixed(1)}% AI failure risk`; }
+export function reliabilityLabel(save: CareerSave): string { const team = teamsFor(save).find((t) => t.id === save.team)!, id = team.drivers.find((d) => d !== save.owner?.selected) ?? team.drivers[0]; return `${driverDef(id)!.name} · ${(failureChance(save, id) * 100).toFixed(1)}% failure risk`; }
