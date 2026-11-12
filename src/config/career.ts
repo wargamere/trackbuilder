@@ -62,22 +62,20 @@ export const CAREER = {
    */
   tyreShare: 0.4,
   /**
-   * How fast everyone is. The quickest car with the best driver races at the
-   * career's difficulty; the rest are up to `spread` (of difficulty, 0..1)
-   * below it, `carShare` of that by their car and the rest by the driver.
+   * Driver ability below the career's difficulty (0..1). Car performance is
+   * applied to the physics separately, equally for the player and AI.
    * Each race weekend every driver is up to `form` better or worse.
    */
-  spread: 0.1,
-  carShare: 0.7,
-  form: 0.012,
+  spread: 0.04,
+  form: 0.006,
   /**
-   * Your own car, by your team's car (1 = the quickest): the slowest car has
-   * this much less grip, engine pull and top speed (about 1.5–2 % a lap, the
-   * same as the gap between the quickest and slowest AI cars).
+   * Every team's physical car (1 = the quickest): at rating 0 it has this
+   * much less grip, engine pull and engine speed ceiling. Installed parts
+   * improve their own car on top of this baseline.
    */
-  carGrip: 0.03,
-  carPull: 0.05,
-  carTop: 0.015,
+  carGrip: 0.22,
+  carPull: 0.3,
+  carTop: 0.1,
   /** The weather for a round: this often rain all race, this often changing (rain on the way), else dry. */
   rain: 0.08,
   changing: 0.22,

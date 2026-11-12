@@ -1,15 +1,15 @@
-import { angleDelta, type CarState, type DriveInput } from '../car/physics.ts';
+import { angleDelta, STANDARD_CAR, type CarPerformance, type CarState, type DriveInput } from '../car/physics.ts';
 import { HANDLING } from '../config/handling.ts';
-import { ASSISTS } from '../config/race.ts';
+import { ASSISTS, DEFAULT_SETUP, type CarSetup } from '../config/race.ts';
 import type { Assists } from '../core/settings.ts';
 import { onLane, pitLane } from '../track/pitLane.ts';
 import type { Track } from '../track/track.ts';
 import { wetPace } from './ai.ts';
-import { roadPace } from './racingLine.ts';
+import { carPace, roadPace } from './racingLine.ts';
 import { RacingDriver } from './driver.ts';
 
-const drivers = new WeakMap<Track, RacingDriver>();
-const wetDrivers = new WeakMap<Track, RacingDriver>();
+const drivers = new WeakMap<Track, Map<string, RacingDriver>>();
+const wetDrivers = new WeakMap<Track, Map<string, RacingDriver>>();
 
 /**
  * The racing line at the assists' pace (ASSISTS): what the braking and
@@ -17,13 +17,18 @@ const wetDrivers = new WeakMap<Track, RacingDriver>();
  * track and weather (`wet`: the same share of the grip and brakes there are
  * in the rain). No top speed of its own: only the corners slow it.
  */
-export function assistDriver(track: Track, wet = false): RacingDriver {
+export function assistDriver(track: Track, wet = false, tune: Readonly<CarPerformance> = STANDARD_CAR, setup: CarSetup = DEFAULT_SETUP): RacingDriver {
   const map = wet ? wetDrivers : drivers;
-  let d = map.get(track);
+  let cars = map.get(track);
+  if (!cars) map.set(track, cars = new Map());
+  const key = `${tune.grip}:${tune.pull}:${tune.top}:${setup.wing}:${setup.gears}:${setup.brakes}`;
+  let d = cars.get(key);
   if (!d) {
-    const pace = roadPace({ grip: ASSISTS.grip, brake: ASSISTS.brake, maxSpeed: HANDLING.maxSpeed * 1.3 }, track);
+    const pace = roadPace(carPace({ grip: ASSISTS.grip, brake: ASSISTS.brake, maxSpeed: HANDLING.maxSpeed * 1.3 }, setup, tune), track);
     d = new RacingDriver(track, wet ? wetPace(pace) : pace);
-    map.set(track, d);
+    // Keep only a few recent cars: career upgrades must not accumulate plans forever.
+    if (cars.size >= 4) cars.delete(cars.keys().next().value!);
+    cars.set(key, d);
   }
   return d;
 }
@@ -45,11 +50,11 @@ const scratch: DriveInput = { throttle: 0, brake: 0, steer: 0, handbrake: false 
  * Off below a walking pace, when reversing, and in the pit lane (the line is
  * on the other side of the pit wall; the limiter does the braking there).
  */
-export function applyAssists(track: Track, st: CarState, inp: DriveInput, a: Assists, wet = false): DriveInput {
+export function applyAssists(track: Track, st: CarState, inp: DriveInput, a: Assists, wet = false, tune: Readonly<CarPerformance> = STANDARD_CAR, setup: CarSetup = DEFAULT_SETUP): DriveInput {
   if ((!a.brake && !a.steer) || st.speed < ASSISTS.minSpeed) return inp;
   const lane = pitLane(track);
   if (lane && onLane(lane, st.s, st.lateral)) return inp;
-  const d = assistDriver(track, wet);
+  const d = assistDriver(track, wet, tune, setup);
   const ai = d.drive(st, 0, scratch, { lockGuard: false });
   if (a.brake && ai.brake > inp.brake) {
     const help = inp.brake > 0.05 ? inp.brake + ASSISTS.brakeTopUp : ASSISTS.brakeTouch;

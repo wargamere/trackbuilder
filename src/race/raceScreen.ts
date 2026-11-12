@@ -81,7 +81,7 @@ interface Opponent {
 }
 
 /** A car of the field: an AI's name, colour and pace, and in a championship who it is, its pit box and its luck. */
-type FieldCar = { name: string; paint: number; secondary?: number; difficulty: number } & Partial<Pick<EventCar, 'id' | 'box' | 'failAt'>>;
+type FieldCar = { name: string; paint: number; secondary?: number; difficulty: number } & Partial<Pick<EventCar, 'id' | 'box' | 'failAt' | 'tune'>>;
 
 /** A car in the race order. */
 interface Entry {
@@ -597,7 +597,7 @@ export class RaceScreen implements Screen {
     this.gaps = null;
     this.tower.hide();
     this.syncLive();
-    this.qualSims = this.field(setup.opponents).map((f) => new AuthorLap(t, f.difficulty, false, this.wet, suggestedSetup(t)));
+    this.qualSims = this.field(setup.opponents).map((f) => new AuthorLap(t, f.difficulty, false, this.wet, suggestedSetup(t), f.tune));
     this.hud.setMode('race');
     this.pauseMenu.setMode('qualifying');
     this.rig.snap(car.state);
@@ -665,7 +665,7 @@ export class RaceScreen implements Screen {
     const field = this.field(order.length - 1);
     const laps = this.game.setup.laps;
     field.forEach((f, k) => {
-      const ai = new AiDriver(t, { name: f.name, paint: f.paint, difficulty: f.difficulty, laps, slot: order.indexOf(k), box: f.box ?? k + 1, wet: this.wet, tyreWear: this.game.setup.tyreWear, damage: this.game.setup.damage, mediumLife: this.game.event?.tyreLife });
+      const ai = new AiDriver(t, { name: f.name, paint: f.paint, difficulty: f.difficulty, tune: f.tune, laps, slot: order.indexOf(k), box: f.box ?? k + 1, wet: this.wet, tyreWear: this.game.setup.tyreWear, damage: this.game.setup.damage, mediumLife: this.game.event?.tyreLife });
       const model = this.aiModels[k];
       model.setPaint(f.paint, f.secondary);
       model.root.visible = true;
@@ -827,7 +827,7 @@ export class RaceScreen implements Screen {
     const assists = settings().assists;
     car.gearbox = assists.gears;
     let inp = session.phase === 'racing' ? this.input.sample(this.tickInput) : session.phase === 'finished' ? BRAKE : NO_INPUT;
-    if (session.phase === 'racing') inp = applyAssists(this.game.track, car.state, this.tickInput, assists, this.wet);
+    if (session.phase === 'racing') inp = applyAssists(this.game.track, car.state, this.tickInput, assists, this.wet, car.tune, car.setup);
     if (this.autopilot && session.phase === 'racing') inp = this.autopilot.drive(car.state);
     // Under the safety car: no faster than it lets you (the throttle is cut, and the brakes help a little).
     const control = this.control;
@@ -1362,7 +1362,7 @@ export class RaceScreen implements Screen {
         this.lineOverlay.dispose();
       }
       this.lineWet = this.wet;
-      this.lineOverlay = new RacingLineOverlay(t, assistDriver(t, this.wet));
+      this.lineOverlay = new RacingLineOverlay(t, assistDriver(t, this.wet, this.car?.tune, this.car?.setup));
       v.scene.add(this.lineOverlay.mesh);
     }
     this.lineOverlay.mesh.visible = true;

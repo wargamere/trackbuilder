@@ -564,6 +564,10 @@ export const TRAFFIC = {
   yieldTime: 1,
   /** Sliding sideways faster than this (m/s): at most this much throttle, for this long (s) after. */
   recoverSlip: 3,
+  /** At speed, allow the normal slip angle of a fast direction change. Recover
+   * immediately if the car is also straying this far from its intended path. */
+  recoverSlipRatio: 0.16,
+  recoverOffLine: 2.5,
   recoverTime: 0.4,
   recoverThrottle: 0.35,
   /** Another (non-AI) car's drift across the road eases off over this long (s) in the prediction. */

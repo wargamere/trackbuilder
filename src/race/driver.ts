@@ -4,7 +4,7 @@ import { DRIVER } from '../config/race.ts';
 import { clamp } from '../core/math.ts';
 import { leftOf } from '../track/spline.ts';
 import type { Track } from '../track/track.ts';
-import { brakingDecel, cornerSpeed, racingLine, speedProfile, type Pace, type RacingLine, type SpeedPlan } from './racingLine.ts';
+import { brakingDecel, cornerSpeed, drivingAccel, racingLine, speedProfile, type Pace, type RacingLine, type SpeedPlan } from './racingLine.ts';
 
 /** A stretch across the road (m left of the centre line) for a car to keep within. */
 export interface Corridor {
@@ -118,13 +118,12 @@ export class RacingDriver {
     brakeBack(late, this.lateBrake);
     brakeBack(sm);
     // And how fast it really gets there, accelerating out of each bend.
-    const H = HANDLING;
     const sp = Float32Array.from(sm);
     for (let round = 0; round < 2; round++) {
       for (let i = 0; i < n; i++) {
         const j = (i + 1) % n;
         const vi = sp[i];
-        const acc = H.engineAccel * Math.max(0, 1 - vi / H.maxSpeed) - H.rollingDrag - H.aeroDrag * (this.pace.drag ?? 1) * vi * vi - 9.81 * H.slopeFactor * c.grade[i];
+        const acc = drivingAccel(vi, this.pace, c.grade[i]);
         const reach = Math.sqrt(Math.max(0, vi * vi + 2 * acc * c.spacing));
         if (reach < sp[j]) sp[j] = reach;
       }

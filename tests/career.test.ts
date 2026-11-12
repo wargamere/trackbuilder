@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
   aiDifficulty,
+  carPerformance,
   carOrder,
   carRank,
   CareerStore,
@@ -174,7 +175,7 @@ test('retirements, poles and fastest laps are counted', () => {
   assert.deepEqual([val?.poles, val?.fastest], [1, 1]);
 });
 
-test('AI pace: the best driver in the best car races at the career’s difficulty, the rest up to the spread below, by car more than by driver; your own car is your team’s', () => {
+test('career driver ability and physical car performance are independent; the player receives the same hardware', () => {
   const save = start({ difficulty: 80 });
   const at = (id: string) => {
     // (Averaged over a season's rounds: each weekend's form evens out.)
@@ -186,9 +187,14 @@ test('AI pace: the best driver in the best car races at the career’s difficult
   const all = lineup(save).filter((e) => !e.you).map((e) => at(e.id));
   assert.ok(Math.min(...all) > 0.8 - CAREER.spread - CAREER.form && Math.max(...all) <= 0.8 + CAREER.form);
   assert.ok(Math.max(...all) - Math.min(...all) > CAREER.spread * 0.7, 'the field is spread out');
-  // A better car beats a better driver in a much worse one; teammates differ by the driver.
-  assert.ok(at('oka') > at('har'), 'second driver of the best team vs first driver of the fourth');
+  // Ability is independent of hardware; stronger cars win through their physics.
+  assert.ok(at('har') > at('oka'));
   assert.ok(at('lin') > at('oka'));
+  const ability = aiDifficulty(save, 3, 'oka');
+  const hardware = carPerformance(save, 'oka');
+  save.cars.aurora = .2;
+  assert.equal(aiDifficulty(save, 3, 'oka'), ability, 'hardware is not double-counted as driver skill');
+  assert.ok(carPerformance(save, 'oka').pull < hardware.pull);
   // Form: the same driver is a little different from round to round, and the same when asked again.
   assert.notEqual(aiDifficulty(save, 0, 'lin'), aiDifficulty(save, 1, 'lin'));
   assert.equal(aiDifficulty(save, 3, 'nak'), aiDifficulty(save, 3, 'nak'));
@@ -199,9 +205,10 @@ test('AI pace: the best driver in the best car races at the career’s difficult
   // Your car: the standard one in the best team, a little down in the worst.
   assert.deepEqual(playerCar(start({ team: 'aurora' })), { grip: 1, pull: 1, top: 1 });
   const slow = playerCar(start({ team: 'goldcrest' }));
-  assert.ok(slow.grip < 1 && slow.grip > 0.95 && slow.pull < 1 && slow.pull > 0.93 && slow.top < 1 && slow.top > 0.97);
+  assert.ok(slow.grip < .8 && slow.grip > .75 && slow.pull < .73 && slow.pull > .7 && slow.top < .91 && slow.top > .9);
   const mid = playerCar(start({ team: 'kestrel' }));
   assert.ok(mid.grip > slow.grip && mid.grip < 1);
+  assert.deepEqual(carPerformance(start({ team: 'goldcrest' }), 'oha'), slow);
 });
 
 test('each round’s weather and mechanical failures are the same every time they’re asked, mostly dry, and failures are rare and never yours', () => {

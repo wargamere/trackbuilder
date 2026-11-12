@@ -212,14 +212,16 @@ export class RaceSession {
       out.push({ type: 'trackLimits' });
     }
     const L = this.length;
-    const ds = (now.s - prev.s + L) % L; // forward progress this tick
+    // Avoid adding a whole lap to positive distances: that rounds away tiny
+    // differences at a gate exactly on a centre-line vertex (notably Spielberg).
+    const ds = now.s >= prev.s ? now.s - prev.s : now.s - prev.s + L;
     if (ds <= 0 || ds > RACE.maxProgressPerTick) return; // not moving forward along the track, or a jump
     const near = Math.abs(now.lateral) <= this.reach;
     const t0 = (this.tick - 1) * this.dt;
     const crossedAt = (mark: number): number | null => {
-      const d = (mark - prev.s + L) % L;
-      if (d <= 0 || d > ds) return null;
-      return t0 + (d / ds) * this.dt; // interpolate within the tick
+      const d = mark > prev.s ? mark - prev.s : mark - prev.s + L;
+      if (d <= 0 || d > ds + 1e-7) return null;
+      return t0 + clamp(d / ds, 0, 1) * this.dt; // interpolate within the tick
     };
 
     // Checkpoints, in order. Reaching a later one with an earlier one still to pass means that
@@ -244,7 +246,9 @@ export class RaceSession {
     }
 
     // Finish line (s = 0 / L).
-    const tf = crossedAt(L);
+    // Unlike checkpoints, the finish has no consumed gate index. Require the
+    // actual wrap so rounding just before it cannot start/finish two laps.
+    const tf = now.s < prev.s ? crossedAt(L) : null;
     if (tf === null || !near) return;
     if (this.lapStart === null) {
       this.lapStart = tf;

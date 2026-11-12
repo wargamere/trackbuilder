@@ -30,7 +30,8 @@ export interface DriveInput {
 
 export const NO_INPUT: Readonly<DriveInput> = { throttle: 0, brake: 0, steer: 0, handbrake: false };
 /** The standard car: all of its grip, engine pull and top speed (see CarPhysics.tune). */
-export const STANDARD_CAR: Readonly<{ grip: number; pull: number; top: number }> = { grip: 1, pull: 1, top: 1 };
+export interface CarPerformance { grip: number; pull: number; top: number }
+export const STANDARD_CAR: Readonly<CarPerformance> = { grip: 1, pull: 1, top: 1 };
 /** A broken-down car: no drive, and it's brought to a stop where it is (the brakes while it rolls, then held). */
 const BROKEN_ROLLING: Readonly<DriveInput> = { throttle: 0, brake: 1, steer: 0, handbrake: true };
 const BROKEN_STOPPED: Readonly<DriveInput> = { throttle: 0, brake: 0, steer: 0, handbrake: true };
@@ -200,7 +201,7 @@ export class CarPhysics {
   wingDamage = 0;
   bodyDamage = 0;
   /** This car against the standard one: the share of its grip, engine pull and top speed it has (a championship team's car). */
-  tune: Readonly<{ grip: number; pull: number; top: number }> = STANDARD_CAR;
+  tune: Readonly<CarPerformance> = STANDARD_CAR;
   /** Something in the car has failed (a championship's mechanical failures): broken down, whatever the damage. */
   failed = false;
   private readonly track: Track;
