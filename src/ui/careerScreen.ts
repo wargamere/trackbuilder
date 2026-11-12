@@ -44,6 +44,8 @@ import { SetupPanel, setupSummary } from './setupPanel.ts';
 import { ownerBody, ownerHeader, OWNER_TABS, type OwnerTab } from './ownerHub.ts';
 import { teamsFor } from '../career/roster.ts';
 import { freshTeamDraft, teamCreation } from './teamCreation.ts';
+import { dynasty } from '../career/dynasty.ts';
+import { campaignDebrief, campaignSeasonReview } from './careerCampaign.ts';
 
 type Tab = OwnerTab;
 const TABS: readonly Tab[] = OWNER_TABS.map(([id]) => id);
@@ -125,6 +127,7 @@ export class CareerScreen implements Screen {
       takeOwnership(this.save);
       this.game.career.write();
     }
+    if (this.save?.owner && !this.save.owner.world) { dynasty(this.save); this.game.career.write(); }
     this.game.ui.append(this.root);
     const v = this.game.view3d;
     if (v) {
@@ -219,7 +222,15 @@ export class CareerScreen implements Screen {
   private render(): void {
     const createScroll = this.panel.querySelector('.team-create-layout')?.scrollTop ?? 0;
     const marketScroll = this.panel.querySelector('.team-driver-market')?.scrollTop ?? 0;
+    const oldTab = this.panel.querySelector('.owner-layout')?.getAttribute('data-tab');
+    const contentScroll = this.panel.querySelector('.owner-overview, .owner-card')?.scrollTop ?? 0;
+    const layoutScroll = this.panel.querySelector('.owner-layout')?.scrollTop ?? 0;
+    const navScroll = this.panel.querySelector('.owner-nav')?.scrollLeft ?? 0;
     const save = this.save;
+    if (save?.owner) {
+      const identity = teamDef(save.team, save), accent = colour(identity.secondary ?? identity.paint);
+      this.root.style.setProperty('--dynasty-accent', accent); this.root.style.setProperty('--dynasty-glow', `${accent}16`);
+    }
     this.primary = null;
     const view = !save ? 'new' : this.shown ? 'result' : nextRound(save) === null ? 'review' : 'hub';
     this.root.dataset.view = view;
@@ -235,6 +246,19 @@ export class CareerScreen implements Screen {
     if (creation) creation.scrollTop = createScroll;
     const market = this.panel.querySelector('.team-driver-market');
     if (market) market.scrollTop = marketScroll;
+    const content = this.panel.querySelector('.owner-overview, .owner-card');
+    if (content && oldTab === this.tab) content.scrollTop = contentScroll;
+    const layout = this.panel.querySelector('.owner-layout');
+    if (layout && oldTab === this.tab) layout.scrollTop = layoutScroll;
+    const nav = this.panel.querySelector('.owner-nav'), active = nav?.querySelector<HTMLElement>('[aria-current="page"]');
+    if (nav) {
+      nav.scrollLeft = navScroll;
+      if (active) {
+        const left = active.offsetLeft - (nav as HTMLElement).offsetLeft;
+        if (left < nav.scrollLeft) nav.scrollLeft = left;
+        else if (left + active.offsetWidth > nav.scrollLeft + nav.clientWidth) nav.scrollLeft = left + active.offsetWidth - nav.clientWidth;
+      }
+    }
     if (!save && this.creationMode === 'custom') this.panel.querySelectorAll('button').forEach((b) => b.tabIndex = 0);
     const target = this.panel.querySelector<HTMLElement>('.owner-garage');
     if (target && this.game.view3d) {
@@ -712,6 +736,7 @@ export class CareerScreen implements Screen {
       this.header(save, fmt(C.resultTitle, { round: shown.round + 1, track: shown.track })),
       h('p', { class: `career-headline${out ? ' bad' : place <= 3 ? ' good' : ''}`, text: headline }),
       shown.estimated ? h('p', { class: 'setup-hint', text: C.asItStood }) : null,
+      save.owner ? campaignDebrief(save) : null,
       h(
         'div',
         { class: 'career-body' },
@@ -779,6 +804,7 @@ export class CareerScreen implements Screen {
         'div',
         { class: 'career-body' },
         h('h2', { text: fmt(C.reviewTitle, { n: save.season }) }),
+        save.owner ? campaignSeasonReview(save) : null,
         champion?.you ? h('p', { class: 'career-headline good', text: `🏆 ${C.youChampion}` }) : null,
         best?.yours ? h('p', { class: 'career-headline good', text: `🏆 ${C.teamChampion}` }) : null,
         h('div', { class: 'career-champs' }, champion ? big(C.champion, champion.team, champion.name, champion.points) : null, best ? big(C.constructors, best.team, best.team.name, best.points) : null),

@@ -7,9 +7,11 @@ import { button, h } from './dom.ts';
 import { circuitMap } from './ownerGraphics.ts';
 import { developmentView, facilitiesView, financeView, ownerLabel as label, ownerStat as stat, vehicleView } from './ownerOperations.ts';
 import { identityView, recruitmentView } from './teamManagement.ts';
+import { campaignPulse, driverDevelopmentView, inboxView, legacyView, personnelView, weekendPlanView } from './careerCampaign.ts';
+import { currentDecision, driverRating, dynasty, managementOpen, operatingCosts } from '../career/dynasty.ts';
 
-export type OwnerTab = 'race' | 'drivers' | 'development' | 'facilities' | 'vehicle' | 'teams' | 'finance' | 'identity' | 'calendar' | 'career';
-export const OWNER_TABS: [OwnerTab, string][] = [['race', 'Overview'], ['drivers', 'Drivers'], ['development', 'Development'], ['facilities', 'Facilities'], ['vehicle', 'Vehicle'], ['teams', 'Standings'], ['finance', 'Finance'], ['identity', 'My team']];
+export type OwnerTab = 'race' | 'drivers' | 'development' | 'facilities' | 'vehicle' | 'teams' | 'finance' | 'identity' | 'calendar' | 'career' | 'inbox' | 'personnel' | 'legacy';
+export const OWNER_TABS: [OwnerTab, string][] = [['race', 'Overview'], ['drivers', 'Drivers'], ['development', 'Development'], ['facilities', 'Facilities'], ['vehicle', 'Vehicle'], ['teams', 'Standings'], ['finance', 'Finance'], ['identity', 'My team'], ['inbox', 'Team inbox'], ['personnel', 'Personnel'], ['legacy', 'Legacy']];
 interface Actions {
   navigate(tab: OwnerTab): void;
   changed(): void;
@@ -26,9 +28,10 @@ export function ownerHeader(save: CareerSave, active: OwnerTab, navigate: Action
   nav.setAttribute('aria-label', 'Team management');
   for (const [i, [id, name]] of OWNER_TABS.entries()) {
     const b = focusable(button(name, () => navigate(id), { class: active === id ? 'on' : '' }));
-    const index = h('span', { class: 'owner-nav-index', text: `0${i + 1}` });
+    const index = h('span', { class: 'owner-nav-index', text: String(i + 1).padStart(2, '0') });
     index.setAttribute('aria-hidden', 'true');
     b.prepend(index);
+    if (id === 'inbox' && managementOpen(save) && currentDecision(save)) b.append(h('i', { class: 'campaign-nav-dot' }));
     if (active === id) b.setAttribute('aria-current', 'page');
     nav.append(b);
   }
@@ -49,10 +52,10 @@ function driverCards(save: CareerSave, changed: Actions['changed']): HTMLElement
     b.setAttribute('aria-label', `Race as ${d.name}`);
     b.setAttribute('aria-pressed', String(d.you));
     const meter = h('div', { class: 'owner-meter driver-rating' }, h('i'));
-    (meter.firstElementChild as HTMLElement).style.width = `${rating.skill * 100}%`;
+    (meter.firstElementChild as HTMLElement).style.width = `${driverRating(save, d.id) * 100}%`;
     b.append(h('div', { class: 'owner-driver-top' }, label(`DRIVER 0${i + 1}`), h('span', { class: 'owner-driver-check', text: d.you ? '✓' : '+' })),
       h('div', { class: 'owner-driver-identity' }, h('span', { class: 'owner-driver-code', text: d.code }), h('div', {}, h('small', { text: rating.first }), h('strong', { text: d.name }))),
-      h('div', { class: 'owner-driver-stats' }, h('span', {}, h('b', { text: String(row.points) }), ' PTS'), h('span', {}, h('b', { text: `P${standings.indexOf(row) + 1}` }), ' WDC'), h('span', {}, h('b', { text: String(Math.round(rating.skill * 100)) }), ' RATING')),
+      h('div', { class: 'owner-driver-stats' }, h('span', {}, h('b', { text: String(row.points) }), ' PTS'), h('span', {}, h('b', { text: `P${standings.indexOf(row) + 1}` }), ' WDC'), h('span', {}, h('b', { text: String(Math.round(driverRating(save, d.id) * 100)) }), ' RATING')),
       meter, h('span', { class: 'owner-driver-role', text: d.you ? '● YOU WILL DRIVE' : 'AI DRIVER · SELECT TO DRIVE' }));
     group.append(b);
   }
@@ -69,7 +72,7 @@ function operations(save: CareerSave, navigate: Actions['navigate']): HTMLElemen
   };
   return h('div', { class: 'owner-operations' },
     tile('DEVELOPMENT', o.project ? project.name : 'Workshop ready', o.project ? `Delivery in ${o.research?.remaining ?? 1} round(s)` : `${o.development}/5 packages this season`, 'development', '↗'),
-    tile('COMMERCIAL', sponsorFor(save).name, `${money(sponsorFor(save).base)} guaranteed / race`, 'finance', '◈'),
+    tile('YOUR PEOPLE', `${Object.keys(dynasty(save).staff).length} specialists appointed`, `${money(operatingCosts(save))} operations / race`, 'personnel', '◈'),
     tile('HEADQUARTERS', `Level ${o.facilities} facilities`, `${money(o.facilities * 250_000)} additional / race`, 'facilities', '▥'));
 }
 
@@ -112,7 +115,7 @@ export function ownerBody(save: CareerSave, round: number, tab: OwnerTab, action
       h('div', { class: 'owner-race-facts' }, stat('FORECAST', weather === 'rain' ? 'RAIN' : weather === 'changing' ? 'CHANGING' : 'DRY'), stat('CIRCUIT', track ? `${(track.center.length / 1000).toFixed(2)} KM` : '—'), stat('RACE DISTANCE', track ? `${raceLaps(save.length, trackLapTime(track))} LAPS` : '—'), stat('YOUR DRIVER', selected.code)));
     content = h('section', { class: 'owner-overview' },
       h('div', { class: 'owner-page-heading' }, h('div', {}, label('TEAM PRINCIPAL OVERVIEW'), h('h1', { text: 'Race weekend.' })), h('span', { class: 'owner-live', text: '● ALL SYSTEMS READY' })),
-      event, h('div', { class: 'owner-section-heading' }, label('CHOOSE YOUR RACE DRIVER'), h('span', { text: 'Your other car runs with the AI' })), driverCards(save, actions.changed),
+      campaignPulse(save, actions.navigate), event, weekendPlanView(save, actions.changed), h('div', { class: 'owner-section-heading' }, label('CHOOSE YOUR RACE DRIVER'), h('span', { text: 'Your other car runs with the AI' })), driverCards(save, actions.changed),
       operations(save, actions.navigate),
       h('div', { class: 'owner-briefing' }, h('span', { class: 'owner-briefing-icon', text: '◉' }), h('div', {}, label('RACE ENGINEER’S BRIEFING'), h('p', { text: weather === 'rain' ? 'Wet conditions expected. Start on wets, brake earlier and protect the car. Both drivers’ points count.' : weather === 'changing' ? 'Rain is on the way. Watch the wetness indicator and be ready to switch tyres as conditions change.' : 'Dry conditions expected. Check your starting tyres and car setup before qualifying. Bring both cars home.' }))), prep);
   } else if (tab === 'drivers') {
@@ -124,8 +127,11 @@ export function ownerBody(save: CareerSave, round: number, tab: OwnerTab, action
         return h('span', { class: place && place <= 3 ? 'podium' : '', text: place === undefined ? '—' : place === 0 ? 'DNF' : `P${place}` });
       })), h('p', { text: `${standing.wins} wins · ${standing.podiums} podiums · ${standing.dnfs} retirements` })));
     }
-    content = h('section', { class: 'owner-card' }, label('DRIVER MANAGEMENT'), h('h1', { text: 'Two drivers. One ambition.' }), h('p', { class: 'owner-muted', text: 'Choose who you control each weekend. Both drivers keep their own points and qualifying positions when you switch seats.' }), driverCards(save, actions.changed), form, recruitmentView(save, actions.changed));
-  } else if (tab === 'development') content = developmentView(save, actions.changed);
+    content = h('section', { class: 'owner-card' }, label('DRIVER MANAGEMENT'), h('h1', { text: 'Two drivers. One ambition.' }), h('p', { class: 'owner-muted', text: 'Choose who you control each weekend. Both drivers keep their own points and qualifying positions when you switch seats.' }), driverCards(save, actions.changed), driverDevelopmentView(save, actions.changed), form, recruitmentView(save, actions.changed));
+  } else if (tab === 'inbox') content = inboxView(save, actions.changed);
+  else if (tab === 'personnel') content = personnelView(save, actions.changed);
+  else if (tab === 'legacy') content = legacyView(save);
+  else if (tab === 'development') content = developmentView(save, actions.changed);
   else if (tab === 'finance') content = financeView(save, actions.changed);
   else if (tab === 'facilities') content = facilitiesView(save, actions.changed);
   else if (tab === 'vehicle') content = vehicleView(save, () => actions.navigate('development'));
@@ -143,5 +149,5 @@ export function ownerBody(save: CareerSave, round: number, tab: OwnerTab, action
     h('div', { class: 'owner-stats' }, stat('CAR PERFORMANCE', `P${carRank(save, save.team)}`), stat('CAR RATING', `${Math.round(save.cars[save.team] * 100)}%`), stat('TEAM POINTS', String(row.points))),
     h('div', { class: 'owner-garage-note' }, label(o.project ? 'DEVELOPMENT IN PROGRESS' : 'WORKSHOP STATUS'), h('p', { text: o.project ? `${RESEARCH.find((r) => r.id === o.research?.id)?.name ?? 'Performance package'} · ${o.research?.remaining ?? 1} round(s) to delivery` : 'No active project. Find your next performance advantage.' }), focusable(button(o.project ? 'View project ↗' : 'Explore development ↗', () => actions.navigate('development'), { class: 'owner-text-button' }))),
     h('div', { class: 'owner-partner' }, label('OFFICIAL TEAM PARTNER'), h('strong', { text: sponsorFor(save).name.toUpperCase() })));
-  return h('div', { class: `owner-layout${['teams', 'calendar', 'career', 'finance'].includes(tab) ? ' owner-layout-wide' : ''}`, 'data-tab': tab }, side, content, hero);
+  return h('div', { class: `owner-layout${['teams', 'calendar', 'career', 'finance', 'personnel', 'inbox', 'legacy', 'drivers'].includes(tab) ? ' owner-layout-wide' : ''}`, 'data-tab': tab }, side, content, hero);
 }

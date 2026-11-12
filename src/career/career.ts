@@ -6,6 +6,7 @@ import { loadJSON, saveJSON, storage } from '../platform/storage.ts';
 import { cleanOwner, settleOwnerRound, type OwnerState } from './owner.ts';
 import { cleanEntry, driverDef, teamsFor, type RosterSave } from './roster.ts';
 import { GP_TEAMS } from '../config/grandPrix.ts';
+import { createDynasty, driverProgress, driverRating, dynasty, failureChance, settleDynastyRound, startDynastySeason, weekendApproach } from './dynasty.ts';
 
 /**
  * The career's rules, as plain data and functions (no screen, no tracks):
@@ -203,15 +204,16 @@ export function aiDifficulty(save: CareerSave, round: number, id: string): numbe
   const d = driverDef(id);
   const t = teamsFor(save).find((x) => x.drivers.includes(id));
   if (!d || !t) return save.difficulty / 100;
-  const rating = CAREER.carShare * carRating(save, t.id) + (1 - CAREER.carShare) * d.skill;
+  const rating = CAREER.carShare * carRating(save, t.id) + (1 - CAREER.carShare) * driverRating(save, id);
   const form = (dice(save, `${save.season}:${round}:form:${id}`) * 2 - 1) * CAREER.form;
-  return clamp(save.difficulty / 100 - CAREER.spread * (1 - rating) + form, 0.01, 1);
+  return clamp(save.difficulty / 100 - CAREER.spread * (1 - rating) + form + (save.owner && t.id === save.team ? weekendApproach(save, round).pace : 0), 0.01, 1);
 }
 
 /** Your own car this season: the share of the standard car's grip, engine pull and top speed your team's car has. */
 export function playerCar(save: CareerSave): { grip: number; pull: number; top: number } {
   const off = 1 - carRating(save, save.team);
-  return { grip: 1 - CAREER.carGrip * off, pull: 1 - CAREER.carPull * off, top: 1 - CAREER.carTop * off };
+  const progress = save.owner ? driverProgress(save, save.owner.selected) : null;
+  return { grip: 1 - CAREER.carGrip * off + (progress ? Math.floor(progress.xp / 100) * 0.0005 : 0), pull: 1 - CAREER.carPull * off + (save.owner ? weekendApproach(save).pace * 2 / 3 : 0), top: 1 - CAREER.carTop * off };
 }
 
 /** The weather for round `round` (0-based) of this season. */
@@ -225,7 +227,7 @@ export function roundFailures(save: CareerSave, round: number): Record<string, n
   const out: Record<string, number> = {};
   for (const e of lineup(save)) {
     if (e.you) continue;
-    if (dice(save, `${save.season}:${round}:fail:${e.id}`) >= CAREER.failure) continue;
+    if (dice(save, `${save.season}:${round}:fail:${e.id}`) >= failureChance(save, e.id, round)) continue;
     out[e.id] = CAREER.failFrom + dice(save, `${save.season}:${round}:failAt:${e.id}`) * (CAREER.failTo - CAREER.failFrom);
   }
   return out;
@@ -337,6 +339,7 @@ export function setGrid(save: CareerSave, order: readonly string[]): void {
  */
 export function recordRound(save: CareerSave, result: { order: readonly string[]; dnf: readonly string[]; fastest: string | null }): RoundResult | null {
   if (nextRound(save) === null) return null;
+  if (save.owner) dynasty(save);
   const whole = wholeOrder(save, result.order);
   const dnf = whole.filter((id) => result.dnf.includes(id));
   const round: RoundResult = {
@@ -347,6 +350,7 @@ export function recordRound(save: CareerSave, result: { order: readonly string[]
   };
   save.done.push(round);
   settleOwnerRound(save, round);
+  if (save.owner) settleDynastyRound(save, round, teamStandings(save).findIndex((t) => t.yours) + 1, driverStandings(save)[0]?.id ?? null);
   save.grid = null;
   return round;
 }
@@ -402,7 +406,7 @@ export function nextSeason(save: CareerSave, teamId: string): void {
   save.calendar = seasonCalendar(save.rounds, save.season);
   save.done = [];
   save.grid = null;
-  if (save.owner) { save.owner.development = 0; save.owner.target = carRank(save, save.team); }
+  if (save.owner) { save.owner.development = 0; save.owner.target = carRank(save, save.team); startDynastySeason(save); }
 }
 
 /** Saved data made safe: a career as this version understands it, or null if it isn't one. */
@@ -443,6 +447,7 @@ export function cleanCareer(raw: unknown): CareerSave | null {
   const seats = field.find((t) => t.id === save.team)!.drivers;
   const owner = cleanOwner(r.owner, save.team, seats);
   if (owner) save.owner = owner;
+  if (owner?.world && !field.some((t) => t.id === owner.world!.rival.id && t.id !== save.team)) owner.world.rival.id = createDynasty(save).rival.id;
   const ids = new Set(lineup(save).map((e) => e.id));
   const one = (x: unknown) => (typeof x === 'string' && ids.has(x) ? x : null);
   for (const d of Array.isArray(r.done) ? r.done : []) {
