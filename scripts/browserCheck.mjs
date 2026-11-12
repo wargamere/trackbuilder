@@ -93,6 +93,9 @@ try {
   await career.locator('.career-name').fill('Tester');
   await career.getByRole('button', { name: /Start career/ }).click();
   await career.locator('.owner-layout').waitFor();
+  await career.waitForFunction(() => document.querySelector('.owner-lineup-art')?.naturalWidth > 0);
+  assert.ok(await career.locator('.owner-lineup-stage').isVisible(), 'desktop overview presents the team lineup');
+  await career.screenshot({ path: 'test-results/career-cinematic-overview.png' });
   await career.getByRole('button', { name: 'Review team decision', exact: true }).click();
   await career.getByRole('button', { name: 'Promise steady progress', exact: true }).click();
   assert.equal(await career.evaluate(() => window.__game.career.save.owner.world.decisions.length), 1);
@@ -136,6 +139,7 @@ try {
   assert.ok((await career.locator('.career-status').textContent())?.includes('You start 20th of 20'));
   await career.screenshot({ path: 'test-results/career-paddock.png' });
   await career.setViewportSize({ width: 390, height: 844 });
+  assert.ok(await career.locator('.owner-mobile-team').isVisible(), 'phone overview keeps team identity and board confidence');
   await career.screenshot({ path: 'test-results/owner-phone.png' });
   const raceButton = await career.getByRole('button', { name: /Start the race/ }).boundingBox();
   assert.ok(raceButton && raceButton.x >= 0 && raceButton.x + raceButton.width <= 390 && raceButton.y >= 0 && raceButton.y + raceButton.height <= 844, 'phone race action stays fully on screen');
@@ -187,6 +191,8 @@ try {
   assert.equal(entry.name, 'Apex Nova Racing');
   assert.deepEqual(entry.drivers, ['gp-verstallen', 'gp-norrin']);
   assert.deepEqual([entry.paint, entry.secondary], [0x6a42df, 0x5ce6c0]);
+  assert.equal(await custom.locator('.career').evaluate((el) => getComputedStyle(el).getPropertyValue('--team-primary').trim()), '#6a42df', 'cinematic lighting uses your primary colour');
+  assert.equal(await custom.locator('.career').evaluate((el) => getComputedStyle(el).getPropertyValue('--team-secondary').trim()), '#5ce6c0', 'lineup styling uses your accent colour');
   assert.ok((await custom.locator('.owner-account').textContent()).includes('Apex Nova Racing'));
   await custom.reload();
   await custom.waitForFunction(() => window.__game);

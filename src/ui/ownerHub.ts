@@ -10,6 +10,8 @@ import { identityView, recruitmentView } from './teamManagement.ts';
 import { campaignPulse, driverDevelopmentView, inboxView, legacyView, personnelView, weekendPlanView } from './careerCampaign.ts';
 import { currentDecision, driverRating, dynasty, managementOpen, operatingCosts } from '../career/dynasty.ts';
 
+const teamPortrait = new URL('../assets/career/team-drivers.webp', import.meta.url).href;
+
 export type OwnerTab = 'race' | 'drivers' | 'development' | 'facilities' | 'vehicle' | 'teams' | 'finance' | 'identity' | 'calendar' | 'career' | 'inbox' | 'personnel' | 'legacy';
 export const OWNER_TABS: [OwnerTab, string][] = [['race', 'Overview'], ['drivers', 'Drivers'], ['development', 'Development'], ['facilities', 'Facilities'], ['vehicle', 'Vehicle'], ['teams', 'Standings'], ['finance', 'Finance'], ['identity', 'My team'], ['inbox', 'Team inbox'], ['personnel', 'Personnel'], ['legacy', 'Legacy']];
 interface Actions {
@@ -87,7 +89,7 @@ export function ownerBody(save: CareerSave, round: number, tab: OwnerTab, action
   const weather = roundWeather(save, round);
   const ahead = constructors[position - 2];
   const target = o.target ?? teamsFor(save).findIndex((t) => t.id === save.team) + 1;
-  const side = h('aside', { class: 'owner-timeline' }, label('YOUR SEASON'),
+  const side = h('aside', { class: 'owner-timeline' }, label(`SEASON ${String(save.season).padStart(2, '0')} / TIMELINE`),
     h('h2', {}, `ROUND ${String(round + 1).padStart(2, '0')}`, h('small', { text: `/ ${save.calendar.length}` })),
     h('div', { class: 'owner-season-progress' }, ...save.calendar.map((_, i) => h('i', { class: i < round ? 'done' : i === round ? 'current' : '' }))));
   const events = h('ol');
@@ -107,15 +109,30 @@ export function ownerBody(save: CareerSave, round: number, tab: OwnerTab, action
   let content: HTMLElement;
   if (tab === 'race') {
     const prep = h('details', { class: 'owner-preparation' }, h('summary', { text: 'Weekend setup & starting grid' }), ...actions.weekend);
+    const decision = managementOpen(save) ? currentDecision(save) : null;
+    const focus = focusable(button(decision ? 'Review team decision' : 'Manage your drivers', () => actions.navigate(decision ? 'inbox' : 'drivers'), { class: 'primary owner-focus-action' }));
+    const arrow = h('span', { class: 'owner-focus-arrow', text: '→' }); arrow.setAttribute('aria-hidden', 'true'); focus.append(arrow);
+    const briefing = h('section', { class: 'owner-focus-event' },
+      h('div', { class: 'owner-focus-kicker' }, label(decision ? 'TEAM BRIEFING' : 'RACE WEEKEND'), h('span', { text: decision ? '● YOUR DECISION' : save.grid ? '● GRID CONFIRMED' : '● PREPARATION' })),
+      h('div', { class: 'owner-focus-symbol', text: decision ? '◈' : '↗' }),
+      h('h2', { text: decision?.title ?? (save.grid ? 'The team is ready.' : 'Make this weekend count.') }),
+      h('p', { text: decision ? 'Your next decision shapes the team’s future.' : `${selected.name} is your selected race driver. Both cars race for ${mine.name}.` }),
+      focus, h('small', { text: decision ? `${decision.from} / Before qualifying` : 'Your drivers. Your colours. Your championship.' }));
     const event = h('section', { class: 'owner-next-event' },
       h('div', { class: 'owner-race-copy' }, label(`ROUND ${round + 1} / ${save.calendar.length} · ${track?.def.place?.toUpperCase() ?? 'GRAND PRIX'}`),
         h('h2', {}, track?.def.name ?? 'Race', h('span', { text: 'GRAND PRIX' })),
         h('div', { class: 'owner-race-status', text: save.grid ? '● GRID CONFIRMED · READY TO RACE' : '● NEXT SESSION · QUALIFYING' })),
       track ? h('div', { class: 'owner-map-wrap' }, circuitMap(track), h('span', { text: '● START / FINISH' })) : null,
       h('div', { class: 'owner-race-facts' }, stat('FORECAST', weather === 'rain' ? 'RAIN' : weather === 'changing' ? 'CHANGING' : 'DRY'), stat('CIRCUIT', track ? `${(track.center.length / 1000).toFixed(2)} KM` : '—'), stat('RACE DISTANCE', track ? `${raceLaps(save.length, trackLapTime(track))} LAPS` : '—'), stat('YOUR DRIVER', selected.code)));
+    const mobilePortrait = h('img'); mobilePortrait.src = teamPortrait; mobilePortrait.alt = ''; mobilePortrait.draggable = false; mobilePortrait.setAttribute('aria-hidden', 'true');
+    const world = dynasty(save);
+    const mobileIdentity = h('section', { class: 'owner-mobile-team' }, mobilePortrait,
+      label('YOUR TEAM / YOUR CAREER'), h('h2', { text: mine.name }),
+      h('p', { text: lineup(save).filter((d) => d.team.id === save.team).map((d) => d.name).join(' / ') }),
+      h('div', { class: 'owner-mobile-pulse' }, stat('BOARD CONFIDENCE', `${Math.round(world.confidence)}%`), stat('TEAM MORALE', `${Math.round(world.morale)}%`)));
     content = h('section', { class: 'owner-overview' },
-      h('div', { class: 'owner-page-heading' }, h('div', {}, label('TEAM PRINCIPAL OVERVIEW'), h('h1', { text: 'Race weekend.' })), h('span', { class: 'owner-live', text: '● ALL SYSTEMS READY' })),
-      campaignPulse(save, actions.navigate), event, weekendPlanView(save, actions.changed), h('div', { class: 'owner-section-heading' }, label('CHOOSE YOUR RACE DRIVER'), h('span', { text: 'Your other car runs with the AI' })), driverCards(save, actions.changed),
+      h('div', { class: 'owner-page-heading' }, h('div', {}, label('HEADQUARTERS / TEAM PRINCIPAL'), h('h1', { text: 'Your team. Your future.' })), h('span', { class: 'owner-live', text: '● TEAM HQ' })),
+      mobileIdentity, briefing, event, h('div', { class: 'owner-section-heading' }, label('CHOOSE YOUR RACE DRIVER'), h('span', { text: 'Your other car runs with the AI' })), driverCards(save, actions.changed), weekendPlanView(save, actions.changed),
       operations(save, actions.navigate),
       h('div', { class: 'owner-briefing' }, h('span', { class: 'owner-briefing-icon', text: '◉' }), h('div', {}, label('RACE ENGINEER’S BRIEFING'), h('p', { text: weather === 'rain' ? 'Wet conditions expected. Start on wets, brake earlier and protect the car. Both drivers’ points count.' : weather === 'changing' ? 'Rain is on the way. Watch the wetness indicator and be ready to switch tyres as conditions change.' : 'Dry conditions expected. Check your starting tyres and car setup before qualifying. Bring both cars home.' }))), prep);
   } else if (tab === 'drivers') {
@@ -141,7 +158,15 @@ export function ownerBody(save: CareerSave, round: number, tab: OwnerTab, action
     content = h('section', { class: 'owner-card owner-data' }, label('TEAM MANAGEMENT'), h('h1', { text: tab === 'teams' ? 'Every point matters.' : tab === 'calendar' ? 'The road ahead.' : 'Your career.' }), ...body);
   }
 
-  const hero = h('aside', { class: 'owner-hero' },
+  const hero = tab === 'race' ? h('aside', { class: 'owner-hero owner-lineup-stage' },
+    h('div', { class: 'owner-stage-heading' }, label('TWO DRIVERS. ONE TEAM.'), h('span', { text: `SEASON ${String(save.season).padStart(2, '0')}` })),
+    h('div', { class: 'owner-team-wordmark', text: mine.name }),
+    h('img', { class: 'owner-lineup-art' }),
+    h('div', { class: 'owner-stage-rating' }, label('CAR RATING'), h('strong', { text: String(Math.round(save.cars[save.team] * 100)) }), h('span', { text: `P${carRank(save, save.team)} ON THE GRID` })),
+    h('div', { class: 'owner-stage-bottom' },
+      h('div', { class: 'owner-lineup-names' }, ...lineup(save).filter((e) => e.team.id === save.team).map((d, i) => h('div', { class: d.you ? 'selected' : '' }, label(`DRIVER 0${i + 1}${d.you ? ' / YOU DRIVE' : ''}`), h('strong', { text: d.name }), h('small', { text: d.code })))),
+      campaignPulse(save, actions.navigate, false),
+      h('div', { class: 'owner-stage-partner' }, label('OFFICIAL TEAM PARTNER'), h('strong', { text: sponsorFor(save).name })))) : h('aside', { class: 'owner-hero' },
     h('div', { class: 'owner-garage-top' }, label('TEAM GARAGE'), h('span', { class: 'owner-garage-badge', text: 'CAR READY' })),
     h('div', { class: 'owner-team-wordmark', text: mine.name }), h('div', { class: 'owner-garage' }),
     h('div', { class: 'owner-hero-caption' }, h('span', { text: `TB–${String(save.season).padStart(2, '0')}` }), label('DRAG TO INSPECT')),
@@ -149,5 +174,7 @@ export function ownerBody(save: CareerSave, round: number, tab: OwnerTab, action
     h('div', { class: 'owner-stats' }, stat('CAR PERFORMANCE', `P${carRank(save, save.team)}`), stat('CAR RATING', `${Math.round(save.cars[save.team] * 100)}%`), stat('TEAM POINTS', String(row.points))),
     h('div', { class: 'owner-garage-note' }, label(o.project ? 'DEVELOPMENT IN PROGRESS' : 'WORKSHOP STATUS'), h('p', { text: o.project ? `${RESEARCH.find((r) => r.id === o.research?.id)?.name ?? 'Performance package'} · ${o.research?.remaining ?? 1} round(s) to delivery` : 'No active project. Find your next performance advantage.' }), focusable(button(o.project ? 'View project ↗' : 'Explore development ↗', () => actions.navigate('development'), { class: 'owner-text-button' }))),
     h('div', { class: 'owner-partner' }, label('OFFICIAL TEAM PARTNER'), h('strong', { text: sponsorFor(save).name.toUpperCase() })));
+  const portrait = hero.querySelector<HTMLImageElement>('.owner-lineup-art');
+  if (portrait) { portrait.src = teamPortrait; portrait.alt = ''; portrait.draggable = false; portrait.setAttribute('aria-hidden', 'true'); }
   return h('div', { class: `owner-layout${['teams', 'calendar', 'career', 'finance', 'personnel', 'inbox', 'legacy', 'drivers'].includes(tab) ? ' owner-layout-wide' : ''}`, 'data-tab': tab }, side, content, hero);
 }

@@ -1,0 +1,192 @@
+/* The owner hub: a cinematic team presentation with a usable management desk. */
+.career.owner-mode[data-view='hub'] {
+  background: radial-gradient(ellipse at 93% 25%, color-mix(in srgb, var(--team-primary) 36%, transparent), transparent 53%), radial-gradient(ellipse at 56% 4%, color-mix(in srgb, var(--team-secondary) 16%, transparent), transparent 54%), #080a12;
+  isolation: isolate;
+}
+.career.owner-mode[data-view='hub']::before { content: ''; position: absolute; inset: 0; z-index: -1; pointer-events: none; background: repeating-linear-gradient(130deg, #ffffff03 0 1px, transparent 1px 6px); opacity: .32; }
+.career.owner-mode[data-view='hub']::after { content: ''; position: absolute; inset: 13% -20% 0 35%; z-index: -1; pointer-events: none; background: linear-gradient(130deg, transparent 10%, color-mix(in srgb, var(--team-primary) 14%, transparent) 37%, transparent 38%, transparent 45%, #ffffff04 45.2%, transparent 45.5%); transform: skewX(-12deg); }
+.career.owner-mode[data-view='hub'] .owner-top { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 1rem 2rem; padding: 1rem 2.8vw .65rem; border-bottom: 1px solid #ffffff18; background: linear-gradient(#070910c9, #090b1280); }
+.career.owner-mode[data-view='hub'] .owner-brand { gap: .65rem; }
+.career.owner-mode[data-view='hub'] .owner-brand b { color: #f24976; font-size: 1.65rem; letter-spacing: -.12rem; }
+.career.owner-mode[data-view='hub'] .owner-brand span { font-size: 10px; letter-spacing: .15em; }
+.career.owner-mode[data-view='hub'] .owner-brand small { display: inline; font-size: 9px; color: #7f899d; margin-left: 1.5rem; }
+.career.owner-mode[data-view='hub'] .owner-account { order: 0; grid-column: 2; grid-row: 1; display: flex; align-items: center; gap: 1rem; text-align: right; }
+.career.owner-mode[data-view='hub'] .owner-account strong { font-size: 12px; }
+.career.owner-mode[data-view='hub'] .owner-account > span { font-size: 10px; }
+.career.owner-mode[data-view='hub'] .owner-account .owner-funds.btn { color: #d6dce9; background: #ffffff07; border: 1px solid #ffffff20; padding: .4rem .65rem; font-size: 10px; }
+.career.owner-mode[data-view='hub'] .owner-nav { order: 0; grid-column: 1 / -1; grid-row: 2; width: 100%; gap: .15rem; scrollbar-width: none; }
+.career.owner-mode[data-view='hub'] .owner-nav::-webkit-scrollbar { display: none; }
+.career.owner-mode[data-view='hub'] .owner-nav .btn { flex: 0 0 auto; display: block; padding: .6rem 1rem; border-radius: 0; font-size: 11px; font-weight: 750; letter-spacing: .045em; color: #aeb7cb; }
+.career.owner-mode[data-view='hub'] .owner-nav .btn.on { background: #ed416a; color: white; }
+.career.owner-mode[data-view='hub'] .owner-nav .btn.on::after { content: ''; position: absolute; bottom: -4px; left: 0; right: 0; height: 2px; background: #ef4771; }
+.career.owner-mode[data-view='hub'] .owner-nav-index { display: none; }
+.career.owner-mode[data-view='hub'] .owner-layout { grid-template-columns: minmax(175px, 18%) minmax(0, 43%) minmax(0, 39%); padding: 1.7rem 2.8vw .8rem; position: relative; gap: 0; }
+.career.owner-mode[data-view='hub'] .owner-layout-wide { grid-template-columns: minmax(175px, 18%) minmax(0, 82%); }
+.career.owner-mode[data-view='hub'] .owner-layout-wide > .owner-card { padding-left: 1.2rem; padding-right: 1rem; background: linear-gradient(100deg, #0b0f19d9, #0b0f19a6); }
+.career.owner-mode[data-view='hub'] .owner-timeline { padding: .35rem 1.8rem 0 0; }
+.career.owner-mode[data-view='hub'] .owner-timeline > .owner-label { color: #cbd0dc; font-size: 10px; }
+.career.owner-mode[data-view='hub'] .owner-timeline h2 { font-style: normal; font-size: 1.6rem; margin: .65rem 0 1rem; }
+.career.owner-mode[data-view='hub'] .owner-season-progress { margin-bottom: 1.8rem; }
+.career.owner-mode[data-view='hub'] .owner-event.btn { padding: .5rem 0 1.5rem; gap: .8rem; }
+.career.owner-mode[data-view='hub'] .owner-event-index { background: #10141e; width: 1.3rem; height: 1.3rem; border-radius: 50%; font-size: 9px; }
+.career.owner-mode[data-view='hub'] .owner-event.current .owner-event-index { background: transparent; border: 2px solid #f3557b; color: #f8e6ed; box-shadow: 0 0 0 4px #ef477114; }
+.career.owner-mode[data-view='hub'] .owner-event strong { font-size: 12px; }
+.career.owner-mode[data-view='hub'] .owner-event small { font-size: 9px; color: #8490a6; line-height: 1.6; }
+.career.owner-mode[data-view='hub'] .owner-event.current small { color: #f184a0; }
+.career.owner-mode[data-view='hub'] .owner-timeline li:not(:last-child)::after { left: .63rem; top: 2rem; bottom: .2rem; }
+.career.owner-mode[data-view='hub'] .owner-team-position { margin-top: 1.5rem; padding-top: 1.2rem; }
+.career.owner-mode[data-view='hub'] .owner-team-position > strong { font-size: 3rem; }
+.career.owner-mode[data-view='hub'] .owner-objective { background: linear-gradient(120deg, #ffffff06, transparent); border: 0; border-left: 2px solid var(--team-primary); padding: .75rem; }
+.career.owner-mode[data-view='hub'] .owner-overview { padding: 0 1.4rem 1rem .4rem; }
+.career.owner-mode[data-view='hub'] .owner-page-heading { margin-bottom: 1rem; }
+.career.owner-mode[data-view='hub'] .owner-page-heading h1 { font-size: 1.55rem; font-style: normal; letter-spacing: -.035em; margin: .4rem 0 0; }
+.career.owner-mode[data-view='hub'] .owner-page-heading .owner-label { color: #8d99ae; font-size: 9px; }
+.career.owner-mode[data-view='hub'] .owner-live { font-size: 9px; align-self: center; }
+.owner-mobile-team { display: none; }
+.owner-focus-event { position: relative; padding: 1.2rem 1.6rem 1rem; margin-bottom: 1rem; text-align: center; border: 1px solid #ffffff22; background: radial-gradient(ellipse at 50% 0, #cf285b22, transparent 85%), linear-gradient(135deg, #19131ee6, #11121bd9); overflow: hidden; }
+.owner-focus-event::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; background: linear-gradient(90deg, transparent, #f65b84, transparent); }
+.owner-focus-kicker { display: flex; align-items: center; justify-content: space-between; gap: .8rem; }
+.owner-focus-kicker > span { font-size: 9px; color: #ff94ad; letter-spacing: .06em; }
+.owner-focus-kicker .owner-label { color: #afb2c4; font-size: 9px; }
+.owner-focus-symbol { color: #ea6b8f; font-size: 1.8rem; line-height: 1; margin: .7rem 0 .45rem; }
+.owner-focus-event h2 { max-width: 19ch; margin: 0 auto .7rem; font-size: clamp(1.4rem, 2.3vw, 2.2rem); font-style: normal; line-height: 1.08; letter-spacing: -.04em; font-weight: 850; }
+.owner-focus-event p { max-width: 48ch; margin: 0 auto .9rem; color: #b3b7c8; font-size: 11px; line-height: 1.7; }
+.career.owner-mode[data-view='hub'] .owner-focus-action.btn { display: flex; justify-content: space-between; width: 100%; padding: .65rem .85rem; border-radius: 0; font-size: 11px; text-transform: uppercase; letter-spacing: .055em; background: #e7436d; border-color: #f2678b; color: white; }
+.owner-focus-arrow { font-size: 1.1rem; }
+.owner-focus-event > small { display: block; color: #7f8a9e; margin-top: .55rem; font-size: 9px; letter-spacing: .05em; text-transform: uppercase; }
+.career.owner-mode[data-view='hub'] .owner-next-event { border: 1px solid #ffffff21; border-radius: 0; background: linear-gradient(110deg, #171923db, #10141ec7); grid-template-columns: 1.2fr 1fr; }
+.career.owner-mode[data-view='hub'] .owner-next-event::before { background: var(--team-primary); width: 2px; }
+.career.owner-mode[data-view='hub'] .owner-race-copy { padding: 1rem 0 .9rem 1rem; }
+.career.owner-mode[data-view='hub'] .owner-race-copy > .owner-label { font-size: 9px; letter-spacing: .08em; }
+.career.owner-mode[data-view='hub'] .owner-race-copy h2 { font-size: 1.9rem; margin: .55rem 0 .65rem; }
+.career.owner-mode[data-view='hub'] .owner-race-copy h2 span { font-size: 10px; }
+.career.owner-mode[data-view='hub'] .owner-race-status { font-size: 9px; }
+.career.owner-mode[data-view='hub'] .owner-map-wrap { padding: .4rem; }
+.career.owner-mode[data-view='hub'] .owner-circuit-map { height: 105px; }
+.career.owner-mode[data-view='hub'] .owner-race-facts { padding: .65rem 1rem; gap: .6rem; }
+.career.owner-mode[data-view='hub'] .owner-race-facts .owner-stat strong { font-size: 12px; }
+.career.owner-mode[data-view='hub'] .owner-section-heading { margin-top: 1.1rem; }
+.career.owner-mode[data-view='hub'] .owner-section-heading > span { font-size: 9px; }
+.career.owner-mode[data-view='hub'] .owner-overview .owner-drivers { gap: .6rem; margin: .55rem 0 .8rem; }
+.career.owner-mode[data-view='hub'] .owner-overview .owner-driver.btn { border-radius: 0; padding: .7rem .8rem; gap: .4rem; background: #101521a6; }
+.career.owner-mode[data-view='hub'] .owner-overview .owner-driver.selected { border-color: color-mix(in srgb, var(--team-primary) 80%, white); background: linear-gradient(130deg, color-mix(in srgb, var(--team-primary) 16%, transparent), #111522b0); }
+.career.owner-mode[data-view='hub'] .owner-driver.selected .owner-driver-code { color: color-mix(in srgb, var(--team-primary) 50%, white); }
+.career.owner-mode[data-view='hub'] .owner-overview .owner-driver-code { font-size: 1.7rem; }
+.career.owner-mode[data-view='hub'] .owner-overview .owner-driver-identity { gap: .65rem; }
+.career.owner-mode[data-view='hub'] .owner-overview .owner-driver-identity strong { font-size: 12px; }
+.career.owner-mode[data-view='hub'] .owner-overview .owner-driver-stats { gap: .6rem; font-size: 9px; }
+.career.owner-mode[data-view='hub'] .owner-overview .owner-driver-stats b { font-size: 11px; }
+.career.owner-mode[data-view='hub'] .owner-overview .owner-driver-top .owner-label, .career.owner-mode[data-view='hub'] .owner-overview .owner-driver-role { font-size: 9px; }
+.career.owner-mode[data-view='hub'] .owner-overview .driver-rating { display: none; }
+.career.owner-mode[data-view='hub'] .owner-lineup-stage { position: relative; overflow: hidden; border: 0; padding: 0 0 0 .9rem; min-height: 0; isolation: isolate; }
+.owner-lineup-stage::before { content: ''; position: absolute; width: 130%; height: 100%; top: 0; right: -20%; border-radius: 50%; background: radial-gradient(ellipse, color-mix(in srgb, var(--team-primary) 24%, transparent), transparent 68%); z-index: -1; }
+.owner-stage-heading { display: flex; justify-content: space-between; gap: .5rem; position: relative; z-index: 2; padding: .3rem .3rem 0; }
+.owner-stage-heading > span { font-size: 9px; color: #7f8ca4; }
+.career.owner-mode[data-view='hub'] .owner-lineup-stage .owner-team-wordmark { position: absolute; top: 2.2rem; left: .8rem; right: 0; font-size: clamp(2.5rem, 4.7vw, 5rem); max-width: none; line-height: .9; color: #e3e5ef23; z-index: -1; overflow-wrap: anywhere; margin: 0; }
+.owner-lineup-art { position: absolute; top: 2.2rem; right: -5%; width: 107%; height: calc(100% - 5.5rem); object-fit: contain; object-position: center top; mask-image: linear-gradient(#000 0 68%, transparent 94%); pointer-events: none; filter: drop-shadow(0 0 20px #0005); z-index: 0; }
+.owner-stage-rating { position: absolute; top: 37%; right: .1rem; text-align: right; z-index: 1; }
+.owner-stage-rating .owner-label { font-size: 9px; color: #e4e8f3a6; }
+.owner-stage-rating strong { display: block; font-size: clamp(3.8rem, 7vw, 7rem); font-weight: 850; letter-spacing: -.08em; font-style: italic; line-height: 1; color: #ffffffd9; text-shadow: 0 2px 20px #000a; }
+.owner-stage-rating > span { font-size: 9px; color: #a6afc0; }
+.owner-stage-bottom { position: absolute; bottom: 0; left: .9rem; right: 0; z-index: 2; background: linear-gradient(transparent, #090d16dd 35%); padding-top: 2.5rem; }
+.owner-lineup-names { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; padding: .8rem .8rem .8rem .2rem; }
+.owner-lineup-names > div { position: relative; border-top: 1px solid #ffffff30; padding-top: .65rem; }
+.owner-lineup-names > div.selected { border-top: 2px solid var(--team-secondary); }
+.owner-lineup-names .owner-label { font-size: 9px; }
+.owner-lineup-names strong { display: block; font-size: 1.2rem; margin-top: .35rem; }
+.owner-lineup-names small { position: absolute; right: .1rem; top: 1rem; color: #ffffff15; font-style: italic; font-size: 2rem; font-weight: 900; }
+.owner-lineup-stage .campaign-command { margin: 0; }
+.owner-lineup-stage .campaign-pulse { border: 0; background: transparent; gap: .6rem; margin: .2rem 0 .4rem; }
+.owner-lineup-stage .campaign-stat { background: transparent; padding: .55rem .2rem; }
+.owner-lineup-stage .campaign-stat .owner-label { font-size: 8px; letter-spacing: .03em; color: #7f8ca5; }
+.owner-lineup-stage .campaign-stat strong { font-size: 1.2rem; margin-top: .4rem; }
+.owner-lineup-stage .campaign-stat:nth-child(2) strong { font-size: 10px; }
+.owner-lineup-stage .campaign-rival-strip { gap: .4rem; padding: .6rem .2rem; font-size: 9px; border-top: 1px solid #ffffff16; border-bottom: 0; }
+.owner-lineup-stage .campaign-rival-strip .owner-label { font-size: 8px; }
+.career.owner-mode[data-view='hub'] .owner-lineup-stage .campaign-rival-strip button { padding: .3rem; font-size: 9px; min-height: 0; background: transparent; border: 0; }
+.owner-stage-partner { display: flex; justify-content: space-between; align-items: center; border-top: 1px solid #ffffff16; gap: 1rem; padding: .8rem .2rem; }
+.owner-stage-partner .owner-label { font-size: 8px; }
+.owner-stage-partner strong { font-size: 12px; letter-spacing: .08em; color: #a6afc2; text-transform: uppercase; }
+.career.owner-mode[data-view='hub'] .owner-footer { background: #070a12bd; border-color: #ffffff18; padding: .75rem 2.8vw; }
+.career.owner-mode[data-view='hub'] .owner-footer .btn { border-radius: 0; font-size: 10px; }
+.career.owner-mode[data-view='hub'] .owner-footer-links .btn { background: transparent; border-color: transparent; padding-left: 0; padding-right: 1.3rem; }
+.career.owner-mode[data-view='hub'] .owner-footer .primary { background: #ed416a; border-color: #ed416a; min-width: 11rem; }
+.career.owner-mode[data-view='hub'] .owner-card .btn.primary { background: var(--team-primary); border-color: var(--team-primary); color: var(--team-on-primary); }
+.career.owner-mode[data-view='hub'] .owner-card { scrollbar-color: #ffffff35 transparent; }
+@media (min-width: 1600px) { .career.owner-mode[data-view='hub'] .owner-layout { padding-top: 2.5rem; } .owner-focus-event { padding: 1.6rem 2rem 1.2rem; } .owner-focus-event h2 { font-size: 2.3rem; } .owner-focus-event p { font-size: 13px; } }
+@media (max-width: 1150px) {
+  .career.owner-mode[data-view='hub'] .owner-layout { grid-template-columns: 18% minmax(0, 47%) minmax(0, 35%); padding-left: 2vw; padding-right: 2vw; }
+  .career.owner-mode[data-view='hub'] .owner-layout-wide { grid-template-columns: 18% minmax(0, 82%); }
+  .career.owner-mode[data-view='hub'] .owner-timeline { padding-right: 1rem; }
+  .career.owner-mode[data-view='hub'] .owner-timeline h2 { font-size: 1.3rem; }
+  .career.owner-mode[data-view='hub'] .owner-team-position > strong { font-size: 2.5rem; }
+  .career.owner-mode[data-view='hub'] .owner-lineup-stage .owner-team-wordmark { font-size: 3.8rem; }
+  .owner-lineup-art { width: 125%; right: -16%; top: 3rem; }
+  .owner-stage-rating { top: 40%; }
+  .owner-stage-bottom { left: .5rem; }
+  .owner-lineup-stage .campaign-command .campaign-pulse { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .3rem; }
+  .owner-lineup-stage .campaign-stat { padding: .3rem; }
+  .owner-lineup-stage .campaign-stat strong { font-size: 1rem; }
+  .owner-lineup-names strong { font-size: 1rem; }
+  .owner-lineup-names small { display: none; }
+  .owner-stage-partner { display: block; }
+  .owner-stage-partner strong { display: block; margin-top: .35rem; font-size: 11px; }
+  .owner-focus-event { padding: 1rem; }
+  .owner-focus-event h2 { font-size: 1.65rem; }
+}
+@media (max-width: 900px) {
+  .career.owner-mode[data-view='hub'] .owner-account > span { display: none; }
+  .career.owner-mode[data-view='hub'] .owner-brand small { display: none; }
+  .career.owner-mode[data-view='hub'] .owner-layout, .career.owner-mode[data-view='hub'] .owner-layout-wide { grid-template-columns: 23% minmax(0, 77%); }
+  .career.owner-mode[data-view='hub'] .owner-lineup-stage { display: none; }
+  .career.owner-mode[data-view='hub'] .owner-overview { padding-right: .5rem; }
+  .career.owner-mode[data-view='hub'] .owner-focus-event { background: radial-gradient(ellipse at right, #cf285b30, transparent 75%), #11131ed9; }
+  .owner-focus-event h2 { font-size: 1.8rem; max-width: 24ch; }
+  .owner-mobile-team { display: block; position: relative; isolation: isolate; overflow: hidden; padding: 1.2rem; min-height: 165px; margin-bottom: 1rem; background: linear-gradient(110deg, #11141df0, color-mix(in srgb, var(--team-primary) 25%, #10131c)); border-left: 2px solid var(--team-primary); }
+  .owner-mobile-team > img { position: absolute; top: -.5rem; right: -1.5rem; height: 240px; width: auto; opacity: .8; z-index: -1; mask-image: linear-gradient(90deg, transparent, #000 40%); }
+  .owner-mobile-team h2 { max-width: 60%; margin: .5rem 0; font-size: 1.65rem; line-height: 1.1; letter-spacing: -.04em; font-style: italic; text-transform: uppercase; overflow-wrap: anywhere; }
+  .owner-mobile-team > p { color: #a6b3ca; font-size: 10px; margin: .6rem 0; max-width: 60%; }
+  .owner-mobile-pulse { display: flex; gap: 1.2rem; margin-top: 1rem; }
+  .owner-mobile-pulse .owner-label { font-size: 8px; }
+  .owner-mobile-pulse .owner-stat strong { font-size: 14px; margin-top: .2rem; }
+}
+@media (max-width: 600px) {
+  .career.owner-mode[data-view='hub'] .owner-top { gap: .7rem .5rem; padding: .8rem 4vw .6rem; }
+  .career.owner-mode[data-view='hub'] .owner-brand b { font-size: 1.7rem; }
+  .career.owner-mode[data-view='hub'] .owner-brand span { font-size: 9px; }
+  .career.owner-mode[data-view='hub'] .owner-account { display: grid; gap: .15rem; }
+  .career.owner-mode[data-view='hub'] .owner-account strong { font-size: 10px; max-width: 12rem; }
+  .career.owner-mode[data-view='hub'] .owner-account .owner-funds.btn { padding: .2rem 0; background: none; border: 0; font-size: 9px; }
+  .career.owner-mode[data-view='hub'] .owner-nav { margin: 0; }
+  .career.owner-mode[data-view='hub'] .owner-nav .btn { padding: .7rem .8rem; font-size: 10px; }
+  .career.owner-mode[data-view='hub'] .owner-layout, .career.owner-mode[data-view='hub'] .owner-layout-wide { display: block; padding: 1.3rem 5vw .75rem; overflow: auto; }
+  .career.owner-mode[data-view='hub'] .owner-overview, .career.owner-mode[data-view='hub'] .owner-layout-wide > .owner-card { padding: 0; overflow: visible; background: transparent; }
+  .career.owner-mode[data-view='hub'] .owner-page-heading h1 { font-size: 1.7rem; }
+  .career.owner-mode[data-view='hub'] .owner-page-heading { margin-bottom: .8rem; }
+  .career.owner-mode[data-view='hub'] .owner-page-heading h1 { display: none; }
+  .owner-mobile-team h2 { font-size: 1.9rem; }
+  .career.owner-mode[data-view='hub'] .owner-focus-event { padding: 1.2rem 1rem 1rem; }
+  .owner-focus-event h2 { font-size: 1.9rem; }
+  .owner-focus-event p { font-size: 12px; }
+  .career.owner-mode[data-view='hub'] .owner-focus-action.btn { font-size: 11px; padding: .8rem; }
+  .career.owner-mode[data-view='hub'] .owner-next-event { grid-template-columns: 1.2fr 1fr; }
+  .career.owner-mode[data-view='hub'] .owner-race-copy h2 { font-size: 1.9rem; }
+  .career.owner-mode[data-view='hub'] .owner-race-facts { gap: .4rem; padding: .7rem; }
+  .career.owner-mode[data-view='hub'] .owner-race-facts .owner-label { font-size: 8px; letter-spacing: .04em; }
+  .career.owner-mode[data-view='hub'] .owner-race-facts .owner-stat strong { font-size: 11px; }
+  .career.owner-mode[data-view='hub'] .owner-overview .owner-driver-identity { display: block; }
+  .career.owner-mode[data-view='hub'] .owner-overview .owner-driver-identity > div { margin-top: .4rem; }
+  .career.owner-mode[data-view='hub'] .owner-footer { gap: .45rem; padding: .6rem 4vw; }
+  .career.owner-mode[data-view='hub'] .owner-footer-links .btn { font-size: 9px; padding: .35rem 0; }
+  .career.owner-mode[data-view='hub'] .owner-footer .career-sessions .btn { min-width: 0; padding: .8rem .4rem; font-size: 10px; }
+}
+@media (max-height: 600px) and (min-width: 601px) {
+  .career.owner-mode[data-view='hub'] .owner-top { gap: .3rem 1rem; padding-top: .45rem; padding-bottom: .45rem; }
+  .career.owner-mode[data-view='hub'] .owner-nav .btn { padding-top: .5rem; padding-bottom: .5rem; }
+  .career.owner-mode[data-view='hub'] .owner-layout { padding-top: 1rem; }
+  .owner-stage-bottom { position: relative; padding-top: 11rem; }
+  .career.owner-mode[data-view='hub'] .owner-lineup-stage { overflow-y: auto; }
+  .owner-lineup-art { height: 20rem; mask-image: linear-gradient(#000, #000 60%, transparent 95%); }
+  .owner-stage-rating { top: 6rem; }
+  .career.owner-mode[data-view='hub'] .owner-footer { padding-top: .4rem; padding-bottom: .4rem; }
+}
