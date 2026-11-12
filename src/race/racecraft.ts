@@ -3,7 +3,7 @@ import { CONTACT, RACECRAFT, TRAFFIC } from '../config/race.ts';
 import { clamp } from '../core/math.ts';
 import type { RacingDriver } from './driver.ts';
 
-export type RacecraftAction = 'racing-line' | 'defend-inside' | 'attack-inside' | 'hold-outside' | 'switchback' | 'exit-attack';
+export type RacecraftAction = 'racing-line' | 'defend-inside' | 'attack-inside' | 'attack-outside' | 'hold-outside' | 'switchback' | 'exit-attack';
 export interface CornerApproach { brake: number; apex: number; side: number }
 export interface Rival { car: CarState; ds: number; lat: number; v: number; drift: number; ai: boolean; pace?: number | null }
 interface Battle {
@@ -18,6 +18,7 @@ interface Battle {
   exit: number;
   turnFrom: number;
   turnLat: number;
+  entryOffset: number;
 }
 const distance = (a: number, b: number, length: number) => ((b - a) % length + length * 1.5) % length - length / 2;
 const forward = (a: number, b: number, length: number) => ((b - a) % length + length) % length;
@@ -53,8 +54,13 @@ export class Racecraft {
       lat = b.turnLat + (inside - b.turnLat) * smooth(turn / RACECRAFT.cutbackLength);
     } else {
       const approach = Math.max(RACECRAFT.minBlend, b.brake - b.from);
-      const target = b.action === 'attack-inside' ? d.lateralAt(s, b.side * RACECRAFT.attackOffset) : outside;
-      lat = b.startLat + (target - b.startLat) * smooth(at / approach);
+      // Claim the entry, then round the corner towards its normal apex. Keeping
+      // the maximum lane offset right to the apex creates a tight, slow kink.
+      if (b.action === 'attack-inside' || b.action === 'attack-outside') {
+        const off0 = b.startLat - d.lateralAt(b.from);
+        const entry = (off0 + (b.entryOffset - off0) * smooth(at / approach)) * (1 - smooth((at - approach) / Math.max(12, apex - approach)));
+        lat = d.lateralAt(s, entry);
+      } else lat = b.startLat + (outside - b.startLat) * smooth(at / approach);
     }
     // Keep the chosen side through the apex. Rejoin progressively on the exit, with keepOut still binding.
     const release = b.action === 'switchback' || b.action === 'exit-attack' ? RACECRAFT.cutbackRelease : RACECRAFT.releaseFrom;
@@ -79,7 +85,7 @@ export class Racecraft {
     const C = RACECRAFT;
     this.cooldown = Math.max(0, this.cooldown - 1 / 30);
     if (distance(me.s, this.lastApex, this.length) < -C.cutbackRelease - C.exitBlend) this.lastApex = NaN;
-    if (!enabled || me.inPits || me.offTrack || Math.abs(me.slip) > C.maxSlip || me.speed < C.minSpeed) { this.cancel(); return; }
+    if (!enabled || me.inPits || me.offTrack || Math.abs(me.slip) > Math.max(C.maxSlip, Math.abs(me.speed) * C.maxSlipRatio) || me.speed < C.minSpeed) { this.cancel(); return; }
     const b = this.battle;
     if (b) {
       const rival = rivals.find((o) => o.car === b.rival);
@@ -88,7 +94,7 @@ export class Racecraft {
       // Once a rival has cleared our nose, its move back out opens a real inside exit lane.
       // Requiring both longitudinal clearance and lateral room prevents the switchback becoming a side-swipe.
       const toApex = b.apex - b.from - travelled;
-      if (b.action === 'hold-outside' && toApex < C.cutbackBefore && toApex > -C.cutbackAfter && rival.ds > 2 * CONTACT.halfLength + C.crossBehind && rival.ds < C.cutbackGap) {
+      if ((b.action === 'hold-outside' || b.action === 'attack-outside') && toApex < C.cutbackBefore && toApex > -C.cutbackAfter && rival.ds > 2 * CONTACT.halfLength + C.crossBehind && rival.ds < C.cutbackGap) {
         const inside = this.driver.lateralAt(b.apex + C.lateApex, b.side * 99) - b.side * C.edgeMargin;
         const opening = (rival.lat - inside) * -b.side;
         const movingOut = rival.drift * b.side < -C.outwardDrift || rival.lat * b.side < C.insideOccupied;
@@ -101,9 +107,8 @@ export class Racecraft {
       if (rival.ds < -C.wonBy && toApex < -C.releaseFrom) this.cancel();
       return;
     }
-    if (this.cooldown > 0 || !corner || corner.apex < C.minCornerDistance || corner.apex > C.lookahead) return;
+    if (this.cooldown > 0 || !corner || corner.apex > C.lookahead) return;
     // No fresh moves after turn-in: hold the room we've already earned instead of inventing a late dive.
-    if (corner.brake < C.minEntryDistance || Math.abs(distance(this.lastApex, me.s + corner.apex, this.length)) < C.sameCorner) return;
     const side = corner.side;
     const apexAt = me.s + corner.apex;
     const width = this.driver.lateralAt(apexAt, 99) - this.driver.lateralAt(apexAt, -99);
@@ -122,7 +127,12 @@ export class Racecraft {
     const across = (me.lateral - rival.lat) * side, overlapped = Math.abs(rival.ds) < 2 * CONTACT.halfLength + C.overlapMargin;
     const insideOccupied = (rival.lat - me.lateral) * side > C.sideGap;
     const approachTime = corner.brake / Math.max(8, me.speed);
+    const outsideOverlap = across < -C.sideGap && overlapped;
+    // An overlap earned during braking is still worth contesting. This only
+    // holds an existing outside lane; fresh dives still require time to move.
+    if (!outsideOverlap && (corner.apex < C.minCornerDistance || corner.brake < C.minEntryDistance || Math.abs(distance(this.lastApex, me.s + corner.apex, this.length)) < C.sameCorner)) return;
     let action: RacecraftAction;
+    let entryOffset = side * C.attackOffset;
     if (across < -C.sideGap && (overlapped || (rival.ds > 0 && rival.ds < C.switchbackRange && insideOccupied))) {
       // Already outside: don't abandon a legitimate overlap just because the solo line turns inward.
       action = 'hold-outside';
@@ -131,11 +141,29 @@ export class Racecraft {
       // the current one. Settle the car first; don't start a fresh dive across a chicane.
       if (Math.abs(this.driver.curvatureAt(me.s)) > C.attackCurve || Math.abs(me.slip) > C.attackSlip) return;
       action = 'attack-inside';
+    } else if (!rival.ai && rival.ds > 2 * CONTACT.halfLength + C.crossBehind && approachTime >= C.setupTime && approachTime <= C.setupLead && me.speed >= rival.v - C.speedTolerance && Math.abs(this.driver.curvatureAt(me.s)) <= C.attackCurve && me.slip <= C.attackSlip) {
+      // Set a pass up from the tow. Previously an attack was possible only
+      // after the AI was already several metres to the inside of the player.
+      const sB = me.s + corner.brake;
+      const rivalEntry = this.driver.lateralAt(sB, rival.lat - this.driver.lateralAt(rival.car.s));
+      const clearance = 2 * CONTACT.halfWidth + C.sideGap;
+      const offsetNow = me.lateral - this.driver.lateralAt(me.s);
+      const candidates = [side * C.setupOffset, -side * C.setupOffset];
+      const chosen = candidates.find(offset => {
+        const target = this.driver.lateralAt(sB, offset);
+        const travel = Math.abs(offset - offsetNow), time = Math.sqrt(6 * travel / TRAFFIC.laneAccel);
+        const closing = Math.max(.1, me.speed - rival.v);
+        const loss = this.driver.laneTimeLost(sB, offset, corner.apex - corner.brake + 40);
+        return loss <= C.maxAttackLoss + Math.max(0, me.speed - rival.v) * .1 && Math.abs(target - rivalEntry) >= clearance && time <= approachTime && (rival.ds - 2 * CONTACT.halfLength) / closing > time * .7 && this.clear(me, rivals, target, rival.car);
+      });
+      if (chosen === undefined) return;
+      entryOffset = chosen;
+      action = chosen * side > 0 ? 'attack-inside' : 'attack-outside';
     } else return;
-    const target = this.driver.lateralAt(me.s + corner.brake, (action === 'attack-inside' ? side : -side) * 99);
+    const target = this.driver.lateralAt(me.s + corner.brake, action === 'attack-inside' || action === 'attack-outside' ? entryOffset : -side * 99);
     if (!this.clear(me, rivals, target, rival.car)) return;
     this.lastApex = me.s + corner.apex;
-    this.battle = { action, rival: rival.car, me, side, from: me.s, startLat: me.lateral, brake: me.s + corner.brake, apex: me.s + corner.apex, exit: me.s + corner.apex + C.releaseFrom + C.exitBlend, turnFrom: me.s, turnLat: me.lateral };
+    this.battle = { action, rival: rival.car, me, side, from: me.s, startLat: me.lateral, brake: me.s + corner.brake, apex: me.s + corner.apex, exit: me.s + corner.apex + C.releaseFrom + C.exitBlend, turnFrom: me.s, turnLat: me.lateral, entryOffset };
   }
 
   private clear(me: CarState, rivals: readonly Rival[], lateral: number, target: CarState): boolean {

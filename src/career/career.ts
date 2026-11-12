@@ -1,6 +1,6 @@
 import { CAREER, YOU_ID, type DriverDef, type RaceLength, type SeasonLength, type TeamDef } from '../config/career.ts';
 import { STANDARD_CAR, type CarPerformance } from '../car/physics.ts';
-import type { Compound } from '../config/race.ts';
+import { AI, type Compound } from '../config/race.ts';
 import { clamp } from '../core/math.ts';
 import { hashString, rng } from '../core/random.ts';
 import { loadJSON, saveJSON, storage } from '../platform/storage.ts';
@@ -9,6 +9,7 @@ import { cleanEntry, driverDef, teamsFor, type RosterSave } from './roster.ts';
 import { GP_TEAMS } from '../config/grandPrix.ts';
 import { createDynasty, driverProgress, driverRating, dynasty, failureChance, settleDynastyRound, startDynastySeason, weekendApproach } from './dynasty.ts';
 import { advanceToWeekend, announceRegulations, carDevelopment, startEngineeringSeason, teamDevelopment } from './engineering.ts';
+import { CALENDAR_TRACKS } from './calendar.ts';
 
 /**
  * The career's rules, as plain data and functions (no screen, no tracks):
@@ -58,7 +59,7 @@ export interface CareerSave extends RosterSave {
   name: string;
   /** The team you drive for this season. */
   team: string;
-  /** How fast the quickest AI is, 1–100 (%). */
+  /** How fast the quickest AI is, 1–110 (%). */
   difficulty: number;
   length: RaceLength;
   rounds: SeasonLength;
@@ -70,6 +71,10 @@ export interface CareerSave extends RosterSave {
   cars: Record<string, number>;
   /** This season's rounds: track ids, in order. */
   calendar: string[];
+  /** A custom schedule carries into the next preseason, where it can be edited again. */
+  customCalendar?: true;
+  /** Locked at the first on-track session, not after the first race. */
+  calendarStarted?: true;
   /** The rounds run so far this season. */
   done: RoundResult[];
   /** After qualifying for the next round: the grid (driver ids, pole first). Null before it. */
@@ -154,7 +159,7 @@ export function newCareer(opts: { name: string; team: string; difficulty: number
     v: 1,
     name: cleanName(opts.name),
     team: team(opts.team).id,
-    difficulty: clamp(Math.round(opts.difficulty), 1, 100),
+    difficulty: clamp(Math.round(opts.difficulty), 1, AI.maxDifficulty),
     length: opts.length,
     rounds: opts.rounds,
     season: 1,
@@ -205,9 +210,10 @@ export function carRank(save: Pick<CareerSave, 'cars'> & RosterSave, id: string)
 export function aiDifficulty(save: CareerSave, round: number, id: string): number {
   const d = driverDef(id);
   const t = teamsFor(save).find((x) => x.drivers.includes(id));
-  if (!d || !t) return save.difficulty / 100;
+  const base = save.difficulty / 100;
+  if (!d || !t) return base;
   const form = (dice(save, `${save.season}:${round}:form:${id}`) * 2 - 1) * CAREER.form;
-  return clamp(save.difficulty / 100 - CAREER.spread * (1 - driverRating(save, id)) + form + (save.owner && t.id === save.team ? weekendApproach(save, round).pace : 0), 0.01, 1);
+  return clamp(base - CAREER.spread * (1 - driverRating(save, id)) + form + (save.owner && t.id === save.team ? weekendApproach(save, round).pace : 0), 0.01, save.difficulty <= 100 ? 1 : AI.maxDifficulty / 100);
 }
 
 /** Physical hardware for this driver's seat, whether driven by the player or AI. */
@@ -340,6 +346,7 @@ export function wholeOrder(save: CareerSave, order: readonly string[]): string[]
 
 /** Qualifying for the next round is done: the grid is kept until the race has been run. */
 export function setGrid(save: CareerSave, order: readonly string[]): void {
+  save.calendarStarted = true;
   save.grid = wholeOrder(save, order);
 }
 
@@ -350,6 +357,7 @@ export function setGrid(save: CareerSave, order: readonly string[]): void {
  */
 export function recordRound(save: CareerSave, result: { order: readonly string[]; dnf: readonly string[]; fastest: string | null }): RoundResult | null {
   if (nextRound(save) === null) return null;
+  save.calendarStarted = true;
   if (save.owner) dynasty(save);
   if (save.owner?.engineering) advanceToWeekend(save, true);
   const whole = wholeOrder(save, result.order);
@@ -418,7 +426,8 @@ export function nextSeason(save: CareerSave, teamId: string): void {
   if (save.owner?.engineering) save.cars[save.team] = Math.max(0, save.cars[save.team] - carriedParts);
   if (allowed) save.team = teamId;
   save.season++;
-  save.calendar = seasonCalendar(save.rounds, save.season);
+  if (!save.customCalendar) save.calendar = seasonCalendar(save.rounds, save.season);
+  delete save.calendarStarted;
   save.done = [];
   save.grid = null;
   if (save.owner) { save.owner.development = 0; startEngineeringSeason(save); save.owner.target = carRank(save, save.team); startDynastySeason(save); }
@@ -436,8 +445,8 @@ export function cleanCareer(raw: unknown): CareerSave | null {
   const strings = (x: unknown): string[] => (Array.isArray(x) ? x.filter((s): s is string => typeof s === 'string') : []);
   const rounds = SEASONS.includes(r.rounds as SeasonLength) ? (r.rounds as SeasonLength) : 'standard';
   const season = num(r.season, 1, 9999, 1);
-  const known = new Set<string>(CAREER.calendar);
-  const calendar = strings(r.calendar).filter((id) => known.has(id));
+  const known = new Set(CALENDAR_TRACKS.map(t => t.id));
+  const calendar = [...new Set(strings(r.calendar).filter((id) => known.has(id)))];
   const cars: Record<string, number> = {};
   const savedCars = r.cars && typeof r.cars === 'object' ? (r.cars as Record<string, unknown>) : {};
   for (const t of field) cars[t.id] = typeof savedCars[t.id] === 'number' && isFinite(savedCars[t.id] as number) ? clamp(savedCars[t.id] as number, 0, 1) : t.car;
@@ -445,7 +454,7 @@ export function cleanCareer(raw: unknown): CareerSave | null {
     v: 1,
     name: cleanName(r.name),
     team: r.team,
-    difficulty: num(r.difficulty, 1, 100, 50),
+    difficulty: num(r.difficulty, 1, AI.maxDifficulty, 50),
     length: LENGTHS.includes(r.length as RaceLength) ? (r.length as RaceLength) : 'medium',
     rounds,
     season,
@@ -473,6 +482,8 @@ export function cleanCareer(raw: unknown): CareerSave | null {
   }
   const grid = strings(r.grid);
   if (grid.length && nextRound(save) !== null) save.grid = wholeOrder(save, grid);
+  if (r.customCalendar === true) save.customCalendar = true;
+  if (r.calendarStarted === true || save.done.length || save.grid || (save.owner?.engineering?.practice.key.startsWith(`${save.season}:`) && save.owner.engineering.practice.laps > 0)) save.calendarStarted = true;
   for (const h of Array.isArray(r.history) ? r.history : []) {
     if (!h || typeof h !== 'object') continue;
     const o = h as Record<string, unknown>;

@@ -48,6 +48,8 @@ import { freshTeamDraft, teamCreation } from './teamCreation.ts';
 import { dynasty } from '../career/dynasty.ts';
 import { campaignDebrief, campaignSeasonReview } from './careerCampaign.ts';
 import { advanceToWeekend, awardPractice, engineering } from '../career/engineering.ts';
+import { calendarOpen } from '../career/calendar.ts';
+import { SeasonCalendarEditor } from './seasonCalendar.ts';
 
 type Tab = OwnerTab;
 const TABS: readonly Tab[] = OWNER_TABS.map(([id]) => id);
@@ -93,6 +95,7 @@ export class CareerScreen implements Screen {
   private garage: Garage | null = null;
   private readonly assistsPanel = new AssistsPanel();
   private readonly setupPanel = new SetupPanel();
+  private readonly calendarEditor = new SeasonCalendarEditor();
   private tab: Tab = 'race';
   /** The race just run (shown once, on coming back from it). */
   private shown: Shown | null = null;
@@ -333,7 +336,7 @@ export class CareerScreen implements Screen {
       teams.append(b);
     }
     const speedHint = h('p', { class: 'setup-hint', text: C.aiSpeedHint });
-    const speed = slider(1, 100, 1, (n) => (d.difficulty = n), () => {}, (n) => fmt(C.aiSpeedValue, { n }));
+    const speed = slider(1, AI.maxDifficulty, 1, (n) => (d.difficulty = n), () => {}, (n) => fmt(C.aiSpeedValue, { n }));
     speed.set(d.difficulty);
     const length = segmented<RaceLength>(LENGTHS.map((l) => [l, C.lengths[l]]), (l) => {
       d.length = l;
@@ -417,6 +420,7 @@ export class CareerScreen implements Screen {
     const C = STR.career;
     const navigate = (tab: Tab) => { this.tab = tab; this.abandonArmed = false; this.render(); };
     const weekend = this.raceTab(save, round);
+    if (this.tab === 'calendar' && calendarOpen(save)) { this.primary = null; this.sessions = []; }
     return [
       ownerHeader(save, this.tab, navigate),
       ownerBody(save, round, this.tab, {
@@ -562,8 +566,10 @@ export class CareerScreen implements Screen {
 
   private calendarTab(save: CareerSave, round: number): (Node | null)[] {
     const C = STR.career;
+    if (calendarOpen(save)) return [this.calendarEditor.view(save, () => this.render(), () => { this.game.career.write(); this.tyresFor = ''; this.showTrack(); this.render(); })];
     const names = new Map(lineup(save).map((e) => [e.id, e]));
     return [
+      h('p', { class: 'setup-hint', text: 'This season is underway. You can configure the calendar again before next season.' }),
       h(
         'ol',
         { class: 'career-calendar' },
@@ -596,7 +602,7 @@ export class CareerScreen implements Screen {
     const titles = save.history.filter((x) => x.position === 1).length;
     const speed = slider(
       1,
-      100,
+      AI.maxDifficulty,
       1,
       (n) => (save.difficulty = n),
       () => this.game.career.write(),
@@ -645,6 +651,7 @@ export class CareerScreen implements Screen {
     const round = save ? nextRound(save) : null;
     const t = this.roundTrack();
     if (!save || round === null || !t) return;
+    save.calendarStarted = true;
     advanceToWeekend(save); this.game.career.write();
     const weather = roundWeather(save, round);
     const fails = roundFailures(save, round);
@@ -804,7 +811,7 @@ export class CareerScreen implements Screen {
     const start = () => {
       nextSeason(save, this.pick);
       this.game.career.write();
-      this.tab = 'race';
+      this.tab = 'calendar';
       this.tyresFor = '';
       this.showTrack();
       this.render();

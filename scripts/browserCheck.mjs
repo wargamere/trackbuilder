@@ -107,6 +107,23 @@ try {
       await career.locator('.owner-subnav').getByRole('button', { name: target, exact: true }).click();
     } else await career.getByRole('button', { name: target, exact: true }).click();
   };
+  await career.getByRole('button', { name: 'Configure season calendar', exact: true }).click();
+  await career.getByLabel('Calendar preset', { exact: true }).selectOption('short');
+  await career.getByLabel('Circuit to add', { exact: true }).selectOption('world-pt-2008');
+  await career.getByRole('button', { name: 'Add circuit', exact: true }).click();
+  await career.getByRole('button', { name: 'Move Portimão earlier', exact: true }).click();
+  await career.getByRole('button', { name: 'Move Melbourne later', exact: true }).click();
+  const calendar = await career.locator('.season-calendar-rounds > li').evaluateAll(rows => rows.map(row => row.dataset.track));
+  assert.equal(calendar.length, 9); assert.equal(calendar[0], 'world-bh-2002'); assert.ok(calendar.includes('world-pt-2008'));
+  await career.getByRole('button', { name: 'Save season calendar', exact: true }).click();
+  assert.deepEqual(await career.evaluate(() => window.__game.career.save.calendar), calendar);
+  await career.setViewportSize({ width: 390, height: 844 });
+  assert.equal(await career.locator('.season-calendar-editor').evaluate(el => el.scrollWidth > el.clientWidth), false, 'calendar fits a phone');
+  await career.screenshot({ path: 'test-results/season-calendar-phone.png' });
+  await career.setViewportSize({ width: 1440, height: 900 });
+  await career.screenshot({ path: 'test-results/season-calendar-desktop.png' });
+  await career.reload(); await career.waitForFunction(() => window.__game); await career.keyboard.press('k');
+  assert.deepEqual(await career.evaluate(() => window.__game.career.save.calendar), calendar, 'calendar survives reload');
   await career.getByRole('button', { name: 'Review team decision', exact: true }).click();
   await career.getByRole('button', { name: 'Promise steady progress', exact: true }).click();
   assert.equal(await career.evaluate(() => window.__game.career.save.owner.world.decisions.length), 1);
@@ -194,10 +211,12 @@ try {
   await custom.getByRole('button', { name: 'Hire Maxim Verstallen for seat 1', exact: true }).click();
   await custom.getByRole('button', { name: 'Choose driver for seat 2', exact: true }).click();
   await custom.getByRole('button', { name: 'Hire Landon Norrin for seat 2', exact: true }).click();
+  await custom.locator('.career input[type="range"][max="110"]').evaluate(el => { el.value = '110'; el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); });
   await custom.screenshot({ path: 'test-results/team-creation.png' });
   await custom.getByRole('button', { name: /Start career/ }).click();
   await custom.locator('.owner-layout').waitFor();
   const entry = await custom.evaluate(() => window.__game.career.save.entry);
+  assert.equal(await custom.evaluate(() => window.__game.career.save.difficulty), 110);
   assert.equal(entry.name, 'Apex Nova Racing');
   assert.deepEqual(entry.drivers, ['gp-verstallen', 'gp-norrin']);
   assert.deepEqual([entry.paint, entry.secondary], [0x6a42df, 0x5ce6c0]);
@@ -210,6 +229,11 @@ try {
   await custom.getByRole('button', { name: /Qualifying/ }).click();
   await custom.waitForFunction(() => document.documentElement.dataset.screen === 'race');
   assert.equal(await custom.evaluate(() => window.__game.event.field.length), 23);
+  assert.ok(await custom.evaluate(async () => {
+    const { aiPerformance } = await import('/src/race/ai.ts');
+    const g = window.__game;
+    return g.event.field.every((f, i) => JSON.stringify(g.screens.race.qualSims[i].car.tune) === JSON.stringify(aiPerformance(f.difficulty, f.tune)));
+  }), '110% qualifying and race hardware use the same expert scale');
   assert.equal(await custom.evaluate(() => window.__game.event.you.secondary), 0x5ce6c0);
   await custom.keyboard.press('Escape');
   await custom.getByRole('button', { name: /Skip qualifying/ }).click();
@@ -223,10 +247,11 @@ try {
   assert.equal(await custom.evaluate(() => window.__game.career.save.entry.name), 'Nova Works');
   await custom.getByRole('button', { name: /Start the race/ }).click();
   await custom.waitForFunction(() => window.__game.screens.race.opponents.length === 23);
-  assert.ok(await custom.evaluate(() => {
+  assert.ok(await custom.evaluate(async () => {
+    const { aiPerformance } = await import('/src/race/ai.ts');
     const g = window.__game, race = g.screens.race;
-    return JSON.stringify(race.car.tune) === JSON.stringify(g.event.car) && race.opponents.every(o => JSON.stringify(o.ai.car.tune) === JSON.stringify(g.event.field.find(f => f.id === o.id).tune));
-  }), 'all 24 race cars retain the hardware used in qualifying');
+    return g.career.save.difficulty === 110 && JSON.stringify(race.car.tune) === JSON.stringify(g.event.car) && race.opponents.every(o => { const f = g.event.field.find(f => f.id === o.id); return f.difficulty > 1 && JSON.stringify(o.ai.car.tune) === JSON.stringify(aiPerformance(f.difficulty, f.tune)); });
+  }), '110% survives reload and all 24 race cars receive the correct physical hardware');
   assert.ok(await custom.evaluate(() => window.__game.screens.race.opponents.every((o) => typeof o.ai.racecraft === 'string')), 'live opponents expose their actual racecraft decision');
   const duelChecks = await custom.evaluate(async () => {
     const { cornerDuel } = await import('/tests/helpers/racecraft.ts');

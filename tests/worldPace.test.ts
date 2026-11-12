@@ -8,10 +8,11 @@ import type { Progress, RaceEvent } from '../src/race/session.ts';
 // Exercise actual steering, throttle, physics and checkpoint crossings, not just
 // the planned speed profile. Include every real circuit, not only editor samples.
 for (const entry of builtInTracks().filter(t => t.group === 'world')) {
-  test(`${entry.def.name}: four clean laps with consistent flying pace`, () => {
+  for (const difficulty of ['world-au-1953', 'world-jp-1962', 'world-gb-1948', 'world-it-1922', 'world-mc-1929', 'world-at-1969'].includes(entry.def.id) ? [1, 1.1] : [1]) {
+  test(`${entry.def.name} at ${Math.round(difficulty * 100)}%: four clean laps with consistent flying pace`, () => {
     const t = entry.track();
     // Spielberg at 90% reproduces a checkpoint exactly on a sampled vertex.
-    const ai = new AiDriver(t, { name: 'Audit', paint: 0, difficulty: t.def.id === 'world-at-1969' ? .9 : 1, laps: 4, slot: 0 });
+    const ai = new AiDriver(t, { name: 'Audit', paint: 0, difficulty: t.def.id === 'world-at-1969' && difficulty === 1 ? .9 : difficulty, laps: 4, slot: 0 });
     const st = ai.car.state, events: RaceEvent[] = [];
     const progress = (): Progress => {
       const tan = t.center.tangents[Math.max(0, st.trackIndex)];
@@ -36,4 +37,5 @@ for (const entry of builtInTracks().filter(t => t.group === 'world')) {
     assert.ok(Math.max(...flying) - Math.min(...flying) < .25, `flying laps: ${flying.join(', ')}`);
     if (t.def.id === 'world-au-1953') assert.ok(chicaneMinimum > 37.5, `chicane exit: ${chicaneMinimum.toFixed(2)} m/s`);
   });
+  }
 }

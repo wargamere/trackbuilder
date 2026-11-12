@@ -27,10 +27,18 @@ function knotAt(knots: readonly number[], f: number): number {
  * there (see trackDifficulty()).
  */
 export function aiPace(difficulty: number, track?: Track): Pace {
-  const d = track ? trackDifficulty(track, difficulty) : difficulty;
+  const d = track ? trackDifficulty(track, Math.min(1, difficulty)) : Math.min(1, difficulty);
   const knots = AI.pace;
   const mix = (k: number) => knotAt(knots.map((p) => p[k]), d);
-  return { grip: mix(0), maxSpeed: HANDLING.maxSpeed * mix(1), brake: mix(2) };
+  return { grip: mix(0), maxSpeed: HANDLING.maxSpeed * mix(1), brake: mix(2) + expertShare(difficulty) * AI.expert.brake };
+}
+
+/** 0 at 100% and below; 1 at 110%. Hardware, unlike speed targets alone,
+ * makes the extra difficulty physically achievable through fast corners. */
+const expertShare = (difficulty: number) => clamp((difficulty - 1) / (AI.maxDifficulty / 100 - 1), 0, 1);
+export function aiPerformance(difficulty: number, hardware: Readonly<CarPerformance> = STANDARD_CAR): Readonly<CarPerformance> {
+  const x = expertShare(difficulty);
+  return x === 0 ? hardware : { grip: hardware.grip * (1 + AI.expert.grip * x), pull: hardware.pull * (1 + AI.expert.pull * x), top: hardware.top * (1 + AI.expert.top * x) };
 }
 
 /** The same pace on a wet track: the same share of the grip and the brakes there are (see CONDITIONS). */
@@ -204,7 +212,7 @@ export class AiDriver {
     // (Its top speed is scaled with the wing's, so the field keeps its spread of straight-line
     // speed: with more drag every car's top end comes down, not just the quick ones'.)
     const setup = suggestedSetup(track);
-    const tune = opts.tune ?? STANDARD_CAR;
+    const tune = aiPerformance(opts.difficulty, opts.tune);
     const base = aiPace(opts.difficulty, track);
     const pace = roadPace(carPace(base, setup, tune), track);
     this.driver = new RacingDriver(track, opts.wet ? wetPace(pace) : pace);

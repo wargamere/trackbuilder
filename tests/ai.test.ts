@@ -52,7 +52,7 @@ test('AI pace rises with difficulty, up to the limit of the tyres at 100 %', () 
   assert.equal(aiPace(1).grip, 1, 'all the grip there is at 100 %');
   assert.equal(aiPace(1).maxSpeed, HANDLING.maxSpeed);
   assert.deepEqual(aiPace(-1), aiPace(0));
-  assert.deepEqual(aiPace(2), aiPace(1));
+  assert.deepEqual(aiPace(2), aiPace(1.1));
 });
 
 test('a difficulty means the same on every track: 75 % laps 6 % off the limit on a twisty track and on a flat-out banked oval alike', () => {

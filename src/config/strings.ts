@@ -654,6 +654,7 @@ export const STR = {
       'Expert: gold-medal pace and faster.',
       'Flat out: as fast as the car can go.',
     ],
+    expertDifficultyHint: 'Extra challenge: levels 101–110 use faster AI cars. Levels 1–100 keep their original pace settings.',
     start: 'Start',
     back: 'Back',
     keys: 'Enter start · Esc back · P practice · R race · A assists · C conditions · G setup',
@@ -687,7 +688,7 @@ export const STR = {
     teamExpect: 'Expects {pos} in the constructors’',
     aiSpeed: 'AI speed',
     aiSpeedValue: '{n}%',
-    aiSpeedHint: 'How fast the best driver in the best car is. You can change it between races.',
+    aiSpeedHint: 'How fast the best driver in the best car is. Levels 101–110 add an expert challenge with faster AI cars. You can change it between races.',
     raceLength: 'Race length',
     lengths: { short: 'Short', medium: 'Medium', long: 'Long' },
     lengthHints: {

@@ -79,6 +79,7 @@ test('research, manufacturing and fitting are separate user actions', () => {
 test('valid practice signals earn programmes once and qualifying retains the chosen driver and grid', async () => {
   const { trackLapTime } = await import('../src/race/strategy.ts');
   click('Practice'); const practice = handed(), rp = save().owner!.engineering!.rp;
+  assert.equal(save().calendarStarted, true, 'the schedule locks on entering practice, before any timed lap');
   assert.equal(practice.session, 'practice');
   for (let i = 0; i < 2; i++) practice.practised?.(trackLapTime(game.track));
   assert.equal(new CareerStore().save?.owner?.engineering?.practice.laps, 2, 'valid laps persist even when that lap pays no new RP');
@@ -145,7 +146,8 @@ test('seasons carry engineering, finances, drivers and team identity forward', (
   assert.equal(s.team, 'solaris'); assert.equal(s.owner!.cash, funds);
   assert.equal(s.owner!.engineering!.workforce, workers);
   assert.ok(s.owner!.engineering!.researched.includes('aero-1') || s.owner!.engineering!.history.some((item) => item.title.includes('regulation')));
-  assert.equal(s.season, 2); assert.ok(find('Advance to race weekend'));
+  assert.equal(s.season, 2); assert.ok(ui.querySelector('.season-calendar-editor'));
+  click('Overview'); assert.ok(find('Advance to race weekend'));
   click('Team'); click('Finance');
   const sign = [...ui.querySelectorAll('.owner-contract')].find((c) => c.textContent?.includes('Vector Energy'))!.querySelector('button')!;
   sign.click(); assert.equal(s.owner!.sponsor, 'vector');
