@@ -23,6 +23,7 @@
     "eval:ai": "node training/evaluate.ts",
     "bench:ai": "node training/bench.ts",
     "bench:race": "node scripts/racePerformanceCheck.mjs",
+    "bench:wet-race": "node scripts/wetRaceCheck.mjs",
     "test:ai:browser": "node scripts/aiBrowserCheck.mjs",
     "eval:racecraft": "node scripts/racecraftCheck.ts"
   },

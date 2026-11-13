@@ -1,4 +1,4 @@
-import { BufferGeometry, Float32BufferAttribute, LineBasicMaterial, LineSegments, type Vector3 } from 'three';
+import { BufferGeometry, DynamicDrawUsage, Float32BufferAttribute, LineBasicMaterial, LineSegments, type Vector3 } from 'three';
 
 /** The block of falling rain around the camera (m): across, up and along. */
 const SPAN = 64;
@@ -33,6 +33,7 @@ export class RainEffect {
     for (let i = 0; i < this.seeds.length; i++) this.seeds[i] = Math.random();
     const g = new BufferGeometry();
     this.pos = new Float32BufferAttribute(new Float32Array(DROPS_FULL * 6), 3);
+    this.pos.setUsage(DynamicDrawUsage);
     g.setAttribute('position', this.pos);
     this.material = new LineBasicMaterial({ color: 0xcdd6e4, transparent: true, opacity: 0.5, depthWrite: false });
     this.mesh = new LineSegments(g, this.material);
@@ -96,6 +97,7 @@ export class RainEffect {
   }
 
   show(on: boolean): void {
+    if (this.mesh.visible === on) return;
     this.mesh.visible = on;
     this.last.ok = false;
   }

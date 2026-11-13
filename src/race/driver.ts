@@ -6,6 +6,13 @@ import { leftOf } from '../track/spline.ts';
 import type { Track } from '../track/track.ts';
 import { brakingDecel, cornerSpeed, drivingAccel, racingLine, speedProfile, type Pace, type RacingLine, type SpeedPlan } from './racingLine.ts';
 
+type PathPoint = { x: number; z: number };
+function curvatureOf(a: PathPoint, b: PathPoint, q: PathPoint): number {
+  const ux = b.x - a.x, uz = b.z - a.z, vx = q.x - b.x, vz = q.z - b.z;
+  const den = Math.hypot(ux, uz) * Math.hypot(vx, vz) * Math.hypot(q.x - a.x, q.z - a.z);
+  return den > 1e-9 ? (2 * (ux * vz - uz * vx)) / den : 0;
+}
+
 /** A stretch across the road (m left of the centre line) for a car to keep within. */
 export interface Corridor {
   lo: number;
@@ -276,15 +283,36 @@ export class RacingDriver {
     const c = this.track.center;
     const h = DRIVER.pathStep;
     let lim = Infinity;
+    let bS = s - h, qS = s;
+    let b = this.smoothPoint(bS, lat, keepOnRoad), q = this.smoothPoint(qS, lat, keepOnRoad);
     for (let d = 0; d <= DRIVER.pathLook; d += h) {
       const s1 = s + d;
-      const k = this.pathCurvature(s1, lat, keepOnRoad, true);
+      // Adjacent curvature windows share two smoothed world points. Reuse
+      // only exactly equal sample positions, preserving floating-point results.
+      const aS = s1 - h;
+      const a = aS === bS ? b : aS === qS ? q : this.smoothPoint(aS, lat, keepOnRoad);
+      b = s1 === qS ? q : this.smoothPoint(s1, lat, keepOnRoad);
+      q = this.smoothPoint(s1 + h, lat, keepOnRoad);
+      bS = s1; qS = s1 + h;
+      const k = curvatureOf(a, b, q);
       // Off the line it keeps some grip in hand (for moving across, and for others).
       const vc = Math.min(this.pace.maxSpeed, cornerSpeed(k, this.at(c.bank, s1), this.pace.grip * grip, this.pace.downforce));
       const allowed = Math.sqrt(vc * vc + 2 * brakingDecel(brake, vc, this.at(c.grade, s1), this.pace.drag) * d);
       if (allowed < lim) lim = allowed;
     }
     return lim;
+  }
+
+  private smoothPoint(x: number, lat: (s: number) => number, keepOnRoad: boolean): PathPoint {
+    const w = DRIVER.pathSmooth;
+    let px = 0, pz = 0;
+    for (let j = -2; j <= 2; j++) {
+      const s = x + j * w / 2;
+      const lateral = lat(s);
+      const p = this.worldAt(s, keepOnRoad ? this.clampLat(s, lateral) : lateral);
+      px += p.x; pz += p.z;
+    }
+    return { x: px / 5, z: pz / 5 };
   }
 
   /**
@@ -301,23 +329,13 @@ export class RacingDriver {
     // Smooth the actual path in world space. Smoothing lateral offsets first
     // changes the path where the centre line turns sharply: even the ideal
     // racing line could appear to need half its normal speed in a duel.
-    const point = (x: number) => {
-      let px = 0, pz = 0;
-      for (const d of [-w, -w / 2, 0, w / 2, w]) { const p = this.worldAt(x + d, at(x + d)); px += p.x; pz += p.z; }
-      return { x: px / 5, z: pz / 5 };
-    };
     // Steering feed and the established lane plans retain their road-relative
     // smoothing. A route's speed limit must measure its actual world geometry.
     const L = (x: number) => (at(x - w) + at(x - w / 2) + at(x) + at(x + w / 2) + at(x + w)) / 5;
-    const a = worldSpace ? point(s - h) : this.worldAt(s - h, L(s - h));
-    const b = worldSpace ? point(s) : this.worldAt(s, L(s));
-    const q = worldSpace ? point(s + h) : this.worldAt(s + h, L(s + h));
-    const ux = b.x - a.x;
-    const uz = b.z - a.z;
-    const vx = q.x - b.x;
-    const vz = q.z - b.z;
-    const den = Math.hypot(ux, uz) * Math.hypot(vx, vz) * Math.hypot(q.x - a.x, q.z - a.z);
-    return den > 1e-9 ? (2 * (ux * vz - uz * vx)) / den : 0;
+    const a = worldSpace ? this.smoothPoint(s - h, lat, keepOnRoad) : this.worldAt(s - h, L(s - h));
+    const b = worldSpace ? this.smoothPoint(s, lat, keepOnRoad) : this.worldAt(s, L(s));
+    const q = worldSpace ? this.smoothPoint(s + h, lat, keepOnRoad) : this.worldAt(s + h, L(s + h));
+    return curvatureOf(a, b, q);
   }
 
   private clampLat(s: number, lat: number): number {

@@ -175,6 +175,7 @@ export class AiDriver {
   /** How fast `lane` is changing (m/s). */
   private laneVel = 0;
   private planIn = 0;
+  private firstPlan = true;
   private stuck = 0;
   /** Seconds left taking it easy after a slide or a knock. */
   private recover = 0;
@@ -461,6 +462,13 @@ export class AiDriver {
       this.planIn = TRAFFIC.planEvery;
       this.planner.tacticsEnabled = !pit && !finished && !this.yellow && !Number.isFinite(this.raceCap);
       this.planner.plan(st, cars, this.lane);
+      if (this.firstPlan) {
+        // Everyone reacts to the start immediately. After that, distribute
+        // expensive forecasts across ticks while keeping their normal cadence.
+        const ticks = Math.floor(TRAFFIC.planEvery / dt) + 1;
+        this.planIn = (ticks - .5 + this.slot % ticks) * dt;
+        this.firstPlan = false;
+      }
     }
     // Move across smoothly: ease into the move and out of it (a kink at speed would unsettle
     // the car), at most laneRate sideways.

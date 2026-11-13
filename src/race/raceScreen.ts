@@ -1541,7 +1541,7 @@ export class RaceScreen implements Screen {
       }
     }
     // Nothing moves while the qualifying grid is on show.
-    else if (!this.paused && this.stage !== 'grid') alpha = this.fixed.advance(dt, () => this.tick());
+    else if (!this.paused && this.stage !== 'grid') alpha = this.fixed.advance(dt, () => this.tick(), 12, 8);
     lerpState(car.prev, car.state, alpha, this.view);
     this.model.update(this.view, dt);
     this.opponents.forEach((o, k) => {
