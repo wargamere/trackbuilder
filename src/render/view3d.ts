@@ -24,6 +24,8 @@ import {
   WebGLRenderer,
   BackSide,
 } from 'three';
+import { RESOLUTION } from '../config/handling.ts';
+import { ResolutionGovernor } from './resolution.ts';
 import { THEMES, type Theme } from '../config/themes.ts';
 import type { RoadSurface, ThemeId, TimeOfDay } from '../config/track.ts';
 import { valueNoise } from '../core/random.ts';
@@ -89,6 +91,8 @@ export class View3D {
   private readonly groundTextures = new Map<ThemeId, Texture>();
   private theme: string | null = null;
   private quality: 'full' | 'fast' = 'full';
+  /** Automatic resolution while racing (see ResolutionGovernor): a share of the quality setting's pixel ratio. */
+  readonly resolution = new ResolutionGovernor();
   private trackGroup: Group | null = null;
   private disposeTrack: (() => void) | null = null;
   private currentTrack: Track | null = null;
@@ -249,8 +253,10 @@ export class View3D {
    * far, which helps a lot on slow GPUs; "full" uses up to 2× pixels.
    */
   setQuality(q: 'full' | 'fast'): void {
+    // (The automatic resolution starts again for a new setting, and is kept from race to race otherwise.)
+    if (q !== this.quality) this.resolution.reset();
     this.quality = q;
-    this.renderer.setPixelRatio(q === 'fast' ? 1 : Math.min(2, window.devicePixelRatio || 1));
+    this.renderer.setPixelRatio(this.pixelRatio());
     this.applyFog();
     this.rain.configure(q, this.shownTime === 'night', this.shownRain);
     this.camera.far = q === 'fast' ? 1100 : 2400;
@@ -539,10 +545,28 @@ export class View3D {
   }
 
   resize(w: number, h: number): void {
-    this.renderer.setPixelRatio(this.quality === 'fast' ? 1 : Math.min(2, window.devicePixelRatio || 1));
+    this.renderer.setPixelRatio(this.pixelRatio());
     this.renderer.setSize(w, h, false);
     this.camera.aspect = w / Math.max(1, h);
     this.camera.updateProjectionMatrix();
+  }
+
+  /** Pixels per CSS pixel: 1 for fast graphics, the screen's (up to 2) for full; times the automatic resolution's scale. */
+  private pixelRatio(): number {
+    const full = this.quality === 'fast' ? 1 : Math.min(2, window.devicePixelRatio || 1);
+    return this.resolution.scale === 1 ? full : Math.max(Math.min(full, RESOLUTION.minPixelRatio), full * this.resolution.scale);
+  }
+
+  /**
+   * While racing, once a frame: `dt` the time since the last (s), `cpu` the
+   * game's own time on it (s). Renders fewer pixels when the graphics card
+   * can't keep up, and goes back up when it can (see ResolutionGovernor).
+   */
+  adaptResolution(dt: number, cpu: number): void {
+    if (!this.resolution.frame(dt, cpu)) return;
+    const size = this.renderer.getSize(new Vector2());
+    this.renderer.setPixelRatio(this.pixelRatio());
+    this.renderer.setSize(size.x, size.y, false);
   }
 
   render(): void {

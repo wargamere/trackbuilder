@@ -1,10 +1,10 @@
 import type { CarState } from '../car/physics.ts';
 import { towStrength } from '../car/slipstream.ts';
-import { CONTACT, TRAFFIC } from '../config/race.ts';
+import { CONTACT, SLIPSTREAM, TRAFFIC } from '../config/race.ts';
 import { clamp } from '../core/math.ts';
 import { leftOf } from '../track/spline.ts';
 import type { Track } from '../track/track.ts';
-import type { Corridor, RacingDriver } from './driver.ts';
+import type { Corridor, LaneSlot, RacingDriver } from './driver.ts';
 import { Racecraft, type RacecraftAction } from './racecraft.ts';
 
 /**
@@ -55,6 +55,8 @@ interface Near {
   car: CarState;
   /** The same rival forecast is reused while comparing this snapshot's lanes. */
   forecast?: { origin: number; observed: boolean; count: number; values: Float64Array };
+  /** A buffer the forecast may use instead of a new one (lent by followSpeed, which looks at one car at a time). */
+  buffer?: Float64Array;
 }
 
 /**
@@ -96,6 +98,10 @@ export class TrafficPlanner {
   private readonly track: Track;
   private readonly L: number;
   private readonly near: Near[] = [];
+  /** Scratch for meet(): the lane being played forward, among the planned lanes. */
+  private readonly slot: LaneSlot = { a: new Float32Array(0), b: null, u: 0 };
+  /** The forecast buffer followSpeed lends each car ahead in turn (it plays them forward one at a time). */
+  private readonly followBuffer = new Float64Array(2 * (Math.ceil(Math.max(TRAFFIC.horizon, TRAFFIC.passHorizon, TRAFFIC.sideTime) / TRAFFIC.step) + 1));
   /** Current choice of lane. */
   choice: LaneChoice = { offset: 0 };
   /** Set by followSpeed(): the slowdown (m/s²) needed not to hit the car in our way. */
@@ -214,7 +220,7 @@ export class TrafficPlanner {
 
   /** Going on as we mean to in lane `c` (from offset `off0` now), would we run into the back of car `o` soon? */
   private wouldHit(me: CarState, c: LaneChoice, off0: number, o: Near, reachS: number, reachL: number): boolean {
-    return this.meet(me, c, off0, o, TRAFFIC.horizon, reachS, reachL).held > 0;
+    return this.meet(me, c, off0, o, TRAFFIC.horizon, reachS, reachL, true).held > 0;
   }
 
   /** Where car `o` will be across the road `t` seconds ahead, at `s` along the track. */
@@ -336,7 +342,7 @@ export class TrafficPlanner {
    * whether we got alongside (clear of it), and whether we'd still be held at
    * the end or squeezed into it alongside.
    */
-  private meet(me: CarState, c: LaneChoice, off0: number, o: Near, horizon: number, reachS: number, reachL: number) {
+  private meet(me: CarState, c: LaneChoice, off0: number, o: Near, horizon: number, reachS: number, reachL: number, untilHeld = false) {
     const dt = TRAFFIC.step;
     // Its pace against ours on the line.
     const r = Math.min(1.5, o.v / Math.max(3, this.driver.speedAt(me.s + o.ds)));
@@ -349,26 +355,48 @@ export class TrafficPlanner {
     // only inside this observation, never across ticks or tactical changes.
     const capacity = 2 * (Math.ceil(Math.max(TRAFFIC.horizon, TRAFFIC.passHorizon, horizon) / dt) + 1);
     if (!forecast || forecast.origin !== me.s || forecast.observed !== observed || forecast.values.length < capacity) {
-      forecast = o.forecast = { origin: me.s, observed, count: 0, values: new Float64Array(capacity) };
+      // (A buffer lent for this snapshot of the car, when there is one: no new array every tick.)
+      const values = o.buffer && o.buffer.length >= capacity ? o.buffer : new Float64Array(capacity);
+      forecast = o.forecast = { origin: me.s, observed, count: 0, values };
     }
     const out = { r, reached: false, held: 0, alongside: false, stuck: false };
+    // A lane of our own (not a pass or a tactic's path) needs no positions across the road
+    // while the car is too far ahead to reach or tow us (towStrength() is 0 beyond its range).
+    const ownLane = !c.pass && !c.route;
+    const slot = ownLane ? this.driver.laneSpeedSlot(c.offset, this.slot) : null;
     let k = 0;
     for (let t = 0; t <= horizon + 1e-9; t += dt) {
       if (k >= forecast.count) {
         forecast.values[2 * k] = r * this.driver.speedAt(sO);
-        forecast.values[2 * k + 1] = this.theirLat(o, sO, t);
+        // (Where it is across the road: worked out when first needed; NaN until then.)
+        forecast.values[2 * k + 1] = NaN;
         forecast.count = k + 1;
       }
-      const vO = forecast.values[2 * k], otherLat = forecast.values[2 * k + 1];
+      const vO = forecast.values[2 * k];
+      const gap = sO - sMe;
+      if (ownLane && gap >= reachS && gap - 2 * CONTACT.halfLength > SLIPSTREAM.range) {
+        // Out of reach and out of its slipstream: on the plan for our lane, no tow.
+        k++;
+        vMe = Math.min(this.driver.laneSpeedFrom(slot!, sMe) * (1 + TRAFFIC.towGain * Math.max(0, this.pushing ? TRAFFIC.pushTow : 0)), vMe + TRAFFIC.pickUp * dt);
+        sMe += vMe * dt;
+        sO += vO * dt;
+        continue;
+      }
+      let otherLat = forecast.values[2 * k + 1];
+      if (otherLat !== otherLat) otherLat = forecast.values[2 * k + 1] = this.theirLat(o, sO, t);
       k++;
+      // (Where we'd be across the road now: worked out once for this step.)
+      const lat = this.myLat(c, sMe, off0, t);
       if (sO - sMe < reachS) {
         out.reached = true;
-        const clear = Math.abs(this.myLat(c, sMe, off0, t) - otherLat) >= reachL;
+        const clear = Math.abs(lat - otherLat) >= reachL;
         if (!clear) {
           out.stuck = true;
           // Squeezed into it alongside: we'd have to back out.
           if (out.alongside) return out;
           out.held += dt;
+          // (All the caller wants to know is whether it holds us up at all.)
+          if (untilHeld) return out;
           vMe = vO;
           sMe += vO * dt;
           sO += vO * dt;
@@ -378,10 +406,9 @@ export class TrafficPlanner {
       }
       out.stuck = false;
       // In its slipstream we'd go quicker than our plan (that's how a pass is set up).
-      const lat = this.myLat(c, sMe, off0, t);
       const tow = towStrength(sO - sMe - 2 * CONTACT.halfLength, Math.abs(lat - otherLat), vMe);
-      const laneNow = c.pass || c.route ? lat - this.driver.lateralAt(sMe) : c.offset;
-      vMe = Math.min(this.driver.laneSpeedAt(sMe, laneNow) * (1 + TRAFFIC.towGain * Math.max(tow, this.pushing ? TRAFFIC.pushTow : 0)), vMe + TRAFFIC.pickUp * dt);
+      const laneSpeed = slot ? this.driver.laneSpeedFrom(slot, sMe) : this.driver.laneSpeedAt(sMe, lat - this.driver.lateralAt(sMe));
+      vMe = Math.min(laneSpeed * (1 + TRAFFIC.towGain * Math.max(tow, this.pushing ? TRAFFIC.pushTow : 0)), vMe + TRAFFIC.pickUp * dt);
       sMe += vMe * dt;
       sO += vO * dt;
       if (sO - sMe < -reachS) break;
@@ -611,8 +638,9 @@ export class TrafficPlanner {
       // a nose-to-tail gap because both ideal lines converge at a future apex.
       // Overlap corridors and the cut-across guard still reserve physical room.
       const committed = this.racecraft.target === o;
-      const predicted = committed ? this.meet(me, this.choice, lane, other, TRAFFIC.sideTime, reachS, reachL).held > 0 : this.wouldHit(me, this.choice, lane, other, reachS, reachL);
-      const inWay = (gap < 2 && overlapNow) || predicted;
+      other.buffer = this.followBuffer;
+      // (Right on its bumper and overlapping: in our way whatever the forecast says, so no need to play it forward.)
+      const inWay = (gap < 2 && overlapNow) || (committed ? this.meet(me, this.choice, lane, other, TRAFFIC.sideTime, reachS, reachL, true).held > 0 : this.wouldHit(me, this.choice, lane, other, reachS, reachL));
       if (!inWay) continue;
       // (Right up behind you, in your tow, ready to pounce; further back behind another AI.)
       const want = TRAFFIC.gapBase + (human ? TRAFFIC.gapTimeHuman : TRAFFIC.gapTime) * v;

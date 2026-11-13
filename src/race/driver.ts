@@ -19,6 +19,13 @@ export interface Corridor {
   hi: number;
 }
 
+/** One lane's place among the planned lanes (see RacingDriver.laneSpeedSlot()). */
+export interface LaneSlot {
+  a: Float32Array;
+  b: Float32Array | null;
+  u: number;
+}
+
 /** How to drive, beyond the lane (see RacingDriver.drive()). */
 export interface DriveOptions {
   /** Share of the planned speed. */
@@ -148,6 +155,34 @@ export class RacingDriver {
   laneSpeedAt(s: number, lane: number): number {
     if (Math.abs(lane) < DRIVER.offLine) return this.at(this.speed, s);
     return this.betweenLanes(this.laneSpeeds, s, lane);
+  }
+
+  /**
+   * laneSpeedAt() for one lane at many points: which planned lanes it lies
+   * between and how far, worked out once (`out`), then read at each `s` with
+   * laneSpeedFrom(). Gives exactly what laneSpeedAt() gives.
+   */
+  laneSpeedSlot(lane: number, out: LaneSlot): LaneSlot {
+    const offs = this.laneOffsets;
+    const arrs = this.laneSpeeds;
+    out.b = null;
+    out.u = 0;
+    if (Math.abs(lane) < DRIVER.offLine) out.a = this.speed;
+    else if (lane <= offs[0]) out.a = arrs[0];
+    else if (lane >= offs[offs.length - 1]) out.a = arrs[offs.length - 1];
+    else {
+      let k = 0;
+      while (offs[k + 1] < lane) k++;
+      out.a = arrs[k];
+      out.b = arrs[k + 1];
+      out.u = (lane - offs[k]) / (offs[k + 1] - offs[k]);
+    }
+    return out;
+  }
+
+  /** The speed at `s` in the lane `slot` was worked out for (see laneSpeedSlot()). */
+  laneSpeedFrom(slot: LaneSlot, s: number): number {
+    return slot.b === null ? this.at(slot.a, s) : this.at(slot.a, s) * (1 - slot.u) + this.at(slot.b, s) * slot.u;
   }
 
   /** Per-lane `arrs` at `s`, for lane `lane`: between two planned lanes, in proportion. */
@@ -305,12 +340,23 @@ export class RacingDriver {
 
   private smoothPoint(x: number, lat: (s: number) => number, keepOnRoad: boolean): PathPoint {
     const w = DRIVER.pathSmooth;
+    const c = this.track.center;
+    const n = c.points.length;
     let px = 0, pz = 0;
     for (let j = -2; j <= 2; j++) {
       const s = x + j * w / 2;
       const lateral = lat(s);
-      const p = this.worldAt(s, keepOnRoad ? this.clampLat(s, lateral) : lateral);
-      px += p.x; pz += p.z;
+      const la = keepOnRoad ? this.clampLat(s, lateral) : lateral;
+      // worldAt(s, la), written out so the five points a call needs make no objects
+      // (this runs for every car every tick); the same sums in the same order.
+      const f = (((s / c.spacing) % n) + n) % n;
+      const i = Math.floor(f);
+      const u = f - i;
+      const k = (i + 1) % n;
+      const pi = c.points[i], pk = c.points[k], ti = c.tangents[i], tk = c.tangents[k];
+      const l0x = ti.y, l0y = -ti.x, l1x = tk.y, l1y = -tk.x;
+      px += pi.x + (pk.x - pi.x) * u + (l0x + (l1x - l0x) * u) * la;
+      pz += pi.y + (pk.y - pi.y) * u + (l0y + (l1y - l0y) * u) * la;
     }
     return { x: px / 5, z: pz / 5 };
   }

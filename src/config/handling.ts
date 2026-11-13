@@ -166,3 +166,28 @@ export const CAMERA = {
     fov: 72,
   },
 } as const;
+
+/**
+ * Automatic resolution while racing (render/resolution.ts). Frames are
+ * measured over `window` s. A window whose frames take longer than
+ * `slowFrame` s on average (under 45 fps), while the game's own work is
+ * under `cpuShare` of that time (so the graphics card is what's slow), counts
+ * as slow; `downAfter` slow windows in a row step the resolution down. Frames
+ * quicker than `easyFrame` (57 fps and up) for `upAfter` windows step it back
+ * up. At most one change per `minGap` s (each one reallocates the drawing
+ * buffer). The steps are shares of the graphics setting's pixel ratio, never
+ * below `minPixelRatio` real pixels per CSS pixel. A frame longer than `stall`
+ * s (a tab switch, an ad) doesn't count.
+ */
+export const RESOLUTION = {
+  window: 0.5,
+  slowFrame: 1 / 45,
+  easyFrame: 1 / 57,
+  cpuShare: 0.6,
+  downAfter: 3,
+  upAfter: 16,
+  minGap: 3,
+  steps: [1, 0.85, 0.72, 0.6, 0.5],
+  minPixelRatio: 0.75,
+  stall: 0.25,
+} as const;

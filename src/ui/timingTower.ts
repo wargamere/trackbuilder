@@ -60,42 +60,92 @@ export class TimingTower {
     this.root.hidden = true;
   }
 
+  /** The row elements, reused from one update to the next (only what changed is touched). */
+  private readonly pool: TowerRowEls[] = [];
+
   /** Shows the rows (in race order) and the line under them (null: none). */
   update(rows: readonly TowerRow[], footer: string | null): void {
-    this.root.hidden = this.mode === 'off' || rows.length < 2;
-    if (this.root.hidden) return;
+    const hidden = this.mode === 'off' || rows.length < 2;
+    if (this.root.hidden !== hidden) this.root.hidden = hidden;
+    if (hidden) return;
     const T = STR.tower;
     const you = rows.findIndex((r) => r.you);
     // Compact: the top three and the two cars either side of you.
     const shown = this.mode === 'compact' ? rows.filter((_, i) => i < 3 || Math.abs(i - you) <= 2) : rows;
-    const els = shown.map((r, i) => {
+    while (this.pool.length < shown.length) this.pool.push(towerRowEls());
+    shown.forEach((r, i) => {
+      const el = this.pool[i];
       const gapText = r.out ? T.out : r.you ? T.you : r.finished && !r.gap ? T.finished : r.gap;
-      const tyre = r.tyre
-        ? h('span', { class: 'tower-tyre' }, h('span', { class: 'tyre-chip', text: STR.tyres.letters[r.tyre] }), h('span', { class: 'tower-age', text: fmt(T.age, { n: Math.floor(r.tyreAge) }) }))
-        : null;
-      const chip = tyre?.querySelector('.tyre-chip') as HTMLElement | null;
-      if (chip && r.tyre) chip.dataset.compound = r.tyre;
-      if (r.tyreLeft <= 0 && r.tyre) tyre?.classList.add('gone');
-      const row = h(
-        'div',
-        { class: `tower-row${r.you ? ' you' : ''}${r.out ? ' out' : ''}` },
-        h('span', { class: 'tower-pos', text: String(r.pos) }),
-        h('span', { class: 'tower-colour' }),
-        h('span', { class: 'tower-name', text: r.name }),
-        r.out ? null : r.pit ? h('span', { class: 'tower-pit', text: T.pit }) : r.stops > 0 ? h('span', { class: 'tower-stops', text: fmt(r.stops === 1 ? T.stops : T.stopsMany, { n: r.stops }) }) : null,
-        tyre,
-        h('span', { class: 'tower-gap', text: gapText }),
-      );
-      row.setAttribute('role', 'row');
-      (row.querySelector('.tower-colour') as HTMLElement).style.background = hexColour(r.paint);
       // A gap in the list (compact) gets a thin divider.
-      if (i > 0 && shown[i - 1].pos !== r.pos - 1) row.classList.add('after-gap');
-      return row;
+      const afterGap = i > 0 && shown[i - 1].pos !== r.pos - 1;
+      text(el.pos, String(r.pos));
+      text(el.name, r.name);
+      text(el.gap, gapText);
+      cls(el.row, `tower-row${r.you ? ' you' : ''}${r.out ? ' out' : ''}${afterGap ? ' after-gap' : ''}`);
+      const colour = hexColour(r.paint);
+      if (el.colourHex !== colour) {
+        el.colourHex = colour;
+        el.colour.style.background = colour;
+      }
+      // In the pits, or how many stops so far (nothing for a car that's out, or hasn't stopped).
+      const badge = r.out ? '' : r.pit ? T.pit : r.stops > 0 ? fmt(r.stops === 1 ? T.stops : T.stopsMany, { n: r.stops }) : '';
+      cls(el.badge, r.pit && !r.out ? 'tower-pit' : 'tower-stops');
+      text(el.badge, badge);
+      if (el.badge.hidden !== !badge) el.badge.hidden = !badge;
+      if (el.tyre.hidden !== !r.tyre) el.tyre.hidden = !r.tyre;
+      if (r.tyre) {
+        text(el.chip, STR.tyres.letters[r.tyre]);
+        if (el.chip.dataset.compound !== r.tyre) el.chip.dataset.compound = r.tyre;
+        text(el.age, fmt(T.age, { n: Math.floor(r.tyreAge) }));
+        cls(el.tyre, r.tyreLeft <= 0 ? 'tower-tyre gone' : 'tower-tyre');
+      }
+      if (this.rows.children[i] !== el.row) this.rows.insertBefore(el.row, this.rows.children[i] ?? null);
     });
-    this.rows.replaceChildren(...els);
+    // Rows no longer shown (compact, or cars gone from the list).
+    while (this.rows.children.length > shown.length) this.rows.lastElementChild?.remove();
     // A full grid of twenty: tighter rows, so it fits a small screen.
     this.root.classList.toggle('long', shown.length > 12);
-    this.footer.textContent = footer ?? '';
-    this.footer.hidden = !footer;
+    text(this.footer, footer ?? '');
+    if (this.footer.hidden !== !footer) this.footer.hidden = !footer;
   }
+}
+
+/** One row's elements. */
+interface TowerRowEls {
+  row: HTMLElement;
+  pos: HTMLElement;
+  colour: HTMLElement;
+  colourHex: string;
+  name: HTMLElement;
+  badge: HTMLElement;
+  tyre: HTMLElement;
+  chip: HTMLElement;
+  age: HTMLElement;
+  gap: HTMLElement;
+}
+
+function towerRowEls(): TowerRowEls {
+  const pos = h('span', { class: 'tower-pos' });
+  const colour = h('span', { class: 'tower-colour' });
+  const name = h('span', { class: 'tower-name' });
+  const badge = h('span', { class: 'tower-stops' });
+  const chip = h('span', { class: 'tyre-chip' });
+  const age = h('span', { class: 'tower-age' });
+  const tyre = h('span', { class: 'tower-tyre' }, chip, age);
+  const gap = h('span', { class: 'tower-gap' });
+  const row = h('div', { class: 'tower-row' }, pos, colour, name, badge, tyre, gap);
+  row.setAttribute('role', 'row');
+  badge.hidden = true;
+  tyre.hidden = true;
+  return { row, pos, colour, colourHex: '', name, badge, tyre, chip, age, gap };
+}
+
+/** Sets an element's text only if it changed (no needless style and layout work). */
+function text(el: HTMLElement, value: string): void {
+  if (el.textContent !== value) el.textContent = value;
+}
+
+/** Sets an element's classes only if they changed. */
+function cls(el: HTMLElement, value: string): void {
+  if (el.className !== value) el.className = value;
 }

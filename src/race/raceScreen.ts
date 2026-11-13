@@ -1516,6 +1516,7 @@ export class RaceScreen implements Screen {
     const car = this.car;
     const session = this.session;
     if (!v || !car || !session || !this.model || !this.ghostModel) return;
+    const frameStart = performance.now();
 
     if (this.game.interrupted && !this.paused) this.setPaused(true);
     // Gameplay is "on" only while actually driving: not in the countdown, paused or finished.
@@ -1589,7 +1590,9 @@ export class RaceScreen implements Screen {
       const others = this.opponents.filter((_, k) => !this.gone[k + 1]).map((o) => ({ x: o.view.x, z: o.view.z, color: hexColour(o.ai.paint) }));
       this.hud.minimap.draw(this.game.track, focus, pose, others);
     }
+    const renderStart = performance.now();
     v.render();
+    const renderMs = performance.now() - renderStart;
     this.hud.setSpeed(focus.speed);
     const assists = settings().assists;
     this.hud.setGear(car.state.gear, car.state.rpm, car.state.speed, assists.gears === 'manual', HANDLING.gearbox.shiftLight);
@@ -1614,6 +1617,9 @@ export class RaceScreen implements Screen {
       this.measureAuthor(deadline);
     }
 
+    // Automatic resolution: only while the race is really running (the game's own work, the
+    // render call left out: a graphics card that can't keep up shows up as slow frames then).
+    if (!this.paused && this.stage !== 'grid' && session.phase === 'racing') v.adaptResolution(dt, (performance.now() - frameStart - renderMs) / 1000);
     if (this.finishedFor >= 0 && !this.paused) {
       this.finishedFor += dt;
       if (this.finishedFor >= (session.retired ? DAMAGE.resultsDelay : RACE.resultsDelay)) {
