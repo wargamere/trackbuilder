@@ -53,6 +53,8 @@ interface Near {
   /** Its difficulty, for an AI. */
   pace: number | null;
   car: CarState;
+  /** The same rival forecast is reused while comparing this snapshot's lanes. */
+  forecast?: { origin: number; observed: boolean; count: number; values: Float64Array };
 }
 
 /**
@@ -341,12 +343,27 @@ export class TrafficPlanner {
     let sMe = me.s;
     let sO = me.s + o.ds;
     let vMe = Math.max(0, me.speed);
+    const observed = !o.ai && this.racecraft.target === o.car;
+    let forecast = o.forecast;
+    // A rival's speed/path is independent of the candidate lane. Cache it
+    // only inside this observation, never across ticks or tactical changes.
+    const capacity = 2 * (Math.ceil(Math.max(TRAFFIC.horizon, TRAFFIC.passHorizon, horizon) / dt) + 1);
+    if (!forecast || forecast.origin !== me.s || forecast.observed !== observed || forecast.values.length < capacity) {
+      forecast = o.forecast = { origin: me.s, observed, count: 0, values: new Float64Array(capacity) };
+    }
     const out = { r, reached: false, held: 0, alongside: false, stuck: false };
+    let k = 0;
     for (let t = 0; t <= horizon + 1e-9; t += dt) {
-      const vO = r * this.driver.speedAt(sO);
+      if (k >= forecast.count) {
+        forecast.values[2 * k] = r * this.driver.speedAt(sO);
+        forecast.values[2 * k + 1] = this.theirLat(o, sO, t);
+        forecast.count = k + 1;
+      }
+      const vO = forecast.values[2 * k], otherLat = forecast.values[2 * k + 1];
+      k++;
       if (sO - sMe < reachS) {
         out.reached = true;
-        const clear = Math.abs(this.myLat(c, sMe, off0, t) - this.theirLat(o, sO, t)) >= reachL;
+        const clear = Math.abs(this.myLat(c, sMe, off0, t) - otherLat) >= reachL;
         if (!clear) {
           out.stuck = true;
           // Squeezed into it alongside: we'd have to back out.
@@ -362,7 +379,7 @@ export class TrafficPlanner {
       out.stuck = false;
       // In its slipstream we'd go quicker than our plan (that's how a pass is set up).
       const lat = this.myLat(c, sMe, off0, t);
-      const tow = towStrength(sO - sMe - 2 * CONTACT.halfLength, Math.abs(lat - this.theirLat(o, sO, t)), vMe);
+      const tow = towStrength(sO - sMe - 2 * CONTACT.halfLength, Math.abs(lat - otherLat), vMe);
       const laneNow = c.pass || c.route ? lat - this.driver.lateralAt(sMe) : c.offset;
       vMe = Math.min(this.driver.laneSpeedAt(sMe, laneNow) * (1 + TRAFFIC.towGain * Math.max(tow, this.pushing ? TRAFFIC.pushTow : 0)), vMe + TRAFFIC.pickUp * dt);
       sMe += vMe * dt;

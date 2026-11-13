@@ -82,11 +82,14 @@ export class AuthorLap {
     this.maxTicks = Math.ceil(((this.length * 2.2) / 8) * HANDLING.tickRate);
   }
 
-  /** Runs up to `budget` physics ticks; returns true when finished. */
-  run(budget: number): boolean {
+  /** Runs up to `budget` ticks, yielding at `deadline` (performance.now ms). */
+  run(budget: number, deadline = Infinity): boolean {
     if (this.result !== undefined) return true;
     const L = this.length;
     for (let k = 0; k < budget; k++) {
+      // Small batches amortise the clock read without a long main-thread stall.
+      // The deadline only changes when we yield, never the physics or lap time.
+      if ((k & 15) === 0 && deadline !== Infinity && performance.now() >= deadline) return false;
       this.car.step(this.driver.drive(this.car.state));
       this.tick++;
       const s = this.car.state.s;

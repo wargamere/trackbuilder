@@ -189,10 +189,14 @@ export class RacingDriver {
   private at(arr: Float32Array, s: number): number {
     const c = this.track.center;
     const n = c.points.length;
-    const f = (((s / c.spacing) % n) + n) % n;
+    // Most predictions are already on this lap. Two floating-point modulo
+    // operations here used to dominate full-grid traffic planning.
+    let f = s / c.spacing;
+    if (f < 0 || f >= n) f = ((f % n) + n) % n;
+    else { f = (f + n) - n; if (f === n) f = 0; }
     const i = Math.floor(f);
     const u = f - i;
-    return arr[i] * (1 - u) + arr[(i + 1) % n] * u;
+    return arr[i] * (1 - u) + arr[i + 1 === n ? 0 : i + 1] * u;
   }
 
   /**
@@ -201,9 +205,17 @@ export class RacingDriver {
    * beside the line, so every such path is as smooth as the line itself.
    */
   lateralAt(s: number, lane = 0): number {
-    const line = this.at(this.line.offset, s);
+    const c = this.track.center, n = c.points.length;
+    let f = s / c.spacing;
+    if (f < 0 || f >= n) f = ((f % n) + n) % n;
+    // Preserve the old wrap's floating-point rounding, including a value
+    // within one rounding unit of the finish. Contact races are sensitive to it.
+    else { f = (f + n) - n; if (f === n) f = 0; }
+    const i = Math.floor(f), j = i + 1 === n ? 0 : i + 1, u = f - i, a = 1 - u;
+    // Offset and both road margins share one interpolation position.
+    const line = this.line.offset[i] * a + this.line.offset[j] * u;
     if (lane === 0) return line;
-    return line + clamp(lane, -this.at(this.line.roomRight, s), this.at(this.line.roomLeft, s));
+    return line + clamp(lane, -(this.line.roomRight[i] * a + this.line.roomRight[j] * u), this.line.roomLeft[i] * a + this.line.roomLeft[j] * u);
   }
 
   /** The point the driver aims to be at, `s` metres along the track. */
