@@ -18,6 +18,7 @@
     "preview:web": "vite preview --outDir dist/web",
     "preview:cg": "vite preview --outDir dist/crazygames",
     "test:browser": "node scripts/browserCheck.mjs",
+    "test:career:browser": "node scripts/longCareerBrowserCheck.mjs",
     "baseline:ai": "node training/baseline.ts",
     "train:ai": "node training/train.ts",
     "eval:ai": "node training/evaluate.ts",

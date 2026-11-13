@@ -4,6 +4,7 @@ import {
   carOrder,
   carRank,
   cleanName,
+  ensureSeasonStart,
   driverStandings,
   lineup,
   newCareer,
@@ -18,6 +19,7 @@ import {
   roundFailures,
   roundWeather,
   setGrid,
+  settleSeasonAwards,
   team as teamDef,
   teamStandings,
   tyreLife,
@@ -50,6 +52,8 @@ import { campaignDebrief, campaignSeasonReview } from './careerCampaign.ts';
 import { advanceToWeekend, awardPractice, engineering } from '../career/engineering.ts';
 import { calendarOpen } from '../career/calendar.ts';
 import { SeasonCalendarEditor } from './seasonCalendar.ts';
+import { driverContracts } from '../career/contracts.ts';
+import { seasonReviewView } from './seasonReview.ts';
 
 type Tab = OwnerTab;
 const TABS: readonly Tab[] = OWNER_TABS.map(([id]) => id);
@@ -155,9 +159,9 @@ export class CareerScreen implements Screen {
           return;
         }
         // Typing your name: only Enter and Esc are ours.
-        const typing = e.target instanceof HTMLInputElement;
+        const typing = e.target instanceof HTMLElement && !!e.target.closest('input, select, textarea, [contenteditable="true"]');
         // Focused controls use Enter themselves; do not also launch a session.
-        if ((e.code === 'Enter' || e.code === 'NumpadEnter') && e.target instanceof HTMLElement && e.target.closest('button, summary')) return;
+        if ((e.code === 'Enter' || e.code === 'NumpadEnter') && e.target instanceof HTMLElement && e.target.closest('button, summary, select, textarea, [contenteditable="true"]')) return;
         if (typing && this.save && e.code !== 'Escape') return;
         if (e.code === 'Escape') {
           e.preventDefault();
@@ -236,6 +240,12 @@ export class CareerScreen implements Screen {
     const subScroll = this.panel.querySelector('.owner-subnav')?.scrollLeft ?? 0;
     const save = this.save;
     if (save?.owner && !save.owner.engineering) { engineering(save); this.game.career.write(); }
+    if (save?.owner) {
+      let dirty = ensureSeasonStart(save);
+      if (!save.contracts) { driverContracts(save); dirty = true; }
+      if (settleSeasonAwards(save)) dirty = true;
+      if (dirty) this.game.career.write();
+    }
     if (save?.owner) {
       const identity = teamDef(save.team, save), accent = colour(identity.secondary ?? identity.paint);
       this.root.style.setProperty('--team-primary', colour(identity.paint));
@@ -409,7 +419,7 @@ export class CareerScreen implements Screen {
         'div',
         { class: 'career-head-you' },
         h('div', { class: 'career-you-name' }, dot(t), save.name),
-        h('div', { class: 'career-you-line', text: fmt(C.yourPlace, { pos: ord(mine.position), pts: mine.points }) }),
+        h('div', { class: 'career-you-line', text: save.owner ? `P${mine.teamPosition} · ${teamStandings(save).find(t => t.yours)?.points ?? 0} team points` : fmt(C.yourPlace, { pos: ord(mine.position), pts: mine.points }) }),
         h('div', { class: 'career-you-line', text: fmt(C.teamPlace, { team: t.name, pos: ord(mine.teamPosition) }) }),
       ),
     );
@@ -777,6 +787,12 @@ export class CareerScreen implements Screen {
 
   private review(save: CareerSave): (Node | null)[] {
     const C = STR.career;
+    if (save.owner) {
+      const start = () => { nextSeason(save, save.team); this.game.career.write(); this.tab = 'calendar'; this.tyresFor = ''; this.showTrack(); this.render(); };
+      this.primary = start;
+      return [this.header(save, C.seasonDone), seasonReviewView(save, () => { this.game.career.write(); this.render(); }),
+        h('div', { class: 'menu row setup-buttons career-foot' }, button(C.back, () => this.game.go('menu'), { icon: '←', key: 'Esc' }), button(fmt(C.nextSeason, { n: save.season + 1 }), start, { icon: '▶', class: 'primary', key: 'Enter' }))];
+    }
     const drivers = driverStandings(save);
     const teams = teamStandings(save);
     const mine = yourSeason(save);

@@ -42,10 +42,10 @@ export function updateTeamIdentity(save: CareerSave, name: string, paint: number
   return true;
 }
 
-export const recruitmentOpen = (save: CareerSave): boolean => !!save.owner && save.done.length === 0 && save.grid === null;
+export const recruitmentOpen = (save: CareerSave): boolean => !!save.owner && save.season === 1 && !save.calendarStarted && save.done.length === 0 && save.grid === null;
 export const marketDrivers = (save: CareerSave) => save.roster === 'grandprix' ? [...GP_DRIVERS, ...RESERVE_DRIVERS] : [...allDrivers];
 
-/** Hires are only allowed before qualifying for round one; never rewrite a scored season. */
+/** Founding adjustments precede the first session. Later moves use next-season contracts. */
 export function hireDriver(save: CareerSave, seat: 0 | 1, id: string): boolean {
   if (!recruitmentOpen(save) || !marketDrivers(save).some((d) => d.id === id)) return false;
   const current = team(save.team, save);
@@ -57,6 +57,7 @@ export function hireDriver(save: CareerSave, seat: 0 | 1, id: string): boolean {
   entry.drivers[seat] = id;
   save.entry = entry;
   if (save.owner!.selected === previous) save.owner!.selected = id;
+  if (save.contracts) save.contracts.active[seat] = { driver: id, seat, starts: save.season, ends: save.season, fee: 0, salary: 0 };
   signing(save, id);
   return true;
 }

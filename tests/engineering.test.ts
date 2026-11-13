@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { aiDifficulty, carRating, cleanCareer, lineup, newCareer, nextCars, nextSeason, playerCar, recordRound, setGrid, teamStandings } from '../src/career/career.ts';
+import { aiDifficulty, carRating, cleanCareer, lineup, newCareer, nextSeason, playerCar, recordRound, setGrid, teamStandings } from '../src/career/career.ts';
 import { takeOwnership, selectDriver } from '../src/career/owner.ts';
 import { advanceToWeekend, announceRegulations, assignUpgrade, awardPractice, buildQuote, capSpent, carDevelopment, cleanEngineering, costCap, engineering, engineeringCapacity, improveEngineering, manufacture, PARTS, researchPrice, resourceIncome, setWorkforce, startResearch, adaptPart } from '../src/career/engineering.ts';
 import { driverProgress, failureChance, hireStaff, operatingCosts } from '../src/career/dynasty.ts';
@@ -110,8 +110,9 @@ test('regulation adaptation preserves protected upgrades and removes unadapted o
   e.regulation!.area = 'aero'; const id = 'aero-1'; design(s, id); e.stock[id] = 2; assignUpgrade(s, id, 0); assignUpgrade(s, id, 1);
   const lost = cleanCareer(JSON.parse(JSON.stringify(s)))!; assert.ok(adaptPart(s, id));
   while (s.done.length < s.calendar.length) race(s); while (lost.done.length < lost.calendar.length) race(lost);
-  const expected = nextCars(s)[s.team]; nextSeason(s, s.team); nextSeason(lost, lost.team);
-  assert.ok(e.researched.includes(id)); assert.ok(e.fitted[0].includes(id)); assert.ok(!engineering(lost).researched.includes(id));
+  const expected = carRating(s, s.team); nextSeason(s, s.team); nextSeason(lost, lost.team);
+  assert.equal(e.researched.length, 0); assert.equal(e.fitted[0].length, 0); assert.equal(e.baseline![0].aero, .012);
+  assert.equal(engineering(lost).baseline![0].aero, 0); assert.ok(carRating(lost, lost.team) < carRating(s, s.team));
   close(carRating(s, s.team), expected); assert.equal(capSpent(s), 0); assert.equal(e.advanced, '');
 });
 

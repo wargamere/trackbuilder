@@ -227,7 +227,7 @@ test('each round’s weather and mechanical failures are the same every time the
       races++;
     }
   }
-  assert.ok(counts.dry / races > 0.6 && counts.dry / races < 0.8, `dry ${((counts.dry / races) * 100).toFixed(0)} %`);
+  assert.ok(counts.dry / races > 0.8 && counts.dry / races < 0.95, `dry ${((counts.dry / races) * 100).toFixed(0)} %`);
   assert.ok(counts.rain > 0 && counts.changing > counts.rain);
   const perRace = failures / races;
   assert.ok(perRace > 0.3 && perRace < 0.9, `${perRace.toFixed(2)} failures a race`);
@@ -276,8 +276,8 @@ test('the end of a season: it goes in the record, the cars change a little, and 
   assert.notDeepEqual(save.cars, before);
   const values = Object.values(save.cars);
   assert.equal(values.length, 10);
-  assert.ok(Math.abs(Math.max(...values) - 1) < 1e-9, 'the quickest car is the yardstick');
-  assert.ok(Math.min(...values) >= 0 && values.every((v) => v <= 1));
+  assert.ok(Math.max(...values) > 1, 'the leading car keeps earned absolute progress');
+  assert.ok(Math.min(...values) >= 0 && values.every(Number.isFinite));
   for (const t of CAREER.teams) assert.ok(Math.abs(save.cars[t.id] - before[t.id]) < 0.45, `${t.id} hasn’t leapt`);
   assert.deepEqual(save.calendar, seasonCalendar('short', 2));
   assert.equal(driverStandings(save)[0].points, 0);

@@ -1,4 +1,4 @@
-import { carRank, carRating, driverStandings, lineup, raceLaps, roundWeather, team, teamStandings, type CareerSave } from '../career/career.ts';
+import { carRank, performanceIndex, driverStandings, lineup, raceLaps, roundWeather, team, teamStandings, type CareerSave } from '../career/career.ts';
 import { money, selectDriver } from '../career/owner.ts';
 import { driverDef } from '../career/roster.ts';
 import { builtInTrack } from '../editor/pipeline.ts';
@@ -87,7 +87,7 @@ export function ownerBody(save: CareerSave, round: number, tab: OwnerTab, action
       h('div', { class: 'owner-overview-grid' }, h('section', { class: 'owner-next-event' },
         h('div', { class: 'owner-race-copy' }, label(`ROUND ${round + 1} / ${track?.def.place ?? 'GRAND PRIX'}`), h('h2', {}, track?.def.name ?? 'Race', h('span', { text: 'Grand Prix' })), h('p', { class: 'owner-race-status', text: save.grid ? 'Grid confirmed' : e.advanced === `${save.season}:${round}` ? 'At the race weekend' : 'Planning before the race weekend' })),
         track ? h('div', { class: 'owner-map-wrap' }, circuitMap(track)) : null,
-        h('div', { class: 'owner-race-facts' }, stat('FORECAST', weather), stat('DISTANCE', track ? `${raceLaps(save.length, trackLapTime(track))} laps` : '—'), stat('CAR RATING', `${Math.round(carRating(save, save.team) * 100)}%`))), inbox),
+        h('div', { class: 'owner-race-facts' }, stat('FORECAST', weather), stat('DISTANCE', track ? `${raceLaps(save.length, trackLapTime(track))} laps` : '—'), stat('PERFORMANCE INDEX', `${performanceIndex(save, save.team)} PI`))), inbox),
       h('div', { class: 'owner-section-heading' }, h('h2', { text: 'Choose your race driver' }), h('span', { text: 'Both cars score for your team' })), driverCards(save, actions.changed),
       h('section', { class: 'owner-status-strip', 'data-testid': 'campaign-command' }, stat('BOARD CONFIDENCE', `${Math.round(w.confidence)}%`), stat('RESEARCH', `${e.research.length} active`), stat('MANUFACTURING', `${e.production.length} active`), stat('PARTS TO FIT', String(ready))), prep);
   } else if (['development', 'manufacturing', 'upgrades', 'engineeringHistory'].includes(tab)) {
