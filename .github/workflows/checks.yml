@@ -26,6 +26,7 @@ jobs:
       - run: npm run build
       - run: npx playwright install chromium
       - run: npm run test:browser
+      - run: npm run test:career:browser
       - run: npm run test:ai:browser -- training/runs/ci-smoke/policy.json
       - name: Smoke-test a full grid in wet Las Vegas at night
         run: npm run bench:wet-race -- ci

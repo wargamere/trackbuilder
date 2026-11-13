@@ -77,8 +77,8 @@ export const CAREER = {
   carPull: 0.3,
   carTop: 0.1,
   /** The weather for a round: this often rain all race, this often changing (rain on the way), else dry. */
-  rain: 0.08,
-  changing: 0.22,
+  rain: 0.04,
+  changing: 0.12,
   /** Each AI car has this chance a race of a mechanical failure, somewhere between these shares of the distance. */
   failure: 0.03,
   failFrom: 0.15,

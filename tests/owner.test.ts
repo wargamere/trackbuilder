@@ -115,7 +115,7 @@ test('multi-round research persists its remaining work and only applies its gain
   assert.equal(restored.owner!.ledger!.filter((e) => e.amount < 0).length, 1);
 });
 
-test('a long project cannot exceed the remaining calendar or waste money on a maxed car', () => {
+test('a long project cannot exceed the calendar, while reaching the old ceiling still leaves development available', () => {
   const save = start();
   while (save.done.length < save.calendar.length - 2) recordRound(save, result(save));
   const before = save.owner!.cash;
@@ -123,8 +123,8 @@ test('a long project cannot exceed the remaining calendar or waste money on a ma
   assert.equal(save.owner!.cash, before);
   assert.match(researchBlocker(save, 'concept')!, /Not enough rounds/);
   save.cars.kestrel = 1;
-  assert.equal(commissionDevelopment(save, 'sprint'), false);
-  assert.equal(save.owner!.cash, before);
+  assert.equal(commissionDevelopment(save, 'sprint'), true);
+  assert.equal(save.owner!.cash, before - 1_200_000);
 });
 
 test('sponsor tradeoffs, target bonuses and contract locks affect actual race income', () => {

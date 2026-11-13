@@ -261,7 +261,7 @@ export function settleDynastyRound(save: CareerSave, result: RoundResult, teamPo
   if (pts > 0) unlock(save, 'first-points'); if (best <= 3) unlock(save, 'first-podium'); if (best === 1) unlock(save, 'first-win');
   news(save, pts > theirs ? 'Advantage, your team.' : pts < theirs ? 'Your rival strikes back.' : 'Nothing between the teams.', `${pts}–${theirs} on points against ${rival?.name ?? 'your rival'}. Head-to-head: ${w.rival.won} wins, ${w.rival.lost} losses.`, 'rival');
   if (save.done.length % 3 === 0 && save.done.length < save.calendar.length) {
-    for (const t of teamsFor(save)) if (t.id !== save.team) save.cars[t.id] = Math.min(1, save.cars[t.id] + 0.004 + rng(hashString(`${save.seed}:${key}:${t.id}:upgrade`))() * 0.008);
+    for (const t of teamsFor(save)) if (t.id !== save.team) save.cars[t.id] += 0.004 + rng(hashString(`${save.seed}:${key}:${t.id}:upgrade`))() * 0.008;
     news(save, 'The grid keeps moving.', 'Rival teams have brought new packages. Your vehicle comparison now reflects their gains.', 'rival');
   }
   if (save.done.length === save.calendar.length && w.reviewed !== save.season) {
@@ -277,7 +277,7 @@ export function startDynastySeason(save: CareerSave): void {
   const w = dynasty(save); w.plan = { season: save.season, round: 0, id: 'balanced' }; w.settled = roundKey(save);
   w.rival = { id: rivalId(save), won: 0, lost: 0, tied: 0 };
   for (const p of Object.values(w.drivers)) { delete p.training; p.morale = Math.round((p.morale + 70) / 2); }
-  news(save, `Season ${save.season}. A new chapter.`, `Recruitment and partner contracts reopen. Staff, departments, driver development and your legacy carry forward.`, 'board');
+  news(save, `Season ${save.season}. A new chapter.`, `Driver moves are now active. A fresh car programme and sponsor window have opened. Your staff, facilities, driver development and car foundations carry forward.`, 'board');
 }
 
 /** Strict optional migration. Missing campaign data stays absent until the owner hub initializes it. */

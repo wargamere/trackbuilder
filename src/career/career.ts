@@ -4,12 +4,14 @@ import { AI, type Compound } from '../config/race.ts';
 import { clamp } from '../core/math.ts';
 import { hashString, rng } from '../core/random.ts';
 import { loadJSON, saveJSON, storage } from '../platform/storage.ts';
-import { cleanOwner, settleOwnerRound, type OwnerState } from './owner.ts';
+import { cleanOwner, grantSeasonPrize, settleOwnerRound, type OwnerState } from './owner.ts';
 import { cleanEntry, driverDef, teamsFor, type RosterSave } from './roster.ts';
 import { GP_TEAMS } from '../config/grandPrix.ts';
 import { createDynasty, driverProgress, driverRating, dynasty, failureChance, settleDynastyRound, startDynastySeason, weekendApproach } from './dynasty.ts';
 import { advanceToWeekend, announceRegulations, carDevelopment, startEngineeringSeason, teamDevelopment } from './engineering.ts';
 import { CALENDAR_TRACKS } from './calendar.ts';
+import { seasonWeather } from './seasonWeather.ts';
+import { activateDriverContracts, cleanDriverContracts, driverContracts, settleDriverPayroll, type DriverContracts } from './contracts.ts';
 
 /**
  * The career's rules, as plain data and functions (no screen, no tracks):
@@ -35,6 +37,7 @@ export interface RoundResult {
 
 /** A finished season, for the record. */
 export interface SeasonRecord {
+  report?: SeasonReport;
   season: number;
   /** The team you drove for. */
   team: string;
@@ -50,8 +53,17 @@ export interface SeasonRecord {
   championTeam: string;
 }
 
+export interface SeasonReport {
+  teamName: string; teamPoints: number; teamWins: number; teamPodiums: number; teamPosition: number;
+  target: number; prize: number; startIndex: number; endIndex: number; baselineRound: number; research: number; fitted: number;
+  champion: string; championTeam: string; bestTrack: string; bestPoints: number;
+  drivers: { id: string; name: string; position: number; points: number; wins: number; podiums: number }[];
+}
+
 /** Everything a career keeps. */
 export interface CareerSave extends RosterSave {
+  contracts?: DriverContracts;
+  seasonStart?: { season: number; round: number; index: number };
   /** Present in a team-owner career; absent in legacy driver careers. */
   owner?: OwnerState;
   v: 1;
@@ -67,7 +79,7 @@ export interface CareerSave extends RosterSave {
   season: number;
   /** What the career's dice are thrown from (weather, form, failures, how the cars change). */
   seed: number;
-  /** How good each team's car is this season (0..1), by team id. */
+  /** Absolute base performance by team; 1 is the initial leader, not a career cap. */
   cars: Record<string, number>;
   /** This season's rounds: track ids, in order. */
   calendar: string[];
@@ -186,11 +198,14 @@ export function lineup(save: Pick<CareerSave, 'team' | 'name' | 'owner' | 'entry
   return out;
 }
 
-/** How good team `id`'s car is this season, 0..1. */
+/** Absolute car development, including the mean gain of both owned cars. */
 export function carRating(save: Pick<CareerSave, 'cars'> & Partial<Pick<CareerSave, 'owner' | 'team' | 'roster' | 'entry'>>, id: string): number {
   const c = save.cars[id];
-  return typeof c === 'number' ? clamp(c + (id === save.team ? teamDevelopment(save) : 0), 0, 1) : team(id).car;
+  return typeof c === 'number' ? Math.max(0, c + (id === save.team ? teamDevelopment(save) : 0)) : team(id).car;
 }
+
+/** An absolute index: the initial leading car is 700, with room for future seasons. */
+export function performanceIndex(save: Parameters<typeof carRating>[0], id: string): number { return Math.round(carRating(save, id) * 700); }
 
 /** The teams by how good their cars are this season, the quickest first. */
 export function carOrder(save: Pick<CareerSave, 'cars'> & RosterSave): TeamDef[] {
@@ -225,7 +240,10 @@ export function carPerformance(save: CareerSave, id: string): CarPerformance {
   const parts = carDevelopment(save, id);
   const experience = save.owner && t.id === save.team ? Math.floor(driverProgress(save, id).xp / 100) * .0005 : 0;
   const approach = save.owner && t.id === save.team ? weekendApproach(save).pace * 2 / 3 : 0;
-  return { grip: 1 - CAREER.carGrip * off + parts.aero * .7 + parts.chassis * .5 + experience, pull: 1 - CAREER.carPull * off + parts.powertrain * .8 + parts.chassis * .16 + approach, top: 1 - CAREER.carTop * off + parts.powertrain * .36 + parts.aero * .08 };
+  // Preserve the existing balance through 1.0; later decades have diminishing
+  // returns rather than unbounded straight-line speeds or a hard upgrade wall.
+  const progress = (value: number) => value <= 1 ? value : 1 + .25 * (1 - Math.exp(-(value - 1) / .25));
+  return { grip: progress(1 - CAREER.carGrip * off + parts.aero * .7 + parts.chassis * .5 + experience), pull: progress(1 - CAREER.carPull * off + parts.powertrain * .8 + parts.chassis * .16 + approach), top: progress(1 - CAREER.carTop * off + parts.powertrain * .36 + parts.aero * .08) };
 }
 
 /** Hardware in the car selected for the player this weekend. */
@@ -235,8 +253,7 @@ export function playerCar(save: CareerSave): CarPerformance {
 
 /** The weather for round `round` (0-based) of this season. */
 export function roundWeather(save: CareerSave, round: number): RoundWeather {
-  const r = dice(save, `${save.season}:${round}:weather`);
-  return r < CAREER.rain ? 'rain' : r < CAREER.rain + CAREER.changing ? 'changing' : 'dry';
+  return seasonWeather(save)[round] ?? 'dry';
 }
 
 /** Mechanical failures in round `round`: for each AI car that has one, how far through the race (a share of the distance). */
@@ -359,6 +376,7 @@ export function recordRound(save: CareerSave, result: { order: readonly string[]
   if (nextRound(save) === null) return null;
   save.calendarStarted = true;
   if (save.owner) dynasty(save);
+  ensureSeasonStart(save);
   if (save.owner?.engineering) advanceToWeekend(save, true);
   const whole = wholeOrder(save, result.order);
   const dnf = whole.filter((id) => result.dnf.includes(id));
@@ -370,20 +388,18 @@ export function recordRound(save: CareerSave, result: { order: readonly string[]
   };
   save.done.push(round);
   settleOwnerRound(save, round);
+  settleDriverPayroll(save);
   if (save.owner) settleDynastyRound(save, round, teamStandings(save).findIndex((t) => t.yours) + 1, driverStandings(save)[0]?.id ?? null);
   announceRegulations(save);
+  settleSeasonAwards(save);
   save.grid = null;
   return round;
 }
 
-/** How the cars will stand next season: each up to CAREER.drift better or worse, then spread out again from the quickest (1) down. */
+/** Carry absolute progress forward; the leading car is never normalised back to a ceiling. */
 export function nextCars(save: CareerSave): Record<string, number> {
   const teams = teamsFor(save);
-  const raw = teams.map((t) => carRating(save, t.id) + (dice(save, `${save.season}:drift:${t.id}`) * 2 - 1) * CAREER.drift);
-  const lo = Math.min(...raw);
-  const hi = Math.max(...raw);
-  const floor = Math.min(...teams.map((t) => t.car));
-  return Object.fromEntries(teams.map((t, i) => [t.id, hi > lo ? floor + ((raw[i] - lo) / (hi - lo)) * (1 - floor) : t.car]));
+  return Object.fromEntries(teams.map(t => [t.id, (save.cars[t.id] ?? t.car) + (save.owner && t.id === save.team ? 0 : .015 + dice(save, `${save.season}:drift:${t.id}`) * .04)]));
 }
 
 /** Your season so far, in a line: place, points, wins, podiums and your team's place. */
@@ -392,6 +408,39 @@ export function yourSeason(save: CareerSave): { position: number; points: number
   const i = drivers.findIndex((d) => save.owner ? d.team.id === save.team : d.you);
   const me = drivers[i];
   return { position: i + 1, points: me?.points ?? 0, wins: me?.wins ?? 0, podiums: me?.podiums ?? 0, teamPosition: teamStandings(save).findIndex((t) => t.yours) + 1 };
+}
+
+export function ensureSeasonStart(save: CareerSave): boolean {
+  if (!save.owner || save.seasonStart?.season === save.season) return false;
+  save.seasonStart = { season: save.season, round: save.done.length, index: performanceIndex(save, save.team) }; return true;
+}
+
+export function settleSeasonAwards(save: CareerSave): boolean {
+  if (!save.owner || nextRound(save) !== null) return false;
+  const teams = teamStandings(save), position = teams.findIndex(t => t.yours) + 1;
+  const driverTitle = driverStandings(save)[0]?.team.id === save.team;
+  return grantSeasonPrize(save, 1_000_000 + (teams.length - position) * 350_000 + (driverTitle ? 1_000_000 : 0));
+}
+
+export function seasonReport(save: CareerSave): SeasonReport {
+  const teams = teamStandings(save), mine = teams.find(t => t.yours)!, all = driverStandings(save), ids = new Set(mine.drivers.map(d => d.id));
+  const weekends = save.done.map((r, i) => ({ track: save.calendar[i], points: r.order.reduce((sum, id, place) => sum + (ids.has(id) && !r.dnf.includes(id) ? CAREER.points[place] ?? 0 : 0), 0) }));
+  const best = weekends.sort((a, b) => b.points - a.points)[0];
+  return { teamName: mine.team.name, teamPoints: mine.points, teamWins: mine.wins, teamPodiums: mine.podiums, teamPosition: teams.indexOf(mine) + 1,
+    target: save.owner?.target ?? carRank(save, save.team), prize: save.owner?.seasonPrize?.season === save.season ? save.owner.seasonPrize.amount : 0,
+    startIndex: save.seasonStart?.index ?? performanceIndex(save, save.team), endIndex: performanceIndex(save, save.team), baselineRound: save.seasonStart?.round ?? save.done.length,
+    research: save.owner?.engineering?.researched.length ?? 0, fitted: save.owner?.engineering?.fitted.reduce((sum, car) => sum + car.length, 0) ?? 0,
+    champion: all[0]?.name ?? '', championTeam: teams[0]?.team.name ?? '', bestTrack: best?.track ?? '', bestPoints: best?.points ?? 0,
+    drivers: all.map((d, i) => ({ id: d.id, name: d.name, position: i + 1, points: d.points, wins: d.wins, podiums: d.podiums })).filter(d => ids.has(d.id)) };
+}
+
+function cleanSeasonReport(raw: unknown): SeasonReport | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const r = raw as Record<string, unknown>, text = (x: unknown) => typeof x === 'string' ? x.slice(0, 80) : '';
+  const n = (x: unknown, max = 1e9) => typeof x === 'number' && Number.isFinite(x) ? Math.round(clamp(x, 0, max)) : 0;
+  if (!Array.isArray(r.drivers) || typeof r.teamName !== 'string') return undefined;
+  return { teamName: text(r.teamName), teamPoints: n(r.teamPoints), teamWins: n(r.teamWins), teamPodiums: n(r.teamPodiums), teamPosition: n(r.teamPosition, 12), target: n(r.target, 12), prize: n(r.prize), startIndex: n(r.startIndex), endIndex: n(r.endIndex), baselineRound: n(r.baselineRound, 30), research: n(r.research, 16), fitted: n(r.fitted, 32), champion: text(r.champion), championTeam: text(r.championTeam), bestTrack: text(r.bestTrack), bestPoints: n(r.bestPoints, 50),
+    drivers: r.drivers.filter(d => d && typeof d === 'object' && !!driverDef(d.id)).slice(0, 2).map(d => ({ id: d.id, name: text(d.name), position: n(d.position, 24), points: n(d.points), wins: n(d.wins), podiums: n(d.podiums) })) };
 }
 
 /**
@@ -409,6 +458,8 @@ export function offers(save: CareerSave): TeamDef[] {
 /** The season is over: it goes in the record, and the next one starts with `teamId` (one of offers()). */
 export function nextSeason(save: CareerSave, teamId: string): void {
   if (nextRound(save) !== null) return;
+  settleSeasonAwards(save);
+  if (save.owner) driverContracts(save);
   const drivers = driverStandings(save);
   const teams = teamStandings(save);
   const mine = yourSeason(save);
@@ -418,19 +469,19 @@ export function nextSeason(save: CareerSave, teamId: string): void {
     ...mine,
     champion: drivers[0]?.name ?? '',
     championTeam: teams[0]?.team.id ?? '',
+    ...(save.owner ? { report: seasonReport(save) } : {}),
   });
-  if (save.history.length > 50) save.history.splice(0, save.history.length - 50);
+  if (save.history.length > 200) save.history.splice(0, save.history.length - 200);
   const allowed = !save.owner && offers(save).some((t) => t.id === teamId);
-  const carriedParts = teamDevelopment(save);
   save.cars = nextCars(save);
-  if (save.owner?.engineering) save.cars[save.team] = Math.max(0, save.cars[save.team] - carriedParts);
   if (allowed) save.team = teamId;
   save.season++;
   if (!save.customCalendar) save.calendar = seasonCalendar(save.rounds, save.season);
   delete save.calendarStarted;
   save.done = [];
   save.grid = null;
-  if (save.owner) { save.owner.development = 0; startEngineeringSeason(save); save.owner.target = carRank(save, save.team); startDynastySeason(save); }
+  if (save.owner) { save.owner.development = 0; startEngineeringSeason(save); activateDriverContracts(save); save.owner.target = carRank(save, save.team); startDynastySeason(save); }
+  ensureSeasonStart(save);
 }
 
 /** Saved data made safe: a career as this version understands it, or null if it isn't one. */
@@ -449,7 +500,7 @@ export function cleanCareer(raw: unknown): CareerSave | null {
   const calendar = [...new Set(strings(r.calendar).filter((id) => known.has(id)))];
   const cars: Record<string, number> = {};
   const savedCars = r.cars && typeof r.cars === 'object' ? (r.cars as Record<string, unknown>) : {};
-  for (const t of field) cars[t.id] = typeof savedCars[t.id] === 'number' && isFinite(savedCars[t.id] as number) ? clamp(savedCars[t.id] as number, 0, 1) : t.car;
+  for (const t of field) cars[t.id] = typeof savedCars[t.id] === 'number' && isFinite(savedCars[t.id] as number) ? clamp(savedCars[t.id] as number, 0, 100) : t.car;
   const save: CareerSave = {
     v: 1,
     name: cleanName(r.name),
@@ -472,6 +523,11 @@ export function cleanCareer(raw: unknown): CareerSave | null {
   const owner = cleanOwner(r.owner, save.team, seats);
   if (owner) save.owner = owner;
   if (owner?.world && !field.some((t) => t.id === owner.world!.rival.id && t.id !== save.team)) owner.world.rival.id = createDynasty(save).rival.id;
+  const contracts = cleanDriverContracts(r.contracts, save); if (contracts) save.contracts = contracts;
+  if (r.seasonStart && typeof r.seasonStart === 'object') {
+    const p = r.seasonStart as Record<string, unknown>;
+    if (p.season === season && typeof p.index === 'number' && Number.isFinite(p.index) && p.index >= 0) save.seasonStart = { season, round: num(p.round, 0, save.calendar.length, 0), index: Math.min(1e9, Math.round(p.index)) };
+  }
   const ids = new Set(lineup(save).map((e) => e.id));
   const one = (x: unknown) => (typeof x === 'string' && ids.has(x) ? x : null);
   for (const d of Array.isArray(r.done) ? r.done : []) {
@@ -484,7 +540,7 @@ export function cleanCareer(raw: unknown): CareerSave | null {
   if (grid.length && nextRound(save) !== null) save.grid = wholeOrder(save, grid);
   if (r.customCalendar === true) save.customCalendar = true;
   if (r.calendarStarted === true || save.done.length || save.grid || (save.owner?.engineering?.practice.key.startsWith(`${save.season}:`) && save.owner.engineering.practice.laps > 0)) save.calendarStarted = true;
-  for (const h of Array.isArray(r.history) ? r.history : []) {
+  for (const h of Array.isArray(r.history) ? r.history.slice(-200) : []) {
     if (!h || typeof h !== 'object') continue;
     const o = h as Record<string, unknown>;
     if (typeof o.team !== 'string' || !field.some((t) => t.id === o.team)) continue;
@@ -498,6 +554,7 @@ export function cleanCareer(raw: unknown): CareerSave | null {
       teamPosition: num(o.teamPosition, 1, field.length, field.length),
       champion: typeof o.champion === 'string' ? o.champion.slice(0, 40) : '',
       championTeam: typeof o.championTeam === 'string' && field.some((t) => t.id === o.championTeam) ? o.championTeam : '',
+      ...(cleanSeasonReport(o.report) ? { report: cleanSeasonReport(o.report) } : {}),
     });
   }
   return save;

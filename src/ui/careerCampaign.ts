@@ -94,10 +94,16 @@ export function departmentsView(save: CareerSave, changed: Changed): HTMLElement
 
 export function legacyView(save: CareerSave): HTMLElement {
   const w = dynasty(save), rival = teamsFor(save).find((t) => t.id === w.rival.id), trophies = h('div', { class: 'campaign-achievements' });
+  const seasons = h('section', { class: 'career-season-archive' }, h('h2', { text: 'Your seasons' }));
+  for (const record of [...save.history].reverse()) {
+    const r = record.report;
+    seasons.append(h('article', {}, label(`SEASON ${record.season} · CONSTRUCTORS P${record.teamPosition}`), h('h3', { text: r?.teamName ?? teamsFor(save).find(t => t.id === record.team)?.name ?? record.team }), h('p', { text: r ? `${r.teamPoints} team points · ${r.teamWins} wins · ${r.teamPodiums} podiums · ${r.endIndex} PI` : `${record.points} driver points · ${record.wins} wins` }), r ? h('small', { text: `${r.drivers.map(d => `${d.name}: P${d.position}, ${d.points} points`).join(' · ')} · ${money(r.prize)} championship prize` }) : null));
+  }
+  if (!save.history.length) seasons.append(h('p', { class: 'owner-muted', text: 'Complete your first season to begin the archive.' }));
   for (const [id, name, detail] of ACHIEVEMENTS) trophies.append(h('article', { class: w.achievements.includes(id) ? 'earned' : '' }, h('span', { class: 'campaign-trophy', text: w.achievements.includes(id) ? '◆' : '◇' }), label(w.achievements.includes(id) ? 'ACHIEVED' : 'THE NEXT CHAPTER'), h('h3', { text: name }), h('p', { text: detail })));
   return h('section', { class: 'owner-card campaign-legacy' }, heading('CHAMPIONSHIP', 'Career record', 'Season records, team rivalry and career milestones.'),
     h('div', { class: 'campaign-pulse' }, stat('SEASONS COMPLETED', String(save.history.length)), stat('SUPPORTERS', number(w.fans)), stat('MILESTONES', `${w.achievements.length} / ${ACHIEVEMENTS.length}`)),
-    h('div', { class: 'campaign-rival-card' }, label('THIS SEASON’S RIVAL'), h('h2', { text: rival?.name ?? 'The next challenger' }), h('strong', { text: `${w.rival.won} WINS · ${w.rival.lost} LOSSES · ${w.rival.tied} DRAWS` }), h('p', { text: 'Each completed race compares both teams’ combined points. Finish the season ahead in the head-to-head to earn the rivalry milestone.' })), trophies);
+    h('div', { class: 'campaign-rival-card' }, label('THIS SEASON’S RIVAL'), h('h2', { text: rival?.name ?? 'The next challenger' }), h('strong', { text: `${w.rival.won} WINS · ${w.rival.lost} LOSSES · ${w.rival.tied} DRAWS` }), h('p', { text: 'Each completed race compares both teams’ combined points. Finish the season ahead in the head-to-head to earn the rivalry milestone.' })), trophies, seasons);
 }
 
 export function campaignDebrief(save: CareerSave): HTMLElement {

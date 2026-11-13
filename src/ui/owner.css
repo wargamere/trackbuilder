@@ -1,4 +1,30 @@
 /* Career shares the editor's paper, blue ink, yellow actions and native controls. */
+.career.owner-mode[data-view='review'] > .panel { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; width: 100%; height: 100%; max-height: 100%; padding: 0; border: 0; border-radius: 0; text-align: left; background: var(--paper); }
+.career.owner-mode[data-view='review'] .career-head, .career.owner-mode[data-view='review'] .career-foot { padding: 1rem 1.5rem; margin: 0; }
+.season-review-body { overflow-y: auto; padding: 1.5rem max(1rem, calc((100% - 1100px) / 2)); }
+.season-review-body > section, .season-review-contracts { margin-bottom: 1.25rem; padding: 1.25rem; border: 1px solid #203a8b40; border-radius: .3rem; }
+.season-review-hero { background: #e8eeff; border-left: .4rem solid var(--ink) !important; }
+.season-review-hero.champion { background: #fff0af; border-left-color: var(--highlight) !important; }
+.season-review-hero h1 { font-size: clamp(1.6rem, 4vw, 2.5rem); margin: .5rem 0; }
+.season-review-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1rem; margin: 1.2rem 0 .5rem; }
+.season-review-stats strong { font-size: 1.25rem; display: block; overflow-wrap: anywhere; }
+.season-review-drivers, .contract-lineup, .contract-talks { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .8rem; }
+.season-review-drivers { margin-bottom: 1.25rem; }
+.season-review-drivers article, .contract-lineup article, .contract-talk { min-width: 0; border: 1px solid #203a8b40; padding: 1rem; background: #ffffff70; border-radius: .3rem; }
+.season-review-award, .season-review-objective { font-weight: 700; }
+.season-review-contracts summary { cursor: pointer; font-weight: 700; padding: .4rem 0; }
+.contract-lineup { margin: 1rem 0; }
+.contract-lineup p, .contract-talk p { font-size: .85rem; }
+.contract-open { display: flex; flex-wrap: wrap; gap: .6rem; margin: .8rem 0; }
+.contract-open select { flex: 1 1 10rem; }
+.contract-open select, .contract-terms input { min-width: 0; max-width: 100%; color: var(--ink); background: var(--paper); border: 1px solid var(--ink); border-radius: .25rem; padding: .6rem; font: inherit; }
+.contract-terms { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .6rem; margin: .8rem 0; }
+.contract-terms label { font-size: .8rem; min-width: 0; }
+.contract-terms input { width: 100%; margin-top: .3rem; }
+.contract-talk.accepted { background: #e8eeff; }
+.career-season-archive article { border-top: 1px solid #203a8b35; padding: .8rem 0; }.career-season-archive small { color: #59657d; line-height: 1.5; }
+.contract-talk .btn, .contract-lineup .btn { max-width: 100%; white-space: normal; }
+@media(max-width:700px) { .season-review-body { padding: 1rem; }.season-review-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }.season-review-drivers, .contract-lineup, .contract-talks { grid-template-columns: 1fr; }.career.owner-mode[data-view='review'] .career-head, .career.owner-mode[data-view='review'] .career-foot { padding: .8rem 1rem; } }
 .season-calendar-invite, .season-calendar-heading, .season-calendar-add, .season-calendar-save { display: flex; align-items: center; flex-wrap: wrap; gap: .7rem; }
 .season-calendar-invite { justify-content: space-between; padding: .8rem; border: 1px solid var(--ink); margin-bottom: .8rem; }
 .season-calendar-heading { justify-content: space-between; align-items: flex-start; margin-bottom: 1rem; }

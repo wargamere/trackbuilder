@@ -141,11 +141,14 @@ test('seasons carry engineering, finances, drivers and team identity forward', (
   const s = save();
   while (nextRound(s) !== null) recordRound(s, { order: ['nak', 'bre', ...lineup(s).map((d) => d.id)], dnf: [], fastest: null });
   const funds = s.owner!.cash, workers = s.owner!.engineering!.workforce;
-  screen.exit(); screen.enter(); assert.ok(text().includes('Season 1 is over'));
+  screen.exit(); screen.enter(); assert.ok(ui.querySelector('.season-review-hero')); assert.ok(text().includes('SEASON 1 COMPLETE'));
+  const negotiationSelect = ui.querySelector('.season-review-contracts select')!;
+  negotiationSelect.dispatchEvent(new win.KeyboardEvent('keydown', { code: 'Enter', bubbles: true }));
+  assert.equal(s.season, 1, 'choosing contract terms with Enter never starts the next season');
   click('Start season 2');
   assert.equal(s.team, 'solaris'); assert.equal(s.owner!.cash, funds);
   assert.equal(s.owner!.engineering!.workforce, workers);
-  assert.ok(s.owner!.engineering!.researched.includes('aero-1') || s.owner!.engineering!.history.some((item) => item.title.includes('regulation')));
+  assert.deepEqual(s.owner!.engineering!.researched, []); assert.ok(s.owner!.engineering!.baseline);
   assert.equal(s.season, 2); assert.ok(ui.querySelector('.season-calendar-editor'));
   click('Overview'); assert.ok(find('Advance to race weekend'));
   click('Team'); click('Finance');

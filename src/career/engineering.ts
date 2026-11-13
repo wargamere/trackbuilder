@@ -6,10 +6,14 @@ import { driverProgress, researchDiscount, researchMultiplier, staffMember } fro
 import { driverDef, teamsFor } from './roster.ts';
 
 export type EngineeringArea = 'aero' | 'chassis' | 'powertrain' | 'durability';
+export type EngineeringGains = Record<EngineeringArea, number>;
+const noGains = (): EngineeringGains => ({ aero: 0, chassis: 0, powertrain: 0, durability: 0 });
 export type EngineeringFacility = 'research' | 'manufacturing' | 'quality';
 export interface PartDefinition { id: string; area: EngineeringArea; name: string; tier: number; rp: number; cost: number; researchDays: number; buildDays: number; effect: number; requires: string | null }
 export interface EngineeringJob { id: number; part: string; days: number; total: number; copies: number; risk: number; cost: number; multiplier: number }
 export interface EngineeringState {
+  /** Previous seasons' integrated knowledge, attached to cars rather than drivers. */
+  baseline?: [EngineeringGains, EngineeringGains];
   v: 1; rp: number; day: number; advanced: string; serial: number;
   researched: string[]; designs: Record<string, number>; research: EngineeringJob[]; production: EngineeringJob[];
   stock: Record<string, number>; fitted: [string[], string[]]; workforce: number;
@@ -77,7 +81,8 @@ export function researchBlock(save: CareerSave, id: string): string | null {
 export function startResearch(save: CareerSave, id: string): boolean {
   if (researchBlock(save, id)) return false;
   const e = engineering(save), days = researchDays(save, id), multiplier = researchMultiplier(save);
-  e.rp -= researchPrice(save, id); e.research.push({ id: ++e.serial, part: id, days, total: days, copies: 0, risk: 0, cost: 0, multiplier });
+  const price = researchPrice(save, id);
+  e.rp -= price; e.research.push({ id: ++e.serial, part: id, days, total: days, copies: 0, risk: 0, cost: price, multiplier });
   if (save.owner!.world) save.owner!.world.insight = 0;
   log(save, `Research started: ${partById(id)!.name}`, `${days} days. A completed design must be manufactured before it can improve either car.`); return true;
 }
@@ -119,6 +124,7 @@ export function carDevelopment(save: Pick<CareerSave, 'owner'> & Partial<Pick<Ca
   if (!e || !save.team) return result;
   const index = teamsFor(save).find((t) => t.id === save.team)?.drivers.indexOf(id) ?? -1;
   if (index < 0) return result;
+  if (e.baseline) Object.assign(result, e.baseline[index]);
   for (const fitted of e.fitted[index]) { const p = partById(fitted); if (p) result[p.area] += p.effect * (e.designs[fitted] ?? 1); }
   return result;
 }
@@ -188,13 +194,24 @@ export function adaptPart(save: CareerSave, id: string): boolean {
 export function startEngineeringSeason(save: CareerSave): void {
   const e = save.owner?.engineering; if (!e) return;
   const lost = PARTS.filter((p) => e.regulation?.season === save.season && e.regulation.area === p.area && !e.regulation.adapted.includes(p.id)).map((p) => p.id);
-  e.researched = e.researched.filter((id) => !lost.includes(id));
-  for (const id of lost) { delete e.designs[id]; delete e.stock[id]; }
-  e.fitted = e.fitted.map((car) => car.filter((id) => !lost.includes(id))) as [string[], string[]];
-  // An already commissioned replacement uses the new regulations when delivered; installed old designs are removed.
-  for (const job of e.production) if (lost.includes(job.part)) { if (!e.researched.includes(job.part)) e.researched.push(job.part); e.designs[job.part] = job.multiplier; }
+  const baseline = e.baseline ?? [noGains(), noGains()];
+  for (const seat of [0, 1] as const) for (const id of e.fitted[seat]) {
+    const p = partById(id)!;
+    if (!lost.includes(id)) baseline[seat][p.area] += p.effect * (e.designs[id] ?? 1);
+  }
+  // Refund the unfinished share of commissioned work instead of deleting paid value.
+  const salvage = PARTS.reduce((sum, p) => sum + (e.stock[p.id] ?? 0) * p.cost * .5, 0);
+  const refund = Math.round(salvage + e.production.reduce((sum, j) => sum + j.cost * j.days / j.total, 0));
+  const returnedRP = Math.round(e.research.reduce((sum, j) => sum + (j.cost || partById(j.part)!.rp) * j.days / j.total, 0));
+  if (refund) {
+    save.owner!.cash += refund; save.owner!.spent = Math.max(0, save.owner!.spent - refund);
+    save.owner!.ledger ??= []; save.owner!.ledger.unshift({ label: 'Offseason manufacturing refund', amount: refund, season: save.season, round: 0 });
+    save.owner!.ledger = save.owner!.ledger.slice(0, 20);
+  }
+  e.rp = Math.min(100_000, e.rp + returnedRP);
+  e.baseline = baseline; e.researched = []; e.designs = {}; e.fitted = [[], []]; e.stock = {}; e.research = []; e.production = [];
   delete e.regulation; e.capSeason = save.season; e.capStartSpent = save.owner!.spent; e.advanced = ''; e.practice = { key: '', laps: 0, best: null, rewards: [] };
-  log(save, 'New engineering season', 'The spending cap has reset. Retained research, stock, fitted parts and active projects carry forward.');
+  log(save, 'A new car, built on your progress', `Retained fitted gains are integrated into the cars' foundations. The research tree starts at minor upgrades again. ${returnedRP} unused RP returned; $${refund.toLocaleString()} unfinished manufacturing refunded.`);
 }
 
 export function cleanEngineering(raw: unknown): EngineeringState | undefined {
@@ -206,6 +223,7 @@ export function cleanEngineering(raw: unknown): EngineeringState | undefined {
   const e: EngineeringState = { v: 1, rp: Math.floor(n(r.rp, 0, 100_000)), day: Math.floor(n(r.day, 0, 1e7)), advanced: typeof r.advanced === 'string' ? r.advanced.slice(0, 30) : '', serial: Math.floor(n(r.serial, 0, 1e9)), researched: ids(r.researched), designs: {}, research: [], production: [], stock: {}, fitted: [[], []], workforce: Math.round(n(r.workforce, 20, 100, 20) / 10) * 10,
     facilities: { research: Math.floor(n(f.research, 0, 3)), manufacturing: Math.floor(n(f.manufacturing, 0, 3)), quality: Math.floor(n(f.quality, 0, 3)) }, capSeason: Math.floor(n(r.capSeason, 1, 9999)), capStartSpent: n(r.capStartSpent, 0, 1e12),
     practice: { key: typeof p.key === 'string' ? p.key.slice(0, 30) : '', laps: Math.floor(n(p.laps, 0, 3)), best: typeof p.best === 'number' && Number.isFinite(p.best) && p.best > 0 ? p.best : null, rewards: Array.isArray(p.rewards) ? [...new Set(p.rewards.filter((id): id is string => ['clean-lap', 'qualifying-pace', 'race-run'].includes(id as string)))] : [] }, history: [] };
+  if (Array.isArray(r.baseline) && r.baseline.length === 2) e.baseline = r.baseline.map(x => Object.fromEntries(ENGINEERING_AREAS.map(a => [a.id, n(obj(x)[a.id], 0, 100)]))) as [EngineeringGains, EngineeringGains];
   for (const id of e.researched) e.designs[id] = n(obj(r.designs)[id], 1, 1.4, 1);
   if (Array.isArray(r.fitted)) for (const i of [0, 1] as const) e.fitted[i] = ids(r.fitted[i]).filter((id) => e.researched.includes(id));
   for (const id of e.researched) if (Object.hasOwn(obj(r.stock), id)) e.stock[id] = Math.floor(n(obj(r.stock)[id], 0, 2 - e.fitted.filter((car) => car.includes(id)).length));

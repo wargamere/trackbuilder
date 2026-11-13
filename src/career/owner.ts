@@ -5,6 +5,7 @@ import { cleanDynasty, createDynasty, researchDiscount, researchDuration, resear
 import { cleanEngineering, type EngineeringState } from './engineering.ts';
 
 export interface OwnerState {
+  seasonPrize?: { season: number; amount: number };
   engineering?: EngineeringState;
   world?: DynastyState;
   selected: string;
@@ -51,6 +52,13 @@ function transaction(save: CareerSave, label: string, amount: number): void {
 
 export const money = (n: number): string => n > 0 && n < 1_000_000 ? `$${Math.round(n / 1000)}k` : `$${(n / 1_000_000).toFixed(2)}m`;
 
+export function grantSeasonPrize(save: CareerSave, amount: number): boolean {
+  const o = save.owner;
+  if (!o || o.seasonPrize?.season === save.season || !Number.isFinite(amount) || amount <= 0) return false;
+  o.seasonPrize = { season: save.season, amount }; o.cash += amount; o.earned += amount;
+  transaction(save, `Season ${save.season} championship prize`, amount); return true;
+}
+
 /** Converts a driver career without losing either car's results or its saved grid. */
 export function takeOwnership(save: CareerSave): OwnerState {
   if (save.owner) return save.owner;
@@ -88,7 +96,6 @@ export function researchBlocker(save: CareerSave, id = 'balanced'): string | nul
   if (!o || !spec) return 'Unavailable';
   if (o.project) return 'Workshop occupied';
   if (o.development >= 5) return 'Season programme complete';
-  if (save.cars[save.team] >= 1) return 'Car is at the performance ceiling';
   if (Math.ceil(developmentRounds(save, id) / weekendApproach(save).work) > save.calendar.length - save.done.length) return 'Not enough rounds left this season';
   if (o.cash < developmentCost(save, id)) return 'Insufficient funds';
   return null;
@@ -144,7 +151,7 @@ export function settleOwnerRound(save: CareerSave, result: RoundResult): void {
     if (o.research) o.research.remaining -= weekendApproach(save, save.done.length - 1).work;
     if (!o.research || o.research.remaining <= 0) {
       const spec = RESEARCH.find((r) => r.id === o.research?.id) ?? RESEARCH[1];
-      save.cars[save.team] = Math.min(1, save.cars[save.team] + (o.research?.gain ?? spec.gain));
+      save.cars[save.team] += (o.research?.gain ?? spec.gain);
       o.development++;
       o.project = false;
       delete o.research;
@@ -164,6 +171,10 @@ export function cleanOwner(raw: unknown, team: string, teamSeats?: readonly [str
     development: Math.floor(num('development', 5)), facilities: Math.floor(num('facilities', 3)), project: r.project === true,
   };
   const world = cleanDynasty(r.world); if (world) owner.world = world;
+  if (r.seasonPrize && typeof r.seasonPrize === 'object') {
+    const p = r.seasonPrize as Record<string, unknown>;
+    if (Number.isInteger(p.season) && (p.season as number) > 0 && typeof p.amount === 'number' && Number.isFinite(p.amount) && p.amount >= 0) owner.seasonPrize = { season: Math.min(9999, p.season as number), amount: Math.min(1e9, p.amount) };
+  }
   const engineering = cleanEngineering(r.engineering); if (engineering) owner.engineering = engineering;
   if (typeof r.target === 'number' && Number.isFinite(r.target)) owner.target = Math.max(1, Math.min(12, Math.floor(r.target)));
   if (typeof r.sponsor === 'string' && SPONSORS.some((s) => s.id === r.sponsor)) owner.sponsor = r.sponsor;
