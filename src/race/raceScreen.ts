@@ -637,13 +637,13 @@ export class RaceScreen implements Screen {
     this.gridOverlay.show(entries);
   }
 
-  /** Simulates a slice of the AI cars' qualifying laps (a few thousand physics ticks a frame). */
-  private runQualifyingSims(): void {
+  /** Qualifying shares the frame's small background-work deadline with medal timing. */
+  private runQualifyingSims(deadline: number): void {
     let budget = 3000;
     for (const sim of this.qualSims) {
       if (budget <= 0) break;
       if (sim.result !== undefined) continue;
-      sim.run(Math.min(budget, 1500));
+      if (!sim.run(Math.min(budget, 1500), deadline)) break;
       budget -= 1500;
     }
   }
@@ -1432,14 +1432,14 @@ export class RaceScreen implements Screen {
   }
 
   /** Advances the bot's timed lap a little; when done, the medal times are saved and shown. */
-  private measureAuthor(): void {
+  private measureAuthor(deadline: number): void {
     const a = this.author;
     if (!a) return;
     if (a.id !== this.game.track.def.id) {
       this.author = null;
       return;
     }
-    if (!a.lap.run(1500)) return;
+    if (!a.lap.run(1500, deadline)) return;
     this.author = null;
     const rec = this.game.records.get(a.id);
     rec.author = a.lap.result ?? null;
@@ -1589,8 +1589,6 @@ export class RaceScreen implements Screen {
       const others = this.opponents.filter((_, k) => !this.gone[k + 1]).map((o) => ({ x: o.view.x, z: o.view.z, color: hexColour(o.ai.paint) }));
       this.hud.minimap.draw(this.game.track, focus, pose, others);
     }
-    this.measureAuthor();
-    if (this.stage === 'qualifying') this.runQualifyingSims();
     v.render();
     this.hud.setSpeed(focus.speed);
     const assists = settings().assists;
@@ -1607,6 +1605,14 @@ export class RaceScreen implements Screen {
     this.hud.setTyres(car.wear ? car.compound : null, car.tyreLeft, this.crew?.service ?? 0);
     this.updateHud(alpha);
     this.hud.tick(dt);
+
+    // Medal/qualifying laps used to add 1,500–4,500 extra physics ticks to
+    // one frame. Keep both jobs inside one deadline, after the visible race.
+    if (!this.paused && this.stage !== 'grid') {
+      const deadline = performance.now() + 2;
+      if (this.stage === 'qualifying') this.runQualifyingSims(deadline);
+      this.measureAuthor(deadline);
+    }
 
     if (this.finishedFor >= 0 && !this.paused) {
       this.finishedFor += dt;

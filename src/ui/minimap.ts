@@ -19,17 +19,25 @@ export class Minimap {
   private scale = 1;
   private ox = 0;
   private oy = 0;
+  private sizeDirty = true;
+  private readonly observer: ResizeObserver | null;
 
   constructor() {
     this.root = h('canvas', { class: 'minimap' });
     this.ctx = this.root.getContext('2d');
+    this.observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => { this.sizeDirty = true; });
+    this.observer?.observe(this.root);
   }
 
   /** Redraws the background when the track or the minimap's size changes. */
   private prepare(track: Track): void {
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    // Reading clientWidth after moving 24 name tags forced a synchronous HUD
+    // layout every frame. Only measure when the canvas actually changes size.
+    if (this.observer && !this.sizeDirty && track === this.track && dpr === this.dpr) return;
+    this.sizeDirty = false;
     const cssW = this.root.clientWidth;
     const cssH = this.root.clientHeight;
-    const dpr = Math.min(2, window.devicePixelRatio || 1);
     if (track === this.track && cssW === this.w && cssH === this.h && dpr === this.dpr) return;
     this.track = track;
     this.w = cssW;

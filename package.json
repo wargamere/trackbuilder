@@ -22,6 +22,7 @@
     "train:ai": "node training/train.ts",
     "eval:ai": "node training/evaluate.ts",
     "bench:ai": "node training/bench.ts",
+    "bench:race": "node scripts/racePerformanceCheck.mjs",
     "test:ai:browser": "node scripts/aiBrowserCheck.mjs",
     "eval:racecraft": "node scripts/racecraftCheck.ts"
   },
