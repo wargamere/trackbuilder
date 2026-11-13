@@ -3,6 +3,7 @@ import {
   BoxGeometry,
   CanvasTexture,
   CylinderGeometry,
+  DynamicDrawUsage,
   ExtrudeGeometry,
   Group,
   InstancedMesh,
@@ -193,8 +194,10 @@ export class CarModel {
     this.glow.visible = false;
     this.glow.renderOrder = 3;
     this.body.add(new Mesh(paintGeometry(), this.paint), this.accent, new Mesh(trimGeometry(), trimMat), new Mesh(lampGeometry(), this.lampMat), this.glow);
-    this.wheels = new InstancedMesh(wheelGeometry(), trimMat, 4);
-    this.wheels.frustumCulled = false;
+    // Sharing this material with the non-instanced trim makes the renderer
+    // switch shader variants twice per car, every frame (especially costly at night).
+    this.wheels = new InstancedMesh(wheelGeometry(), trimMat.clone(), 4);
+    this.wheels.instanceMatrix.setUsage(DynamicDrawUsage);
     if (!ghost) {
       const shadow = new Mesh(
         new PlaneGeometry(2.4, 4.8).rotateX(-Math.PI / 2),
@@ -207,6 +210,9 @@ export class CarModel {
     this.root.add(this.body, this.wheels);
     if (ghost) this.root.traverse((o) => (o.renderOrder = 2));
     this.placeWheels(0, 0);
+    // Wheel centres and their geometry's bounding spheres do not change as
+    // they steer/spin. Keep a stable conservative bound so offscreen wheels cull.
+    this.wheels.computeBoundingSphere();
   }
 
   /** Places a ghost from a recorded pose (no suspension or wheel animation needed). */

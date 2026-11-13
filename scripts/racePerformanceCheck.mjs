@@ -17,17 +17,17 @@ try {
   }
   assert.ok(ready, 'performance server starts');
   browser = await chromium.launch({ executablePath: process.env.PW_CHROMIUM || undefined, args: ['--enable-unsafe-swiftshader'] });
-  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, deviceScaleFactor:Number(process.env.RACE_PERF_DPR || 1) });
   const errors = []; page.on('pageerror', e => errors.push(e.message));
   await page.goto(`${origin}/?autopilot`);
   await page.waitForFunction(() => window.__game);
-  await page.evaluate(async () => {
+  await page.evaluate(async ({track,weather,time}) => {
     const game = window.__game;
     game.frame = () => {};
-    game.setTrack((await import('/src/editor/pipeline.ts')).builtInTracks().find(t => t.def.id === 'world-au-1953').track());
-    game.start({ mode: 'race', opponents: 23, difficulty: 100, grid: 'pick', startSlot: 24, ghost: false, damage: true, laps: 10 });
+    game.setTrack((await import('/src/editor/pipeline.ts')).builtInTracks().find(t => t.def.id === track).track());
+    game.start({ mode: 'race', opponents: 23, difficulty: 100, grid: 'pick', startSlot: 24, ghost: false, damage: true, laps: 10,weather,time });
     window.race = game.screens.race;
-  });
+  },{track:process.env.RACE_PERF_TRACK || 'world-au-1953',weather:process.env.RACE_PERF_WEATHER || 'dry',time:process.env.RACE_PERF_TIME || 'track'});
   const client = await page.context().newCDPSession(page);
   await client.send('Profiler.enable'); await client.send('Profiler.start');
   const result = await page.evaluate(async () => {

@@ -397,9 +397,11 @@ export class View3D {
       tex.anisotropy = this.maxAniso;
       this.groundTextures.set(id, tex);
     }
-    this.mats.ground.map = tex;
+    if (this.mats.ground.map !== tex) {
+      this.mats.ground.map = tex;
+      this.mats.ground.needsUpdate = true;
+    }
     this.mats.ground.color.setRGB(...th.groundTint).multiplyScalar(night ? 0.6 : 1);
-    this.mats.ground.needsUpdate = true;
 
     // A wet road is darker; at night the floodlights light the track (its own texture, lit
     // evenly however dark the sky).
@@ -409,9 +411,12 @@ export class View3D {
     M.deck.color.copy(wetLook(0xffffff, 0x7f858f));
     M.runoffTarmac.color.copy(wetLook(0xb9bec8, 0x8e939c));
     for (const m of [M.road, M.deck, M.runoffTarmac, M.gravel]) {
-      m.emissiveMap = night ? m.map : null;
+      const map = night ? m.map : null;
+      if (m.emissiveMap !== map) {
+        m.emissiveMap = map;
+        m.needsUpdate = true;
+      }
       m.emissive.copy(night ? wetLook(0x2a2d33, 0x202329) : new Color(0x000000));
-      m.needsUpdate = true;
     }
     M.kerb.emissive.setHex(night ? 0x26262b : 0x000000);
     M.wall.emissive.setHex(night ? 0x1a1b20 : 0x000000);
