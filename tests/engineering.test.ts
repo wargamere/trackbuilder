@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { DEVELOPMENT } from '../src/config/development.ts';
 import { aiDifficulty, carRating, cleanCareer, lineup, newCareer, nextSeason, playerCar, recordRound, setGrid, teamStandings } from '../src/career/career.ts';
 import { takeOwnership, selectDriver } from '../src/career/owner.ts';
 import { advanceToWeekend, announceRegulations, assignUpgrade, awardPractice, buildQuote, capSpent, carDevelopment, cleanEngineering, costCap, engineering, engineeringCapacity, improveEngineering, manufacture, PARTS, researchPrice, resourceIncome, setWorkforce, startResearch, adaptPart } from '../src/career/engineering.ts';
@@ -37,7 +38,8 @@ test('delivered copies stay in stock until fitted and only improve the assigned 
   assert.deepEqual(playerCar(s), base, 'car 2 is selected'); assert.equal(assignUpgrade(s, 'aero-1', 0), false);
   selectDriver(s, 'alm'); assert.ok(playerCar(s).grip > base.grip);
   assert.equal(driverProgress(s, 'whi').morale, 62); assert.equal(driverProgress(s, 'alm').morale, 66);
-  close(carRating(s, s.team), s.cars.kestrel + .006);
+  // One car's part, in rating points on track (DEVELOPMENT.partScale), a third of it overall, averaged over the two cars.
+  close(carRating(s, s.team), s.cars.kestrel + .012 * DEVELOPMENT.partScale / 3 / 2);
 });
 
 test('balanced allocation restores the second driver and physical car upgrades survive driver replacement', () => {

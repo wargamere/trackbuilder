@@ -8,8 +8,9 @@ import { cleanOwner, grantSeasonPrize, settleOwnerRound, type OwnerState } from 
 import { cleanEntry, driverDef, teamsFor, type RosterSave } from './roster.ts';
 import { GP_TEAMS } from '../config/grandPrix.ts';
 import { createDynasty, driverProgress, driverRating, dynasty, failureChance, settleDynastyRound, startDynastySeason, weekendApproach } from './dynasty.ts';
-import { advanceToWeekend, announceRegulations, carDevelopment, startEngineeringSeason, teamDevelopment } from './engineering.ts';
+import { advanceToWeekend, announceRegulations, startEngineeringSeason, teamDevelopment } from './engineering.ts';
 import { CALENDAR_TRACKS } from './calendar.ts';
+import { areaPhysics, cleanCarAreas, cleanRivalPackages, seatAreas, type AreaRatings, type RivalPackage } from './carAreas.ts';
 import { seasonWeather } from './seasonWeather.ts';
 import { activateDriverContracts, cleanDriverContracts, driverContracts, settleDriverPayroll, type DriverContracts } from './contracts.ts';
 
@@ -81,6 +82,10 @@ export interface CareerSave extends RosterSave {
   seed: number;
   /** Absolute base performance by team; 1 is the initial leader, not a career cap. */
   cars: Record<string, number>;
+  /** How each team's aero, chassis and power unit differ from its overall rating (see carAreas.ts); a team missing has its starting character. */
+  carAreas?: Record<string, AreaRatings>;
+  /** The latest packages the rival teams brought (newest first). */
+  rivalPackages?: RivalPackage[];
   /** This season's rounds: track ids, in order. */
   calendar: string[];
   /** A custom schedule carries into the next preseason, where it can be edited again. */
@@ -235,15 +240,11 @@ export function aiDifficulty(save: CareerSave, round: number, id: string): numbe
 export function carPerformance(save: CareerSave, id: string): CarPerformance {
   const t = id === YOU_ID ? teamsFor(save).find((t) => t.id === save.team) : teamsFor(save).find((t) => t.drivers.includes(id));
   if (!t) return { ...STANDARD_CAR };
-  // Use the base rating here: fitted parts are seat-specific and must not be counted twice.
-  const off = 1 - carRating({ cars: save.cars }, t.id);
-  const parts = carDevelopment(save, id);
+  // The team's car area by area, plus what's fitted to this car (the same scale for every team).
+  const areas = seatAreas(save, t.id, id === YOU_ID ? null : id);
   const experience = save.owner && t.id === save.team ? Math.floor(driverProgress(save, id).xp / 100) * .0005 : 0;
   const approach = save.owner && t.id === save.team ? weekendApproach(save).pace * 2 / 3 : 0;
-  // Preserve the existing balance through 1.0; later decades have diminishing
-  // returns rather than unbounded straight-line speeds or a hard upgrade wall.
-  const progress = (value: number) => value <= 1 ? value : 1 + .25 * (1 - Math.exp(-(value - 1) / .25));
-  return { grip: progress(1 - CAREER.carGrip * off + parts.aero * .7 + parts.chassis * .5 + experience), pull: progress(1 - CAREER.carPull * off + parts.powertrain * .8 + parts.chassis * .16 + approach), top: progress(1 - CAREER.carTop * off + parts.powertrain * .36 + parts.aero * .08) };
+  return areaPhysics(areas, { grip: experience, pull: approach });
 }
 
 /** Hardware in the car selected for the player this weekend. */
@@ -389,7 +390,7 @@ export function recordRound(save: CareerSave, result: { order: readonly string[]
   save.done.push(round);
   settleOwnerRound(save, round);
   settleDriverPayroll(save);
-  if (save.owner) settleDynastyRound(save, round, teamStandings(save).findIndex((t) => t.yours) + 1, driverStandings(save)[0]?.id ?? null);
+  if (save.owner) { const teams = teamStandings(save); settleDynastyRound(save, round, teams.findIndex((t) => t.yours) + 1, driverStandings(save)[0]?.id ?? null, teams.map((t) => t.team.id)); }
   announceRegulations(save);
   settleSeasonAwards(save);
   save.grid = null;
@@ -511,6 +512,11 @@ export function cleanCareer(raw: unknown): CareerSave | null {
     season,
     seed: typeof r.seed === 'number' && isFinite(r.seed) ? r.seed >>> 0 : 1,
     cars,
+    ...(() => {
+      const ids = field.map((t) => t.id);
+      const carAreas = cleanCarAreas(r.carAreas, ids), rivalPackages = cleanRivalPackages(r.rivalPackages, ids);
+      return { ...(carAreas ? { carAreas } : {}), ...(rivalPackages ? { rivalPackages } : {}) };
+    })(),
     calendar: calendar.length ? calendar : seasonCalendar(rounds, season),
     done: [],
     grid: null,

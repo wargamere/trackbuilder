@@ -4,6 +4,19 @@ import { money } from '../career/owner.ts';
 import { driverDef, teamsFor } from '../career/roster.ts';
 import { researchMultiplier } from '../career/dynasty.ts';
 import { button, h } from './dom.ts';
+import { partLapGain } from '../career/circuitPace.ts';
+import { DEVELOPMENT } from '../config/development.ts';
+import { builtInTrack } from '../editor/pipeline.ts';
+
+/** The next round's circuit (the last one once the season's over). */
+const nextTrack = (save: CareerSave) => builtInTrack(save.calendar[Math.min(save.done.length, save.calendar.length - 1)]);
+
+/** What part `id` would save a lap on car `seat` at the next circuit, in words (null for durability, or no circuit). */
+function lapGainText(save: CareerSave, id: string, seat: 0 | 1, multiplier = 1): string | null {
+  const track = nextTrack(save), p = PARTS.find((x) => x.id === id);
+  if (!track || !p || p.area === 'durability') return null;
+  return `−${partLapGain(save, id, seat, track, multiplier).toFixed(3)} s a lap at ${track.def.name}`;
+}
 
 type Page = 'research' | 'production' | 'allocation' | 'history';
 const selection = new WeakMap<CareerSave, string>(), rush = new WeakMap<CareerSave, boolean>();
@@ -38,8 +51,14 @@ export function engineeringView(save: CareerSave, page: Page, changed: () => voi
       b.append(label(['MINOR', 'MAJOR', 'MAJOR', 'ULTIMATE'][p.tier - 1]), h('strong', { text: p.name }), h('span', { text: done ? '✓ Researched' : pending ? 'In research' : locked ? 'Prerequisite required' : `${researchPrice(save, p.id)} RP` })); tree.append(b);
     }
     const multiplier = e.designs[selected.id] ?? e.research.find((j) => j.part === selected.id)?.multiplier ?? researchMultiplier(save);
-    const blocker = researchBlock(save, selected.id), effect = selected.area === 'durability' ? `${(selected.effect * multiplier * 100).toFixed(2)} percentage points less AI failure risk` : `+${(selected.effect * multiplier * 100).toFixed(2)} car-performance points per fitted copy`;
+    // (In performance-index points, on the same scale as every car on the grid: see Vehicle.)
+    const areaPI = Math.round(selected.effect * multiplier * DEVELOPMENT.partScale * 700);
+    const blocker = researchBlock(save, selected.id), effect = selected.area === 'durability' ? `${(selected.effect * multiplier * 100).toFixed(2)} percentage points less AI failure risk` : `+${areaPI} PI in ${ENGINEERING_AREAS.find((a) => a.id === selected.area)!.name.toLowerCase()} on each car it’s fitted to (+${Math.round(areaPI / 3)} PI overall)`;
+    // (What it would give each car it isn't fitted to yet.)
+    const gains = selected.area === 'durability' ? null : ([0, 1] as const).map((seat) => (e.fitted[seat].includes(selected.id) ? 'fitted' : lapGainText(save, selected.id, seat, multiplier)));
+    const gainText = !gains || !gains[0] ? null : gains[0] === 'fitted' && gains[1] === 'fitted' ? 'Fitted to both cars' : gains[0] === gains[1] ? `${gains[0]}, on either car` : `Car 1: ${gains[0]} · Car 2: ${gains[1]}`;
     root.append(areas, tree, h('section', { class: 'engineering-detail' }, h('div', {}, label(ENGINEERING_AREAS.find((a) => a.id === selected.area)!.name), h('h2', { text: selected.name }), h('p', { text: ENGINEERING_AREAS.find((a) => a.id === selected.area)!.effect }), h('p', { text: effect }),
+      gainText ? h('p', { class: 'engineering-lap-gain', text: gainText }) : null,
       h('div', { class: 'owner-stats' }, stat('RESEARCH COST', `${researchPrice(save, selected.id)} RP`), stat('RESEARCH TIME', `${researchDays(save, selected.id)} days`))),
       h('div', { class: 'engineering-detail-action' }, action(blocker ?? `Research ${selected.name}`, () => { if (startResearch(save, selected.id)) changed(); }, !!blocker, true), e.researched.includes(selected.id) ? action('Go to Development', () => navigate('manufacturing')) : h('p', { class: 'owner-muted', text: 'Time advances in 14-day steps when you advance to each race weekend. Research and manufacturing run independently.' }))));
     if (e.regulation) {
@@ -72,8 +91,12 @@ export function engineeringView(save: CareerSave, page: Page, changed: () => voi
     const columns = h('div', { class: 'engineering-car-columns' }), team = teamsFor(save).find((t) => t.id === save.team)!;
     for (const seat of [0, 1] as const) {
       const d = driverDef(team.drivers[seat])!, effects = carDevelopment(save, d.id);
-      const card = h('section', {}, label(`CAR ${seat + 1}`), h('h2', { text: `${d.first} ${d.name}` }), h('p', { text: `${e.fitted[seat].length} upgrades fitted · ${Math.round(save.owner!.world?.drivers[d.id]?.morale ?? 65)}% morale` }), h('div', { class: 'engineering-car-effects' }, ...ENGINEERING_AREAS.map((a) => stat(a.name, `+${(effects[a.id] * 100).toFixed(1)}`))));
-      for (const p of PARTS.filter((p) => e.researched.includes(p.id))) { const blocked = assignBlock(save, p.id, seat); card.append(h('div', { class: 'engineering-fit-row' }, h('div', {}, h('strong', { text: p.name }), h('small', { text: e.fitted[seat].includes(p.id) ? 'Fitted to this car' : `${e.stock[p.id] ?? 0} available in stock` })), action(blocked ?? 'Fit upgrade', () => { if (assignUpgrade(save, p.id, seat)) changed(); }, !!blocked))); }
+      const card = h('section', {}, label(`CAR ${seat + 1}`), h('h2', { text: `${d.first} ${d.name}` }), h('p', { text: `${e.fitted[seat].length} upgrades fitted · ${Math.round(save.owner!.world?.drivers[d.id]?.morale ?? 65)}% morale` }), h('div', { class: 'engineering-car-effects' }, ...ENGINEERING_AREAS.map((a) => stat(a.name, a.id === 'durability' ? (effects[a.id] > 0 ? `−${(effects[a.id] * 100).toFixed(1)}% risk` : '—') : `+${Math.round(effects[a.id] * DEVELOPMENT.partScale * 700)} PI`))));
+      for (const p of PARTS.filter((p) => e.researched.includes(p.id))) {
+        const blocked = assignBlock(save, p.id, seat), fitted = e.fitted[seat].includes(p.id);
+        const gain = fitted ? null : lapGainText(save, p.id, seat, e.designs[p.id] ?? 1);
+        card.append(h('div', { class: 'engineering-fit-row' }, h('div', {}, h('strong', { text: p.name }), h('small', { text: fitted ? 'Fitted to this car' : `${e.stock[p.id] ?? 0} available in stock${gain ? ` · ${gain}` : ''}` })), action(blocked ?? 'Fit upgrade', () => { if (assignUpgrade(save, p.id, seat)) changed(); }, !!blocked)));
+      }
       if (!e.researched.length) card.append(h('p', { class: 'owner-muted', text: 'No upgrades yet. Research a design, then manufacture copies.' })); columns.append(card);
     }
     root.append(columns);

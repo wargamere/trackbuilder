@@ -1,9 +1,10 @@
 import { CAREER } from '../config/career.ts';
 import { clamp } from '../core/math.ts';
-import { hashString, rng } from '../core/random.ts';
+import { hashString } from '../core/random.ts';
 import type { CareerSave, RoundResult } from './career.ts';
 import { driverDef, teamsFor } from './roster.ts';
 import { carDevelopment } from './engineering.ts';
+import { developRivals, type CarArea } from './carAreas.ts';
 
 export type StaffRole = 'technical' | 'coach' | 'engineer';
 export type Department = 'laboratory' | 'simulator' | 'commercial';
@@ -124,6 +125,12 @@ function book(save: CareerSave, label: string, amount: number): boolean {
   o.ledger ??= []; o.ledger.unshift({ label, amount, season: save.season, round: save.done.length }); o.ledger = o.ledger.slice(0, 20);
   return true;
 }
+/** How a rival's package in each area is named in the news. */
+const AREA_NEWS: Record<CarArea, { name: string; part: string }> = {
+  aero: { name: 'Aerodynamics', part: 'floor and wing package' },
+  chassis: { name: 'Chassis', part: 'suspension package' },
+  powertrain: { name: 'Power unit', part: 'power unit upgrade' },
+};
 function news(save: CareerSave, title: string, body: string, kind: TeamNews['kind'] = 'team'): void {
   const w = dynasty(save);
   w.news.unshift({ id: `${roundKey(save)}:${hashString(title)}`, title, body, kind, season: save.season, round: save.done.length }); w.news = w.news.slice(0, 30);
@@ -223,7 +230,7 @@ function unlock(save: CareerSave, id: string): void {
   w.achievements.push(id); news(save, spec[1], spec[2], 'milestone');
 }
 /** New-round hook only; replaying the hub or cleaning a save never advances the world or pays money. */
-export function settleDynastyRound(save: CareerSave, result: RoundResult, teamPosition: number, champion: string | null): void {
+export function settleDynastyRound(save: CareerSave, result: RoundResult, teamPosition: number, champion: string | null, standing: readonly string[] = []): void {
   if (!save.owner) return;
   const w = dynasty(save), key = roundKey(save);
   if (w.settled === key) return;
@@ -260,10 +267,16 @@ export function settleDynastyRound(save: CareerSave, result: RoundResult, teamPo
   }
   if (pts > 0) unlock(save, 'first-points'); if (best <= 3) unlock(save, 'first-podium'); if (best === 1) unlock(save, 'first-win');
   news(save, pts > theirs ? 'Advantage, your team.' : pts < theirs ? 'Your rival strikes back.' : 'Nothing between the teams.', `${pts}–${theirs} on points against ${rival?.name ?? 'your rival'}. Head-to-head: ${w.rival.won} wins, ${w.rival.lost} losses.`, 'rival');
-  if (save.done.length % 3 === 0 && save.done.length < save.calendar.length) {
-    for (const t of teamsFor(save)) if (t.id !== save.team) save.cars[t.id] += 0.004 + rng(hashString(`${save.seed}:${key}:${t.id}:upgrade`))() * 0.008;
-    news(save, 'The grid keeps moving.', 'Rival teams have brought new packages. Your vehicle comparison now reflects their gains.', 'rival');
+  // The rival teams' development: packages for the next round, each to an area (carAreas.ts).
+  const packages = developRivals(save, standing);
+  const near = packages.filter((p) => p.team === w.rival.id || Math.abs(standing.indexOf(p.team) - standing.indexOf(save.team)) <= 2);
+  for (const p of near.slice(0, 2)) {
+    const t = teamsFor(save).find((x) => x.id === p.team)!, area = AREA_NEWS[p.area];
+    news(save, p.flop ? `${t.name}'s ${area.part} disappoints` : `${t.name} bring a new ${area.part}`, p.flop
+      ? `Their ${area.part} hasn't delivered what the wind tunnel promised: a small step in ${area.name.toLowerCase()} at best.`
+      : `A step in ${area.name.toLowerCase()} (+${Math.round(p.gain * 700)} PI there) for the next round. Compare the cars in Engineering → Vehicle.`, 'rival');
   }
+  if (packages.length > near.length) news(save, 'The grid keeps moving.', `${packages.length} rival ${packages.length === 1 ? 'team brings' : 'teams bring'} upgrades to the next round. Engineering → Vehicle shows where every car is strong.`, 'rival');
   if (save.done.length === save.calendar.length && w.reviewed !== save.season) {
     w.reviewed = save.season;
     if (teamPosition <= target) { const bonus = 800_000 + Math.round(w.confidence) * 10_000; book(save, 'Board objective bonus', bonus); news(save, 'Objective achieved.', 'The board has paid your season performance bonus. Keep building.', 'board'); }
