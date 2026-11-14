@@ -202,10 +202,14 @@ test('career driver ability and physical car performance are independent; the pl
   // Never past the limit, however high the difficulty.
   const top = start({ difficulty: 100 });
   for (let r = 0; r < 24; r++) for (const e of lineup(top)) if (!e.you) assert.ok(aiDifficulty(top, r, e.id) <= 1);
-  // Your car: the standard one in the best team, a little down in the worst.
-  assert.deepEqual(playerCar(start({ team: 'aurora' })), { grip: 1, pull: 1, top: 1 });
+  // Your car: the standard one in the best team, a little down in the worst. (Each team has a
+  // character, its aero, chassis and power unit a little either side of its overall rating, so
+  // the leader's car is the standard car on average, give or take that.)
+  const best = playerCar(start({ team: 'aurora' }));
+  for (const v of Object.values(best)) assert.ok(Math.abs(v - 1) < 0.03, `the leader's car: ${JSON.stringify(best)}`);
+  assert.deepEqual(playerCar(start({ team: 'aurora' })), best, 'the same every time');
   const slow = playerCar(start({ team: 'goldcrest' }));
-  assert.ok(slow.grip < .8 && slow.grip > .75 && slow.pull < .73 && slow.pull > .7 && slow.top < .91 && slow.top > .9);
+  assert.ok(slow.grip < .812 && slow.grip > .765 && slow.pull < .74 && slow.pull > .68 && slow.top < .915 && slow.top > .893, JSON.stringify(slow));
   const mid = playerCar(start({ team: 'kestrel' }));
   assert.ok(mid.grip > slow.grip && mid.grip < 1);
   assert.deepEqual(carPerformance(start({ team: 'goldcrest' }), 'oha'), slow);

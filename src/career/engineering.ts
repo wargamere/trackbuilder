@@ -1,4 +1,5 @@
 import { CAREER } from '../config/career.ts';
+import { DEVELOPMENT } from '../config/development.ts';
 import { clamp } from '../core/math.ts';
 import { hashString, rng } from '../core/random.ts';
 import type { CareerSave } from './career.ts';
@@ -131,9 +132,14 @@ export function carDevelopment(save: Pick<CareerSave, 'owner'> & Partial<Pick<Ca
 export function performanceGain(save: Pick<CareerSave, 'owner'> & Partial<Pick<CareerSave, 'team' | 'roster' | 'entry'>>, id: string): number {
   const p = carDevelopment(save, id); return p.aero + p.chassis + p.powertrain;
 }
+/**
+ * What the fitted parts add to the team's overall rating, averaged over its
+ * two cars: in rating points, as they count on track (carAreas.ts). Each
+ * area is a third of the overall rating.
+ */
 export function teamDevelopment(save: Pick<CareerSave, 'owner'> & Partial<Pick<CareerSave, 'team' | 'roster' | 'entry'>>): number {
   if (!save.team || !save.owner?.engineering) return 0;
-  const ids = teamsFor(save).find((t) => t.id === save.team)!.drivers; return (performanceGain(save, ids[0]) + performanceGain(save, ids[1])) / 2;
+  const ids = teamsFor(save).find((t) => t.id === save.team)!.drivers; return (performanceGain(save, ids[0]) + performanceGain(save, ids[1])) / 2 * DEVELOPMENT.partScale / 3;
 }
 export function resourceIncome(save: CareerSave): number {
   const scores = teamsFor(save).map((t) => {

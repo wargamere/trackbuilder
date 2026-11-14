@@ -356,6 +356,8 @@ export const AI = {
   gridLateral: 2.2,
   /** First slot's distance behind the line. */
   gridFront: 8,
+  /** The AI cars make their first decision over this many physics ticks at the end of the countdown, one or two a tick (not all on the tick the lights go out). */
+  firstPlanSpread: 24,
   /** Stuck (slower than 1.5 m/s) this long: back onto the road. */
   stuckSeconds: 2.5,
   /** For the first this many metres of a race, each grid slot back drives this much slower (a share). */

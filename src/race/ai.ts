@@ -449,7 +449,21 @@ export class AiDriver {
   drive(cars: readonly CarState[], dt: number): DriveInput {
     const st = this.car.state;
     const s = this.session;
-    if (!s.canDrive) return NO_INPUT;
+    if (!s.canDrive) {
+      // The first decision, made in the last moments of the countdown, one car a tick (the
+      // cars stand still on the grid meanwhile): all of them at once at the start made the
+      // frame the lights go out on a long one. It's ready the moment the car can go.
+      const left = Math.round(s.goTime / dt) - s.tick;
+      if (this.firstPlan && s.phase === 'countdown' && left === 1 + (this.slot % AI.firstPlanSpread)) {
+        this.planner.tacticsEnabled = !this.yellow && !Number.isFinite(this.raceCap);
+        this.planner.plan(st, cars, this.lane);
+        this.firstPlan = false;
+        // Its next decision then comes when it would have, had it made this one at the start.
+        const ticks = Math.floor(TRAFFIC.planEvery / dt) + 1;
+        this.planIn = (ticks - .5 + this.slot % ticks) * dt + dt;
+      }
+      return NO_INPUT;
+    }
     // Retired (broken down): it's out of the race, stopped where it is (the car itself sees to that).
     if (s.retired) return NO_INPUT;
     const finished = s.phase === 'finished';

@@ -46,3 +46,24 @@ On the same local machine, the 24-car wet/night Las Vegas fixed-step profile aga
 | 95th-percentile warm rendered frame | 16.2 ms | 8.9 ms |
 
 `npm run bench:wet-race -- current` adds a real-requestAnimationFrame wet/night soak, GPU/pixel metadata, a screenshot, per-frame trace and CPU profile. `WET_RACE_SECONDS` defaults to 25; `WET_RACE_CPU=2` enables Chrome's 2× CPU throttle; `RACE_PERF_DPR=2` exercises a 2880×1800 drawing buffer. It asserts stable shader versions during changing weather, correct day/night transitions, one wheel shader variant and valid wheel-culling bounds. CI runs an eight-second version. FPS values are diagnostic, with no hardware-independent target assertion.
+
+## Packs, the start and big screens
+
+A report of FPS drops "sometimes" while racing. Measured with a 24-car field in Node (the race as the race screen runs it) and in Chrome, the physics tick costs about three times as much while the field is bunched up (the start, behind the safety car, close battles) as when it's strung out, and the single tick the lights go out on cost about 25 normal ones. Those are the moments that dropped frames.
+
+- **The lights going out.** Every AI used to make its first decision on that one tick. Now each makes it in the last 24 ticks of the countdown (`AI.firstPlanSpread`), one car a tick, while the cars stand on the grid; its next decision comes on the tick it always did. Races come out bit-for-bit the same (checked by hashing every car's state each second over full 24-car races at Melbourne, Monaco and Monza, with a player stand-in and a centre-line bot in the field). The worst tick of the start went from 31 ms to 7 ms on the test machine.
+- **Following in a pack.** `followSpeed()` plays every car ahead forward each tick to see whether it would hold us up. It now stops as soon as the answer is yes, doesn't play a car forward at all when it's already right on its bumper and overlapping (in the way whatever the forecast says), and lends one buffer for those forecasts instead of making a new one per car per tick.
+- **Choosing a lane.** A lane of our own needs no positions across the road while the car ahead is out of reach and out of slipstream range (where `towStrength()` is 0 anyway), so those aren't worked out; a car's position across the road is worked out only when first needed; and a lane's place among the planned lanes is looked up once per forecast (`RacingDriver.laneSpeedSlot()`), not at every step.
+- **Speed checks on a path of its own.** `smoothPoint()` writes `worldAt()` out in place: the same sums in the same order, no objects made for each of the five points it averages (it runs for every car every tick in a battle). `tests/wetPerformance.test.ts` checks the result against the old way, exactly.
+- **The timing tower** reuses its row elements and only touches what changed, instead of building all 20–24 rows again four times a second.
+- **Automatic resolution** (`render/resolution.ts`, `RESOLUTION` in `config/handling.ts`). Over half-second windows, if frames come slower than 45 fps while the game's own work (the render call left out) takes under 60 % of the time, the graphics card is what's slow: after 1.5 s of that it renders fewer pixels, one step at a time (85 %, 72 %, 60 %, 50 % of the setting's pixel ratio, never under 0.75 real pixels per CSS pixel), at most one change every 3 s. After 8 s of easy frames (57 fps and up) it steps back up. It's kept from race to race, and starts again when the graphics setting changes. A game that's slow because of its own work, a 48–50 Hz screen and tab switches don't change it.
+
+On the test machine, the same 24-car race in Node:
+
+| Measurement | Before | After |
+| --- | ---: | ---: |
+| AI time, first 40 s of a race (bunched) | 4.75 s | 3.54 s |
+| … of which following (`followSpeed`) | 1.63 s | 1.00 s |
+| Worst tick, the start | 31 ms | 7 ms |
+
+In headless Chrome at 2880×1800 with a software graphics card, the automatic resolution stepped down to 1440×900 within the first laps and kept it for the next race.

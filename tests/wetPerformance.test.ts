@@ -69,21 +69,34 @@ test('rolling path windows keep exact speed limits while sampling less geometry 
       const n=arr.length, f=(((s/c.spacing)%n)+n)%n, i=Math.floor(f), u=f-i;
       return arr[i]*(1-u)+arr[(i+1)%n]*u;
     };
+    // The reference: every curvature window smoothed from scratch through worldAt(), as the
+    // speed check used to be (the driver now writes worldAt out in place, making no objects).
+    const worldAt=Reflect.get(driver,'worldAt') as (s:number,lat:number)=>{x:number;z:number};
+    const clampLat=Reflect.get(driver,'clampLat') as (s:number,lat:number)=>number;
+    const smooth=(x:number,lat:(s:number)=>number,onRoad:boolean) => {
+      let px=0, pz=0;
+      for (let j=-2;j<=2;j++) { const s=x+j*DRIVER.pathSmooth/2, l=lat(s), p=worldAt.call(driver,s,onRoad?clampLat.call(driver,s,l):l); px+=p.x; pz+=p.z; }
+      return { x:px/5, z:pz/5 };
+    };
+    const curvature=(a:{x:number;z:number},b:{x:number;z:number},q:{x:number;z:number}) => {
+      const ux=b.x-a.x, uz=b.z-a.z, vx=q.x-b.x, vz=q.z-b.z, den=Math.hypot(ux,uz)*Math.hypot(vx,vz)*Math.hypot(q.x-a.x,q.z-a.z);
+      return den>1e-9 ? (2*(ux*vz-uz*vx))/den : 0;
+    };
     for (const start of [-.1, 50.123, c.length-.01]) for (const onRoad of [true, false]) {
-      const path=(s:number) => driver.lateralAt(s) + Math.sin((s-start)/40)*3;
-      const worldAt=Reflect.get(driver,'worldAt'); let samples=0;
-      Reflect.set(driver,'worldAt',function(this:RacingDriver,...args:unknown[]){samples++;return worldAt.apply(this,args);});
-      try {
-        let expected=Infinity;
-        for(let d=0;d<=DRIVER.pathLook;d+=DRIVER.pathStep){
-          const s=start+d, k=driver.pathCurvature(s,path,onRoad,true);
-          const vc=Math.min(driver.pace.maxSpeed,cornerSpeed(k,sample(c.bank,s),driver.pace.grip*DRIVER.offLineGrip,driver.pace.downforce));
-          expected=Math.min(expected,Math.sqrt(vc*vc+2*brakingDecel(driver.pace.brake,vc,sample(c.grade,s),driver.pace.drag)*d));
-        }
-        const referenceSamples=samples; samples=0;
-        assert.equal(driver.pathLimit(start,path,onRoad),expected);
-        assert.ok(samples < referenceSamples*.7, `${samples} vs ${referenceSamples} world samples`);
-      } finally { Reflect.set(driver,'worldAt',worldAt); }
+      let samples=0;
+      const path=(s:number) => { samples++; return driver.lateralAt(s) + Math.sin((s-start)/40)*3; };
+      let expected=Infinity;
+      for(let d=0;d<=DRIVER.pathLook;d+=DRIVER.pathStep){
+        const s=start+d, h=DRIVER.pathStep, k=curvature(smooth(s-h,path,onRoad),smooth(s,path,onRoad),smooth(s+h,path,onRoad));
+        assert.equal(driver.pathCurvature(s,path,onRoad,true),k);
+        const vc=Math.min(driver.pace.maxSpeed,cornerSpeed(k,sample(c.bank,s),driver.pace.grip*DRIVER.offLineGrip,driver.pace.downforce));
+        expected=Math.min(expected,Math.sqrt(vc*vc+2*brakingDecel(driver.pace.brake,vc,sample(c.grade,s),driver.pace.drag)*d));
+      }
+      samples=0;
+      for(let d=0;d<=DRIVER.pathLook;d+=DRIVER.pathStep){ const s=start+d, h=DRIVER.pathStep; smooth(s-h,path,onRoad); smooth(s,path,onRoad); smooth(s+h,path,onRoad); }
+      const referenceSamples=samples; samples=0;
+      assert.equal(driver.pathLimit(start,path,onRoad),expected);
+      assert.ok(samples < referenceSamples*.7, `${samples} vs ${referenceSamples} path samples`);
     }
   }
 });

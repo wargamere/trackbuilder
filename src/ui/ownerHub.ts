@@ -12,6 +12,8 @@ import { currentDecision, driverRating, dynasty, managementOpen } from '../caree
 import { engineering, PARTS } from '../career/engineering.ts';
 import { engineeringView, practiceProgrammes } from './engineeringScreen.ts';
 import { calendarOpen } from '../career/calendar.ts';
+import { circuitDemand, projectedOrder } from '../career/circuitPace.ts';
+import type { Track } from '../track/track.ts';
 
 export type OwnerTab = 'race' | 'drivers' | 'development' | 'manufacturing' | 'upgrades' | 'engineeringHistory' | 'facilities' | 'vehicle' | 'teams' | 'finance' | 'identity' | 'calendar' | 'career' | 'inbox' | 'personnel' | 'legacy';
 export const OWNER_TABS: [OwnerTab, string][] = [['race', 'Overview'], ['development', 'Engineering'], ['drivers', 'Drivers'], ['teams', 'Championship'], ['finance', 'Team'], ['inbox', 'Inbox']];
@@ -59,6 +61,14 @@ function driverCards(save: CareerSave, changed: Actions['changed']): HTMLElement
   return group;
 }
 
+/** The area the next circuit rewards most, and where your quicker car is projected there. */
+function favours(save: CareerSave, track: Track): string {
+  const d = circuitDemand(save, track).share;
+  const area = (['aero', 'chassis', 'powertrain'] as const).reduce((a, b) => (d[b] > d[a] ? b : a));
+  const order = projectedOrder(save, track), pos = order.findIndex((r) => r.team === save.team) + 1;
+  return `${({ aero: 'Aero', chassis: 'Chassis', powertrain: 'Power' } as const)[area]} ${Math.round(d[area] * 100)}% · car pace P${pos}`;
+}
+
 export function ownerBody(save: CareerSave, round: number, tab: OwnerTab, actions: Actions): HTMLElement {
   const track = builtInTrack(save.calendar[round]), e = engineering(save), w = dynasty(save);
   const standings = teamStandings(save), yours = standings.find((r) => r.yours)!, position = standings.indexOf(yours) + 1;
@@ -87,7 +97,7 @@ export function ownerBody(save: CareerSave, round: number, tab: OwnerTab, action
       h('div', { class: 'owner-overview-grid' }, h('section', { class: 'owner-next-event' },
         h('div', { class: 'owner-race-copy' }, label(`ROUND ${round + 1} / ${track?.def.place ?? 'GRAND PRIX'}`), h('h2', {}, track?.def.name ?? 'Race', h('span', { text: 'Grand Prix' })), h('p', { class: 'owner-race-status', text: save.grid ? 'Grid confirmed' : e.advanced === `${save.season}:${round}` ? 'At the race weekend' : 'Planning before the race weekend' })),
         track ? h('div', { class: 'owner-map-wrap' }, circuitMap(track)) : null,
-        h('div', { class: 'owner-race-facts' }, stat('FORECAST', weather), stat('DISTANCE', track ? `${raceLaps(save.length, trackLapTime(track))} laps` : '—'), stat('PERFORMANCE INDEX', `${performanceIndex(save, save.team)} PI`))), inbox),
+        h('div', { class: 'owner-race-facts' }, stat('FORECAST', weather), stat('DISTANCE', track ? `${raceLaps(save.length, trackLapTime(track))} laps` : '—'), stat('PERFORMANCE INDEX', `${performanceIndex(save, save.team)} PI`), track ? stat('CIRCUIT FAVOURS', favours(save, track)) : null)), inbox),
       h('div', { class: 'owner-section-heading' }, h('h2', { text: 'Choose your race driver' }), h('span', { text: 'Both cars score for your team' })), driverCards(save, actions.changed),
       h('section', { class: 'owner-status-strip', 'data-testid': 'campaign-command' }, stat('BOARD CONFIDENCE', `${Math.round(w.confidence)}%`), stat('RESEARCH', `${e.research.length} active`), stat('MANUFACTURING', `${e.production.length} active`), stat('PARTS TO FIT', String(ready))), prep);
   } else if (['development', 'manufacturing', 'upgrades', 'engineeringHistory'].includes(tab)) {
