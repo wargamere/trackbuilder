@@ -100,7 +100,8 @@ export function vehicleView(save: CareerSave, develop: () => void): HTMLElement 
     const demand = circuitDemand(save, track);
     const order = projectedOrder(save, track), lead = order[0].lap;
     const demands = h('div', { class: 'vehicle-demand' }, ...CAR_AREAS.map((a) => h('div', {}, h('span', { text: AREA_SHORT[a] }), bar(demand.share[a], 0.6), h('strong', { text: `${Math.round(demand.share[a] * 100)}%` }))));
-    const list = h('ol', { class: 'owner-performance-list vehicle-projection' });
+    // (Its own list: the overall order below stays the page's performance list.)
+    const list = h('ol', { class: 'vehicle-projection' });
     order.forEach((row, i) => {
       const t = teams.find((x) => x.id === row.team)!;
       const name = row.seat === null ? t.name : `${t.name} · car ${row.seat + 1}`;
