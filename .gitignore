@@ -4,3 +4,5 @@ dist/
 .DS_Store
 test-results/
 crazygames-out/
+
+data/circuits/*.geojson

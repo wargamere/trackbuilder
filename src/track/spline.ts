@@ -86,6 +86,7 @@ export function sampleClosedCatmullRom(ctrl: readonly Dot[], step = 1): Dot[] {
       };
       // Bank overrides blend linearly from dot to dot.
       if (p1.b !== undefined && p2.b !== undefined) d.b = p1.b + ((p2.b - p1.b) * s) / steps;
+      if (p1.bank !== undefined || p2.bank !== undefined) d.bank = (p1.bank ?? 0) + (((p2.bank ?? 0) - (p1.bank ?? 0)) * s) / steps;
       out.push(d);
     }
   }
@@ -113,6 +114,7 @@ export function resampleClosed(pts: readonly Dot[], spacing: number): { points: 
     const hb = b.h ?? 0;
     const q: Dot = { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t, h: ha + (hb - ha) * t };
     if (a.b !== undefined && b.b !== undefined) q.b = a.b + (b.b - a.b) * t;
+    if (a.bank !== undefined || b.bank !== undefined) q.bank = (a.bank ?? 0) * (1 - t) + (b.bank ?? 0) * t;
     points.push(q);
   }
   return { points, length };
@@ -207,11 +209,11 @@ export function buildCenterline(ctrl: readonly Dot[], banking = 0, spacing: numb
   // Banking: leans into corners in proportion to curvature, smoothed so it rolls in
   // and out. The full angle is the track's level, or a corner's own override.
   const rawBank = new Float32Array(n);
-  const banked = custom || levelBank > 0;
+  const banked = custom || levelBank > 0 || ctrl.some(d => d.bank !== undefined);
   if (banked) {
     for (let i = 0; i < n; i++) {
       const max = custom ? ((pts[i].b ?? levelDeg) * Math.PI) / 180 : levelBank;
-      rawBank[i] = Math.sign(curvature[i]) * max * Math.min(1, Math.abs(curvature[i]) * TRACK.bankRadius);
+      rawBank[i] = pts[i].bank !== undefined ? pts[i].bank! * Math.PI / 180 : Math.sign(curvature[i]) * max * Math.min(1, Math.abs(curvature[i]) * TRACK.bankRadius);
     }
   }
   const r = Math.max(1, Math.round(12 / realSpacing));

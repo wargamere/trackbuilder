@@ -137,6 +137,7 @@ export function quantizeControl(control: readonly Dot[]): Dot[] {
     const h = quantizeHeight(p.h ?? 0);
     const r: Dot = h ? { x: Math.round(p.x / q) * q, y: Math.round(p.y / q) * q, h } : { x: Math.round(p.x / q) * q, y: Math.round(p.y / q) * q };
     if (p.b !== undefined) r.b = quantizeBank(p.b);
+    if (p.bank !== undefined) r.bank = Math.round(Math.max(-35, Math.min(35, p.bank)) * 2) / 2;
     if (out.length === 0 || dist(out[out.length - 1], r) > 1e-6) out.push(r);
   }
   if (out.length > 1 && dist(out[0], out[out.length - 1]) < 1e-6) out.pop();
@@ -213,12 +214,13 @@ export function snapDot(p: Dot, grid = 0): Dot {
   const r: Dot = { x: Math.round(p.x / q) * q, y: Math.round(p.y / q) * q };
   if (p.h) r.h = quantizeHeight(p.h);
   if (p.b !== undefined) r.b = quantizeBank(p.b);
+  if (p.bank !== undefined) r.bank = Math.round(Math.max(-35, Math.min(35, p.bank)) * 2) / 2;
   return r;
 }
 
 /** Same loop and start line, driven the other way round. */
 export function reverseDots(dots: readonly Dot[]): Dot[] {
-  return [dots[0], ...dots.slice(1).reverse()].map((p) => ({ ...p }));
+  return [dots[0], ...dots.slice(1).reverse()].map((p) => ({ ...p, ...(p.bank !== undefined ? { bank: p.bank ? -p.bank : 0 } : {}) }));
 }
 
 /** Moves the start line to dot `k`. */

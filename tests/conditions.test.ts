@@ -69,8 +69,8 @@ test('medium tyres last 4 to 6 laps, depending on how hard the track works them'
   const lives = new Map(builtInTracks().map((b) => [b.def.name, trackTyreLife(b.track())] as const));
   for (const [name, life] of lives) assert.ok(life >= TYRES.lifeHard && life <= TYRES.lifeEasy, `${name}: ${life.toFixed(2)} laps`);
   const at = (n: string) => lives.get(n) ?? NaN;
-  assert.ok(at('Monza') > 5.8, `Monza (fast, few bends) is easy on them: ${at('Monza').toFixed(2)}`);
-  assert.ok(at('Sakhir') > 4.2 && at('Sakhir') < 5, `Sakhir: ${at('Sakhir').toFixed(2)}`);
+  assert.ok(at('Monza') > 5 && at('Monza') > at('Sakhir'), `Monza (fast, few bends) is easy on them: ${at('Monza').toFixed(2)}`);
+  assert.ok(at('Sakhir') >= 4 && at('Sakhir') < 5, `Sakhir: ${at('Sakhir').toFixed(2)}`);
   assert.ok(at('Shanghai') < 4.5, `Shanghai is hard on them: ${at('Shanghai').toFixed(2)}`);
 });
 

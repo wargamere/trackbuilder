@@ -242,7 +242,7 @@ test('a full field at the Nürburgring with damage and the safety car on: throug
   const ev: ControlEvent[] = [];
   const control: ControlCar[] = [];
   let knocks = 0;
-  for (let tick = 0; tick < 400 * HANDLING.tickRate && ais.some((a) => a.session.phase !== 'finished'); tick++) {
+  for (let tick = 0; tick < 800 * HANDLING.tickRate && ais.some((a) => a.session.phase !== 'finished'); tick++) {
     slipstream(states, t.center.length, drafts);
     ais.forEach((a, k) => (a.car.draft = carriedTow(a.car.draft, drafts[k], DT)));
     const prev = ais.map((a) => progressOf(a.car, t));

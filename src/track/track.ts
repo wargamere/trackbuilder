@@ -41,7 +41,8 @@ export function buildTrack(def: TrackDef): Track {
   const options = trackOptions(def);
   const center = buildCenterline(def.control, options.banking, undefined, options.width, options.barrierGap);
   const tightCorners = findCorners(center, TRACK.cornerRadius, TRACK.cornerMinTurn);
-  const kerbs = findCorners(center, TRACK.kerbRadius, TRACK.kerbMinTurn);
+  // Full-length circuits also need kerbs through fast bends, not only hairpins.
+  const kerbs = findCorners(center, TRACK.kerbRadius * Math.max(1, center.length / 1600), TRACK.kerbMinTurn);
   return { def, options, center, tightCorners, kerbs };
 }
 
@@ -58,7 +59,7 @@ export function newTrackId(): string {
  */
 export function contentId(control: readonly Dot[], options?: Partial<TrackOptions>, extras?: TrackExtras): string {
   // Heights and bank overrides only appear when set, so older tracks keep their ids.
-  const dots = control.map((p) => (p.h ? `${p.x},${p.y},${p.h}` : `${p.x},${p.y}`) + (p.b !== undefined ? `/${p.b}` : '')).join(';');
+  const dots = control.map((p) => (p.h ? `${p.x},${p.y},${p.h}` : `${p.x},${p.y}`) + (p.b !== undefined ? `/${p.b}` : '') + (p.bank !== undefined ? `@${p.bank}` : '')).join(';');
   const o = { ...DEFAULT_OPTIONS, ...options };
   const extra = (Object.keys(DEFAULT_OPTIONS) as (keyof TrackOptions)[])
     .filter((k) => o[k] !== DEFAULT_OPTIONS[k])

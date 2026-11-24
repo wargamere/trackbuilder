@@ -2,7 +2,7 @@ import type { CarState } from '../car/physics.ts';
 import { towStrength } from '../car/slipstream.ts';
 import { CONTACT, TRAFFIC } from '../config/race.ts';
 import { clamp } from '../core/math.ts';
-import { leftOf } from '../track/spline.ts';
+import { leftOf, surfaceY } from '../track/spline.ts';
 import type { Track } from '../track/track.ts';
 import type { Corridor, RacingDriver } from './driver.ts';
 
@@ -182,11 +182,22 @@ export class TrafficPlanner {
     this.pace = pace;
   }
 
+  /** Compare height above the local road, not absolute altitude. Cars up a
+   * hill must remain visible far enough ahead to brake for a stopped queue. */
+  private sameLevel(a: CarState, b: CarState): boolean {
+    const c = this.track.center, n = c.points.length;
+    const relative = (car: CarState) => {
+      const f = ((car.s / c.spacing) % n + n) % n, i = Math.floor(f), u = f - i;
+      return car.y - surfaceY(c, i, car.lateral) * (1-u) - surfaceY(c, (i+1)%n, car.lateral) * u;
+    };
+    return Math.abs(relative(a)-relative(b)) <= CONTACT.heightGap;
+  }
+
   /** Collects the cars near `me` (same level, from a little behind to well ahead). */
   private gather(me: CarState, cars: readonly CarState[]): void {
     this.near.length = 0;
     for (const o of cars) {
-      if (o === me || Math.abs(o.y - me.y) > CONTACT.heightGap) continue;
+      if (o === me || !this.sameLevel(me, o)) continue;
       const ds = along(me.s, o.s, this.L);
       if (ds < -TRAFFIC.behind || ds > TRAFFIC.ahead) continue;
       this.near.push(this.toNear(o, ds));
@@ -501,7 +512,7 @@ export class TrafficPlanner {
     for (let d = 0; d <= 20; d += 5) bend = Math.max(bend, Math.abs(this.driver.curvatureAt(me.s + d)));
     const closingMargin = bend > TRAFFIC.closingBend ? TRAFFIC.closingMargin : 0;
     for (const o of cars) {
-      if (o === me || Math.abs(o.y - me.y) > CONTACT.heightGap) continue;
+      if (o === me || !this.sameLevel(me, o)) continue;
       const ds = along(me.s, o.s, this.L);
       if (ds <= 0 || ds > TRAFFIC.ahead) continue;
       const gap = ds - 2 * CONTACT.halfLength;
@@ -557,7 +568,7 @@ export class TrafficPlanner {
     const roomHuman = 2 * CONTACT.halfWidth + TRAFFIC.keepGapHuman + this.bendRoom;
     const reach = 2 * CONTACT.halfLength + TRAFFIC.keepReach;
     for (const o of cars) {
-      if (o === me || Math.abs(o.y - me.y) > CONTACT.heightGap) continue;
+      if (o === me || !this.sameLevel(me, o)) continue;
       const ds = along(me.s, o.s, this.L);
       const side = o.lateral - me.lateral;
       // A car behind gets its room once its nose is well up alongside us (past our rear
@@ -846,7 +857,7 @@ export class TrafficPlanner {
   /** Is a car coming up behind within a few seconds (so it's not safe to rejoin the road)? */
   carComing(me: CarState, cars: readonly CarState[]): boolean {
     for (const o of cars) {
-      if (o === me || Math.abs(o.y - me.y) > CONTACT.heightGap) continue;
+      if (o === me || !this.sameLevel(me, o)) continue;
       const ds = along(me.s, o.s, this.L);
       if (ds < 0 && ds > -TRAFFIC.rejoinClear && o.speed > 3) return true;
     }

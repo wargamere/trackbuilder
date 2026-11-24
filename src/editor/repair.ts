@@ -1,4 +1,5 @@
-import { TRACK, WORLD, type TrackOptions } from '../config/track.ts';
+import { TRACK, type TrackOptions } from '../config/track.ts';
+import { paperFor } from '../track/bounds.ts';
 import { dist, type Dot, type Vec2 } from '../core/math.ts';
 import { resampleClosed, sampleClosedCatmullRom } from '../track/spline.ts';
 import { clampHeight, loopDist, pathPositions, smoothHeights, softWeight } from './heights.ts';
@@ -112,8 +113,9 @@ export function scaleDots(dots: readonly Dot[], f: number): Dot[] {
   const cx = (Math.min(...xs) + Math.max(...xs)) / 2;
   const cy = (Math.min(...ys) + Math.max(...ys)) / 2;
   let out = dots.map((d) => ({ ...d, x: cx + (d.x - cx) * f, y: cy + (d.y - cy) * f }));
-  const W = WORLD.width / 2 - 12;
-  const H = WORLD.height / 2 - 12;
+  const paper=paperFor(dots);
+  const W = paper.width / 2 - 12;
+  const H = paper.height / 2 - 12;
   const span = (k: 'x' | 'y') => Math.max(...out.map((d) => d[k])) - Math.min(...out.map((d) => d[k]));
   const fit = Math.min(1, (W * 2) / Math.max(1e-6, span('x')), (H * 2) / Math.max(1e-6, span('y')));
   if (fit < 1) out = out.map((d) => ({ ...d, x: cx + (d.x - cx) * fit, y: cy + (d.y - cy) * fit }));

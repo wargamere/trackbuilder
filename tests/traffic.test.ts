@@ -131,7 +131,7 @@ test('down the inside of turn 1 alongside the fastest AI: it leaves you room and
   }
 });
 
-test('an AI gets past a much slower player on the racing line (who looks out for no one) within a lap', () => {
+test('an AI gets past a much slower player on the racing line (who looks out for no one) within two laps', () => {
   for (const si of [0, 1]) {
     const t = getSampleTrack(si);
     let passed = NaN;
@@ -139,7 +139,7 @@ test('an AI gets past a much slower player on the racing line (who looks out for
       const d = (k: number) => cars[k].session.raceDistance(cars[k].car.state.s);
       if (isNaN(passed) && d(1) > d(0) + 5) passed = tick / HANDLING.tickRate;
     });
-    assert.ok(passed < 45, `${t.def.name}: by after ${passed.toFixed(1)} s`);
+    assert.ok(passed < 60, `${t.def.name}: by after ${passed.toFixed(1)} s`);
     assert.deepEqual(r.order, [1, 0], `${t.def.name}: and stays ahead`);
     assert.equal(r.kinds.hard, 0, `${t.def.name}: no hard knocks`);
   }

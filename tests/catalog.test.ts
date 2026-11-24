@@ -5,6 +5,7 @@ import { builtInTrack, builtInTracks, trackFromCode } from '../src/editor/pipeli
 import { crossingsOf } from '../src/editor/validation.ts';
 import { AuthorLap } from '../src/race/medals.ts';
 import { encodeTrack } from '../src/track/code.ts';
+import { CIRCUIT_LENGTHS } from '../src/track/circuitScale.ts';
 
 test("the built-in tracks: 23 of the game's own and 30 real-world circuits, with unique ids and names", () => {
   const all = builtInTracks();
@@ -18,11 +19,12 @@ test("the built-in tracks: 23 of the game's own and 30 real-world circuits, with
   }
 });
 
-test('every built-in track is a valid road inside the drawing area, not starting in a corner', () => {
+test('original tracks fit the drawing area; real circuits have full-scale lengths and valid starts', () => {
   for (const b of builtInTracks()) {
     const t = b.track();
     const c = t.center;
-    for (const p of c.points) {
+    if(b.group==='world')assert.ok(Math.abs(c.length-CIRCUIT_LENGTHS[b.def.id])<3,`${b.def.name}: ${c.length} metres`);
+    for (const p of b.group==='world'?[]:c.points) {
       assert.ok(Math.abs(p.x) <= WORLD.width / 2 + 1 && Math.abs(p.y) <= WORLD.height / 2 + 1, `${b.def.name}: inside the area at ${p.x.toFixed(0)}, ${p.y.toFixed(0)}`);
     }
     // The start line not in a corner: nothing tighter than a 20 m radius within 20 m either

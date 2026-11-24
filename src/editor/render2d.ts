@@ -7,6 +7,7 @@ import { edgeOffsets, leftOf, sampleAt } from '../track/spline.ts';
 import { PLACED_SPEC, placedOn, runoffLayout, type Placed, type PlacedKind } from '../track/extras.ts';
 import { tunnelsOf } from '../track/tunnels.ts';
 import type { Track } from '../track/track.ts';
+import type { PaperSize } from '../track/bounds.ts';
 import { crossingKind, crossingsOf } from './validation.ts';
 
 /** World (metres, origin at the centre of the drawable area) -> CSS pixels. */
@@ -36,11 +37,11 @@ export const PAPER = {
 } as const;
 
 /** Fits the world rectangle into the free part of the screen. */
-export function fitView(w: number, h: number, top: number, bottom: number, left = 0, right = 0): View {
+export function fitView(w: number, h: number, top: number, bottom: number, left = 0, right = 0, paper:PaperSize=WORLD): View {
   const margin = Math.max(8, Math.min(w, h) * 0.025);
   const availW = w - left - right - margin * 2;
   const availH = h - top - bottom - margin * 2;
-  const scale = Math.max(0.1, Math.min(availW / WORLD.width, availH / WORLD.height));
+  const scale = Math.max(0.0001, Math.min(availW / paper.width, availH / paper.height));
   return { scale, ox: left + margin + availW / 2, oy: top + margin + availH / 2 };
 }
 
@@ -48,13 +49,13 @@ export const toScreen = (v: View, p: Vec2): Vec2 => ({ x: v.ox + p.x * v.scale, 
 export const toWorld = (v: View, x: number, y: number): Vec2 => ({ x: (x - v.ox) / v.scale, y: (y - v.oy) / v.scale });
 
 /** Paper background, grid, and the dashed border of the drawable area. */
-export function drawPaper(ctx: CanvasRenderingContext2D, v: View, w: number, h: number): void {
+export function drawPaper(ctx: CanvasRenderingContext2D, v: View, w: number, h: number, paper:PaperSize=WORLD): void {
   ctx.fillStyle = PAPER.bg;
   ctx.fillRect(0, 0, w, h);
-  const x0 = v.ox - (WORLD.width / 2) * v.scale;
-  const y0 = v.oy - (WORLD.height / 2) * v.scale;
-  const x1 = v.ox + (WORLD.width / 2) * v.scale;
-  const y1 = v.oy + (WORLD.height / 2) * v.scale;
+  const x0 = v.ox - (paper.width / 2) * v.scale;
+  const y0 = v.oy - (paper.height / 2) * v.scale;
+  const x1 = v.ox + (paper.width / 2) * v.scale;
+  const y1 = v.oy + (paper.height / 2) * v.scale;
   const grid = (step: number, color: string) => {
     ctx.strokeStyle = color;
     ctx.lineWidth = 1;
@@ -74,8 +75,9 @@ export function drawPaper(ctx: CanvasRenderingContext2D, v: View, w: number, h: 
     }
     ctx.stroke();
   };
-  grid(WORLD.gridMinor, PAPER.gridMinor);
-  grid(WORLD.gridMajor, PAPER.gridMajor);
+  const minor=WORLD.gridMinor*2**Math.max(0,Math.ceil(Math.log2(8/(WORLD.gridMinor*v.scale))));
+  grid(minor, PAPER.gridMinor);
+  grid(minor*5, PAPER.gridMajor);
 
   // Shade outside the drawable area slightly.
   ctx.fillStyle = 'rgba(27, 58, 138, 0.05)';

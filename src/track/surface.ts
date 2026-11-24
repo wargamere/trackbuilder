@@ -6,6 +6,7 @@ import { laneU, outerAt, pitLane, type PitLane } from './pitLane.ts';
 import { edgeOffsets, leftOf, sampleAt, surfaceY, type Centerline } from './spline.ts';
 import type { Track } from './track.ts';
 import { overTunnel } from './tunnels.ts';
+import { pointBounds } from './bounds.ts';
 
 /**
  * Everything about the ground a track sits on, shared by physics and rendering
@@ -133,7 +134,7 @@ function nearestPerPass(c: Centerline, x: number, z: number, idx: number[], maxD
  * Ground height that one pass of the road asks for at (x, z), and how far the
  * point is beyond that pass's shoulder (0 = on the road or its shoulder).
  */
-function passHeight(c: Centerline, i: number, x: number, z: number): { h: number; away: number } {
+function passHeight(c: Centerline, i: number, x: number, z: number, base = 0): { h: number; away: number } {
   const p = c.points[i];
   const t = c.tangents[i];
   const l = leftOf(t);
@@ -152,15 +153,34 @@ function passHeight(c: Centerline, i: number, x: number, z: number): { h: number
   // Just under the road surface, so the road sits flush in the ground.
   const roadH = surfaceY(c, i, edge) + c.grade[i] * along - 0.03;
   const away = Math.max(0, Math.abs(lateral) - band, Math.abs(along) - c.spacing);
-  return { h: roadH * (1 - smoothstep(0, BLEND, away)), away };
+  return { h: base + (roadH - base) * (1 - smoothstep(0, BLEND, away)), away };
 }
 
-function buildTerrain(c: Centerline, grid: SampleGrid): Terrain {
-  const { x0, z0 } = TERRAIN_RECT;
-  const step = TERRAIN_STEP;
-  const nx = Math.round((TERRAIN_RECT.x1 - x0) / step) + 1;
-  const nz = Math.round((TERRAIN_RECT.z1 - z0) / step) + 1;
+function buildTerrain(c: Centerline, grid: SampleGrid, natural = false): Terrain {
+  const b=pointBounds(c.points,TERRAIN_MARGIN);
+  const x0=Math.min(TERRAIN_RECT.x0,b.x0),z0=Math.min(TERRAIN_RECT.z0,b.z0);
+  const x1=Math.max(TERRAIN_RECT.x1,b.x1),z1=Math.max(TERRAIN_RECT.z1,b.z1);
+  // Bound the heightfield cost as circuits grow to several kilometres.
+  const step=Math.max(TERRAIN_STEP,Math.ceil(Math.max(x1-x0,z1-z0)/180));
+  const nx=Math.ceil((x1-x0)/step)+1,nz=Math.ceil((z1-z0)/step)+1;
   const h = new Float32Array(nx * nz);
+  // A coarse, bounded terrain envelope extends hills between stretches of a
+  // real circuit, instead of dropping a 100 m hill to zero at every shoulder.
+  const coarseN = 24, envelope = new Float32Array((coarseN+1)**2);
+  if (natural) {
+    const stride = Math.max(1,Math.round(40/c.spacing));
+    for(let j=0;j<=coarseN;j++)for(let i=0;i<=coarseN;i++){
+      const x=x0+(x1-x0)*i/coarseN,z=z0+(z1-z0)*j/coarseN;let sum=0,weights=0;
+      for(let k=0;k<c.points.length;k+=stride){const p=c.points[k],w=1/(3600+(p.x-x)**2+(p.y-z)**2);sum+=c.height[k]*w;weights+=w;}
+      const edge=Math.min(x-x0,x1-x,z-z0,z1-z);
+      envelope[j*(coarseN+1)+i]=sum/weights*smoothstep(0,TERRAIN_MARGIN,edge);
+    }
+  }
+  const baseAt=(x:number,z:number)=>{
+    const a=Math.max(0,Math.min(coarseN-1e-6,(x-x0)/(x1-x0)*coarseN)),b=Math.max(0,Math.min(coarseN-1e-6,(z-z0)/(z1-z0)*coarseN));
+    const i=Math.floor(a),j=Math.floor(b),u=a-i,v=b-j,k=j*(coarseN+1)+i;
+    return envelope[k]*(1-u)*(1-v)+envelope[k+1]*u*(1-v)+envelope[k+coarseN+1]*(1-u)*v+envelope[k+coarseN+2]*u*v;
+  };
   const reach = c.wallOffset + BLEND + 2;
   const tmp: number[] = [];
   for (let j = 0; j < nz; j++) {
@@ -168,7 +188,8 @@ function buildTerrain(c: Centerline, grid: SampleGrid): Terrain {
       const x = x0 + i * step;
       const z = z0 + j * step;
       const passes = nearestPerPass(c, x, z, grid.near(x, z, reach, tmp), reach);
-      if (!passes.length) continue;
+      const base=natural?baseAt(x,z):0;
+      if (!passes.length) { h[j*nx+i]=base; continue; }
       // On a road's own shoulder, that road decides (so a road on a hill keeps its
       // embankment even next to a lower stretch). Where shoulders overlap (under a
       // bridge) the lowest wins, so the ground follows the road underneath. Between
@@ -177,7 +198,7 @@ function buildTerrain(c: Centerline, grid: SampleGrid): Terrain {
       let sum = 0;
       let wsum = 0;
       for (const ps of passes) {
-        const q = passHeight(c, ps.i, x, z);
+        const q = passHeight(c, ps.i, x, z,base);
         if (q.away <= 0) own = Math.min(own, q.h);
         const w = 1 / (1 + q.away) ** 2;
         sum += q.h * w;
@@ -373,7 +394,7 @@ export function surfaceFor(track: Track): TrackSurface {
   const c = track.center;
   const n = c.points.length;
   const grid = new SampleGrid(c, 20);
-  const terrain = buildTerrain(c, grid);
+  const terrain = buildTerrain(c, grid, track.def.control.some(d => d.bank !== undefined));
   const pits = pitLayout(track);
   const lane = pitLane(track);
   if (pits) padForPits(terrain, c, pits, lane);

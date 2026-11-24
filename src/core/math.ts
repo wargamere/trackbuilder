@@ -12,6 +12,8 @@ export interface Dot extends Vec2 {
   h?: number;
   /** Bank angle override for the corner around this dot (degrees); unset = the track's banking level. */
   b?: number;
+  /** Absolute signed road crossfall (degrees, left edge up positive), independent of curvature. */
+  bank?: number;
 }
 
 export const vec = (x: number, y: number): Vec2 => ({ x, y });

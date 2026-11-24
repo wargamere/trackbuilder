@@ -64,6 +64,7 @@ export class View3D {
   private readonly sky: Mesh;
   private readonly hills: Mesh;
   private readonly ground: Mesh;
+  private sceneryScale = 1;
   private readonly hemi: HemisphereLight;
   private readonly sun: DirectionalLight;
   private readonly fog: Fog;
@@ -167,16 +168,16 @@ export class View3D {
    * with a hole exactly where the terrain mesh goes, so the two never overlap.
    * Vertex colours add large lighter/darker patches.
    */
-  private buildOuterGround(): Mesh {
-    const R = TERRAIN_RECT;
-    const G = GROUND_SIZE / 2;
+  private buildOuterGround(R: {x0:number;x1:number;z0:number;z1:number}=TERRAIN_RECT): Mesh {
+    const G = Math.max(GROUND_SIZE/2,Math.max(Math.abs(R.x0),Math.abs(R.x1),Math.abs(R.z0),Math.abs(R.z1))+700);
     const pos: number[] = [];
     const uv: number[] = [];
     const col: number[] = [];
     const idx: number[] = [];
     const strip = (x0: number, z0: number, x1: number, z1: number) => {
-      const nx = Math.max(1, Math.round((x1 - x0) / 50));
-      const nz = Math.max(1, Math.round((z1 - z0) / 50));
+      const step=Math.max(50,G/30);
+      const nx = Math.max(1, Math.round((x1 - x0) / step));
+      const nz = Math.max(1, Math.round((z1 - z0) / step));
       const base = pos.length / 3;
       for (let j = 0; j <= nz; j++) {
         for (let i = 0; i <= nx; i++) {
@@ -383,7 +384,7 @@ export class View3D {
     this.stars.visible = night && rain < 0.2;
 
     // Mountains for the Alps, a low skyline for the city.
-    this.hills.scale.y = th.hillScale ?? 1;
+    this.hills.scale.set(this.sceneryScale, (th.hillScale ?? 1) * this.sceneryScale, this.sceneryScale);
     const hc = this.hills.geometry.getAttribute('color');
     for (let i = 0; i < hc.count; i++) {
       const v = [near, far, near, near, far, far][i % 6];
@@ -469,6 +470,12 @@ export class View3D {
     const rain = Number(c?.rain ?? 0);
     this.applyTheme(track.options.theme, c?.time ?? track.options.time, rain, c?.wet ?? rain);
     const surf = surfaceFor(track);
+    const t=surf.terrain;
+    const bounds={x0:t.x0,z0:t.z0,x1:t.x0+(t.nx-1)*t.step,z1:t.z0+(t.nz-1)*t.step};
+    const outer=this.buildOuterGround(bounds);
+    this.ground.geometry.dispose();this.ground.geometry=outer.geometry;
+    this.sceneryScale=Math.max(1,(Math.max(Math.abs(bounds.x0),Math.abs(bounds.x1),Math.abs(bounds.z0),Math.abs(bounds.z1))+400)/HILL_RADIUS);
+    this.hills.scale.set(this.sceneryScale,(THEMES[track.options.theme].hillScale ?? 1)*this.sceneryScale,this.sceneryScale);
     const group = new Group();
     group.name = 'track';
     const owned: BufferGeometry[] = [];
