@@ -1,4 +1,5 @@
 import { THEMES } from '../config/themes.ts';
+import { pointBounds } from './bounds.ts';
 import { TRACK } from '../config/track.ts';
 import { dist2, wrap, type Vec2 } from '../core/math.ts';
 import { hashString, rng, valueNoise } from '../core/random.ts';
@@ -48,14 +49,16 @@ export function placeTrees(track: Track): TreeSpot[] {
   const clearance = c.wallOffset + (city ? 11 : 6);
   const radius = theme.propRadius;
   // City blocks stand on a wider, even grid, square to it.
-  const step = city ? 27 : 15;
+  const baseStep = city ? 27 : 15;
   const jitter = city ? 0.15 : 0.9;
   const density = DENSITY[track.options.trees] * (theme.propDensity ?? 1);
   // Keep the pit building and lane clear.
   const pits = pitLayout(track)?.footprint ?? [];
   const clearOfPits = (x: number, z: number) => pits.every((q) => (q.x - x) ** 2 + (q.y - z) ** 2 > 12 * 12);
-  const extentX = 600;
-  const extentZ = 420;
+  const bounds=pointBounds(c.points,200);
+  const extentX=Math.max(600,Math.abs(bounds.x0),Math.abs(bounds.x1));
+  const extentZ=Math.max(420,Math.abs(bounds.z0),Math.abs(bounds.z1));
+  const step=baseStep*Math.max(1,Math.sqrt((extentX*extentZ)/(600*420)));
   const spots: TreeSpot[] = [];
   for (let gx = -extentX; gx <= extentX; gx += step) {
     for (let gz = -extentZ; gz <= extentZ; gz += step) {
@@ -63,7 +66,7 @@ export function placeTrees(track: Track): TreeSpot[] {
       const z = gz + (rand() - 0.5) * step * jitter;
       const wood = valueNoise(x / 110, z / 110, seed & 0xffff);
       // Thinner beyond the drawable area: those trees are small and fogged anyway.
-      const far = Math.abs(x) > 420 || Math.abs(z) > 260 ? 0.5 : 1;
+      const far = Math.abs(x) > extentX*.7 || Math.abs(z) > extentZ*.62 ? 0.5 : 1;
       const cover = Math.max((theme.minCover ?? 0) * DENSITY[track.options.trees], wood > 0.55 ? 0.7 : wood > 0.42 ? 0.2 : 0.035);
       const chance = city ? Math.min(0.9, (wood > 0.35 ? 0.55 : 0.25) * density) : Math.min(0.95, cover * far * density);
       if (rand() > chance) continue;

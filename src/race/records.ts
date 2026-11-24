@@ -91,7 +91,7 @@ const MAX_TRACKS = 40;
  */
 export const GHOST_BUDGET = 450_000;
 const INDEX_KEY = 'records.index';
-const key = (id: string) => `records.${id}`;
+const key = (id: string) => `records.${id.startsWith('world-') ? 'terrain-v2/' : ''}${id}`;
 
 /**
  * Personal bests and ghosts per track id, saved through the platform storage

@@ -1,6 +1,7 @@
 import { WORLD } from '../config/track.ts';
 import type { Dot } from '../core/math.ts';
 import { quantizeControl } from './smoothing.ts';
+import type { PaperSize } from '../track/bounds.ts';
 
 export type Transform = 'grow' | 'shrink' | 'rotate' | 'mirror';
 
@@ -9,7 +10,7 @@ export type Transform = 'grow' | 'shrink' | 'rotate' | 'mirror';
  * about its middle, keeping heights. The result is moved, and if need be
  * shrunk, to stay inside the drawable area, then rounded to the dot grid.
  */
-export function transformDots(dots: readonly Dot[], how: Transform): Dot[] {
+export function transformDots(dots: readonly Dot[], how: Transform, paper:PaperSize=WORLD): Dot[] {
   if (!dots.length) return [];
   let x0 = Infinity;
   let x1 = -Infinity;
@@ -28,12 +29,12 @@ export function transformDots(dots: readonly Dot[], how: Transform): Dot[] {
     const x = d.x - cx;
     const y = d.y - cy;
     const p = how === 'rotate' ? { x: -y, y: x } : how === 'mirror' ? { x: -x, y } : { x: x * f, y: y * f };
-    return { ...d, x: p.x + cx, y: p.y + cy };
+    return { ...d, x: p.x + cx, y: p.y + cy, ...(how === 'mirror' && d.bank !== undefined ? { bank: d.bank ? -d.bank : 0 } : {}) };
   });
   // Keep it on the paper: shrink if it's too big, then slide it back inside.
   const margin = 12;
-  const W = WORLD.width / 2 - margin;
-  const H = WORLD.height / 2 - margin;
+  const W = paper.width / 2 - margin;
+  const H = paper.height / 2 - margin;
   const span = (k: 'x' | 'y') => Math.max(...out.map((d) => d[k])) - Math.min(...out.map((d) => d[k]));
   const fit = Math.min(1, (W * 2) / Math.max(1e-6, span('x')), (H * 2) / Math.max(1e-6, span('y')));
   if (fit < 1) out = out.map((d) => ({ ...d, x: cx + (d.x - cx) * fit, y: cy + (d.y - cy) * fit }));

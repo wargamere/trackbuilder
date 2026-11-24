@@ -1,4 +1,4 @@
-import { WORLD } from '../config/track.ts';
+import { paperFor } from './bounds.ts';
 import { wrap, type Vec2 } from '../core/math.ts';
 import { leftOf, sampleAt, type Centerline } from './spline.ts';
 import type { Track } from './track.ts';
@@ -47,15 +47,16 @@ export function pitLayout(track: Track): PitLayout | null {
 }
 
 function layout(c: Centerline): PitLayout | null {
+  const full=c.length>3000,paper=paperFor(c.points);
   // How far the straight reaches either side of the start line.
   const reach = (dir: 1 | -1) => {
     let d = 0;
-    while (d < 70 && Math.abs(c.curvature[indexAt(c, dir * (d + c.spacing))]) < STRAIGHT) d += c.spacing;
+    while (d < (full?150:70) && Math.abs(c.curvature[indexAt(c, dir * (d + c.spacing))]) < STRAIGHT) d += c.spacing;
     return d;
   };
   const back = reach(-1);
   const fwd = reach(1);
-  const garages = Math.min(MAX_GARAGES, Math.floor((back + fwd - 4) / GARAGE));
+  const garages = Math.min(full?24:MAX_GARAGES, Math.floor((back + fwd - 4) / GARAGE));
   if (garages < 3) return null;
   const total = garages * GARAGE + 4;
   const mid = (fwd - back) / 2;
@@ -81,7 +82,7 @@ function layout(c: Centerline): PitLayout | null {
   const clearFor = (pts: Vec2[]): boolean => {
     const limit = c.width / 2 + CLEAR;
     for (const q of pts) {
-      if (Math.abs(q.x) > WORLD.width / 2 + 60 || Math.abs(q.y) > WORLD.height / 2 + 60) return false;
+      if (Math.abs(q.x) > paper.width / 2 + 60 || Math.abs(q.y) > paper.height / 2 + 60) return false;
       for (let i = 0; i < c.points.length; i++) {
         if (own.has(i)) continue;
         const p = c.points[i];

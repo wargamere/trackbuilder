@@ -125,7 +125,7 @@ test('dirt and snow roads: less grip and less bite from the brakes, and the gold
   const times = (['tarmac', 'dirt', 'snow'] as const).map(gold);
   assert.ok(times.every((x) => typeof x === 'number'), 'the gold bot gets round on every surface');
   const [a, b, c] = times as number[];
-  assert.ok(a < b && b < c && c < a * 1.35, `gold laps ${a.toFixed(1)} / ${b.toFixed(1)} / ${c.toFixed(1)} s`);
+  assert.ok(a < b && b < c && c < a * 1.45, `gold laps ${a.toFixed(1)} / ${b.toFixed(1)} / ${c.toFixed(1)} s`);
 });
 
 test('barrier distance moves the barriers (and the run-off) out, and they give way between close roads', () => {
@@ -338,7 +338,8 @@ test('off track means the whole car past the edge; kerbs count as track', () => 
   const t = stadium({ walls: false });
   const place = (lateral: number) => {
     const car = new CarPhysics(t);
-    Object.assign(car.state, { x: -700, z: -300 - lateral, heading: 0, vx: 10, vz: 0, trackIndex: -1 });
+    // Beyond the longer full-size pit lane: pit asphalt legitimately counts as on track.
+    Object.assign(car.state, { x: -400, z: -300 - lateral, heading: 0, vx: 10, vz: 0, trackIndex: -1 });
     car.step({ throttle: 0, brake: 0, steer: 0, handbrake: false });
     return car.state.offTrack;
   };

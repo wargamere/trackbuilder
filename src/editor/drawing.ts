@@ -53,6 +53,7 @@ import {
   bumpNear,
   chicaneCorners,
   cleanExtras,
+  editablePaint,
   paintCell,
   paintCorner,
   paintDab,
@@ -69,6 +70,7 @@ import {
 import { nearestSample, planSection, spliceSection } from './splice.ts';
 import { crossingKind, crossingsOf, type TrackIssue } from './validation.ts';
 import { Viewport, ZOOM } from './viewport.ts';
+import { paperFor, type PaperSize } from '../track/bounds.ts';
 
 type Failed = { stroke: Vec2[]; issue: TrackIssue; at?: Vec2 };
 
@@ -84,6 +86,7 @@ interface Snapshot {
 
 /** A copy of extras that can be changed without touching the original. */
 const copyExtras = (e: TrackExtras | undefined): TrackExtras => ({
+  ...(e?.paintFrame ? { paintFrame: { ...e.paintFrame } } : {}),
   ...(e?.placed ? { placed: e.placed.map((p) => ({ ...p })) } : {}),
   ...(e?.paint ? { paint: [...e.paint] } : {}),
 });
@@ -150,6 +153,7 @@ export class EditorScreen implements Screen {
   private celebrate = false;
   private abort: AbortController | null = null;
   private readonly vp = new Viewport();
+  private paper:PaperSize=WORLD;
   private profile: Rect | null = null;
 
   // Settings (kept between visits).
@@ -219,7 +223,7 @@ export class EditorScreen implements Screen {
   /** An image to trace over (it stays in this tab: never uploaded or saved), and how it's shown. */
   private trace: { img: HTMLImageElement; url: string; opacity: number; size: number } | null = null;
   /** The corner whose bank slider is being dragged, its dots, and its bank = a0 + slope × override. */
-  private cornerEdit: { corner: number; dots: number[]; a0: number; slope: number } | null = null;
+  private cornerEdit: { corner: number; dots: number[]; a0: number; slope: number; absolute: boolean; sign: number } | null = null;
   /** Track position highlighted by the profile cursor (Height mode). */
   private cursor: number | null = null;
 
@@ -514,8 +518,8 @@ export class EditorScreen implements Screen {
     const before = this.snapshot();
     const p = this.dots[this.selected];
     this.dots[this.selected] = { ...p,
-      x: clamp(p.x + dx, -WORLD.width / 2, WORLD.width / 2),
-      y: clamp(p.y + dy, -WORLD.height / 2, WORLD.height / 2),
+      x: clamp(p.x + dx, -this.paper.width / 2, this.paper.width / 2),
+      y: clamp(p.y + dy, -this.paper.height / 2, this.paper.height / 2),
       ...(dh ? { h: clampHeight((p.h ?? 0) + dh) } : {}),
     };
     this.commit(before);
@@ -550,6 +554,7 @@ export class EditorScreen implements Screen {
     if ((Object.keys(next) as (keyof TrackOptions)[]).every((k) => next[k] === this.options[k])) return;
     const before = this.snapshot();
     this.options = next;
+    if (o.banking !== undefined) this.dots = this.dots.map(d => { const copy = { ...d }; delete copy.bank; return copy; });
     this.commit(before);
   }
 
@@ -785,7 +790,7 @@ export class EditorScreen implements Screen {
   private transform(how: Transform): void {
     if (this.dots.length < 2) return;
     const before = this.snapshot();
-    this.dots = transformDots(this.dots, how);
+    this.dots = transformDots(this.dots, how,this.paper);
     this.selected = -1;
     this.commit(before);
   }
@@ -848,7 +853,7 @@ export class EditorScreen implements Screen {
     const c = t.center;
     const n = c.points.length;
     return t.kerbs.map((k) => {
-      const custom = this.dotSamples.some((s, j) => this.dots[j]?.b !== undefined && (s - (k.start - 4) + n) % n <= k.count + 8);
+      const custom = this.dotSamples.some((s, j) => (this.dots[j]?.b !== undefined || !!this.dots[j]?.bank) && (s - (k.start - 4) + n) % n <= k.count + 8);
       return {
         dir: k.sign > 0 ? 'R' : 'L',
         radius: 1 / Math.max(1e-6, Math.abs(c.curvature[k.apex])),
@@ -868,6 +873,7 @@ export class EditorScreen implements Screen {
 
   private rebuild(): void {
     if (!this.dirty) return;
+    this.paper=paperFor(this.dots);this.vp.setWorld(this.paper);
     this.dirty = false;
     this.built = null;
     this.openLine = [];
@@ -920,12 +926,13 @@ export class EditorScreen implements Screen {
 
   private worldAt(sx: number, sy: number): Vec2 {
     const p = this.vp.toWorld(sx, sy);
-    return { x: clamp(p.x, -WORLD.width / 2, WORLD.width / 2), y: clamp(p.y, -WORLD.height / 2, WORLD.height / 2) };
+    return { x: clamp(p.x, -this.paper.width / 2, this.paper.width / 2), y: clamp(p.y, -this.paper.height / 2, this.paper.height / 2) };
   }
 
-  private placeDot(w: Vec2, h?: number, b?: number): Dot {
+  private placeDot(w: Vec2, h?: number, b?: number, bank?: number): Dot {
     const d: Dot = h ? { x: w.x, y: w.y, h } : { x: w.x, y: w.y };
     if (b !== undefined) d.b = b;
+    if (bank !== undefined) d.bank = bank;
     return snapDot(d, this.snapOn ? DOTS.snap : 0);
   }
 
@@ -996,8 +1003,9 @@ export class EditorScreen implements Screen {
     const t = this.built?.track;
     if (at < 0 || !t) return -1;
     const w = this.worldAt(sx, sy);
-    const h = t.center.height[nearestSample(t.center, w).index];
-    this.dots.splice(at, 0, this.placeDot(w, h > 0 ? h : undefined));
+    const index = nearestSample(t.center, w).index, h = t.center.height[index];
+    const bank = this.dots.some(d => d.bank !== undefined) ? t.center.bank[index] * 180 / Math.PI : undefined;
+    this.dots.splice(at, 0, this.placeDot(w, h > 0 ? h : undefined, undefined, bank));
     this.dirty = true;
     return at;
   }
@@ -1193,7 +1201,7 @@ export class EditorScreen implements Screen {
       if (!d.moved && Math.hypot(x - d.sx, y - d.sy) < 4) return;
       d.moved = true;
       const weights = e.shiftKey ? null : d.weights;
-      if (d.kind === 'dot') this.moveDots(d, this.placeDot(this.worldAt(x, y), d.orig[d.index].h, d.orig[d.index].b), weights);
+      if (d.kind === 'dot') this.moveDots(d, this.placeDot(this.worldAt(x, y), d.orig[d.index].h, d.orig[d.index].b, d.orig[d.index].bank), weights);
       else this.raiseDots(d, -(y - d.sy) * d.perPx, weights);
       this.selected = d.index;
       this.dirty = true;
@@ -1224,6 +1232,7 @@ export class EditorScreen implements Screen {
       const h = clampHeight((p.h ?? 0) + dh * wgt);
       const r: Dot = h ? { x: p.x, y: p.y, h } : { x: p.x, y: p.y };
       if (p.b !== undefined) r.b = p.b;
+      if (p.bank !== undefined) r.bank = p.bank;
       return r;
     });
   }
@@ -1335,7 +1344,7 @@ export class EditorScreen implements Screen {
     const b = this.dots[(after + 1) % this.dots.length];
     const bank = a.b !== undefined && b.b !== undefined ? (a.b + b.b) / 2 : undefined;
     const h = c.height[i];
-    this.dots.splice(after + 1, 0, snapDot(bank !== undefined ? { x: c.points[i].x, y: c.points[i].y, h, b: bank } : { x: c.points[i].x, y: c.points[i].y, h }));
+    this.dots.splice(after + 1, 0, snapDot({ x: c.points[i].x, y: c.points[i].y, h, ...(bank !== undefined ? {b:bank} : {}), ...(a.bank !== undefined || b.bank !== undefined ? {bank:c.bank[i]*180/Math.PI} : {}) }));
     this.dirty = true;
     return after + 1;
   }
@@ -1405,20 +1414,30 @@ export class EditorScreen implements Screen {
         this.rebuild();
       }
       // Probe: apex bank with the override at 0 and at 30 degrees.
+      const absolute = this.dots.some(d => d.bank !== undefined);
+      const sign = Math.sign(t.center.curvature[k.apex]) || 1;
       const probe = (b: number) => {
-        const ds = this.dots.map((d, j) => (dots.includes(j) ? { ...d, b } : d));
+        const ds = this.dots.map((d, j) => {
+          if (!dots.includes(j)) return d;
+          const copy = { ...d };
+          if (absolute) { copy.bank = sign * b; delete copy.b; }
+          else { copy.b = b; delete copy.bank; }
+          return copy;
+        });
         const c = buildTrack({ id: 'probe', name: '', control: ds, options: this.options }).center;
         return (Math.abs(c.bank[k.apex]) * 180) / Math.PI;
       };
       const a0 = probe(0);
       const a30 = probe(30);
-      this.cornerEdit = { corner: i, dots, a0, slope: (a30 - a0) / 30 };
+      this.cornerEdit = { corner: i, dots, a0, slope: (a30 - a0) / 30, absolute, sign };
     }
     const e = this.cornerEdit;
     const b = deg === null ? undefined : quantizeBank(e.slope > 1e-4 ? (deg - e.a0) / e.slope : deg);
     this.dots = this.dots.map((d, j) => {
       if (!e.dots.includes(j)) return d;
       const r = { ...d };
+      if (e.absolute && deg !== null) { delete r.b; r.bank = e.sign * b!; return r; }
+      delete r.bank;
       if (b === undefined) delete r.b;
       else r.b = b;
       return r;
@@ -1520,7 +1539,7 @@ export class EditorScreen implements Screen {
     const cy = (Math.min(...ys) + Math.max(...ys)) / 2;
     const w = Math.max(...xs) - Math.min(...xs);
     const hgt = Math.max(...ys) - Math.min(...ys);
-    const s = Math.min(metres / b.length, (WORLD.width - 20) / Math.max(1, w), (WORLD.height - 20) / Math.max(1, hgt));
+    const s = Math.min(metres / b.length, (this.paper.width - 20) / Math.max(1, w), (this.paper.height - 20) / Math.max(1, hgt));
     this.dots = quantizeControl(b.dots.map((d) => ({ ...d, x: (d.x - cx) * s, y: (d.y - cy) * s })));
     this.dirty = true;
   }
@@ -1548,6 +1567,7 @@ export class EditorScreen implements Screen {
     this.liveBefore ??= this.snapshot();
     this.dots = this.dots.map((d) => {
       const r = { ...d };
+      delete r.bank;
       if (deg === null) delete r.b;
       else r.b = quantizeBank(deg);
       return r;
@@ -1623,7 +1643,7 @@ export class EditorScreen implements Screen {
     if (kind === 'bump') d = Math.min(d, t.center.wallOffset - 0.5);
     let p = at(d);
     for (let k = 0; k < 120 && !placedClear(t, p); k++) p = at((d += 0.5));
-    if (!placedClear(t, p) || Math.abs(p.x) > WORLD.width / 2 + 40 || Math.abs(p.y) > WORLD.height / 2 + 40) {
+    if (!placedClear(t, p) || Math.abs(p.x) > this.paper.width / 2 + 40 || Math.abs(p.y) > this.paper.height / 2 + 40) {
       this.note = { text: STR.editorScenery.noRoom, kind: 'warn' };
       return;
     }
@@ -1635,10 +1655,10 @@ export class EditorScreen implements Screen {
   /** Paint tool: a stroke of run-off from `a` to `b` (dabs every half brush). */
   private paintStroke(a: Vec2, b: Vec2): void {
     if (this.tool?.kind !== 'paint') return;
-    const g = paintGrid(this.extras.paint).slice();
+    const {grid:g,frame}=editablePaint(this.extras,this.dots);
     const steps = Math.max(1, Math.ceil(dist(a, b) / Math.max(1, this.brush / 2)));
-    for (let k = 0; k <= steps; k++) paintDab(g, a.x + ((b.x - a.x) * k) / steps, a.y + ((b.y - a.y) * k) / steps, this.brush, this.tool.value);
-    this.extras = withPaint(this.extras, g);
+    for (let k = 0; k <= steps; k++) paintDab(g, a.x + ((b.x - a.x) * k) / steps, a.y + ((b.y - a.y) * k) / steps, this.brush, this.tool.value,frame);
+    this.extras = withPaint({...this.extras,paintFrame:frame}, g);
     this.dirty = true;
   }
 
@@ -1650,9 +1670,9 @@ export class EditorScreen implements Screen {
     const corners = which === 'all' ? t.kerbs.map((_, i) => i) : [which];
     if (!corners.length || (which !== 'all' && !t.kerbs[which])) return;
     const before = this.snapshot();
-    const g = paintGrid(this.extras.paint).slice();
-    for (const i of corners) paintCorner(g, t, i, value);
-    this.extras = withPaint(this.extras, g);
+    const {grid:g,frame}=editablePaint(this.extras,this.dots);
+    for (const i of corners) paintCorner(g, t, i, value,frame);
+    this.extras = withPaint({...this.extras,paintFrame:frame}, g);
     this.commit(before, { text: STR.editorScenery.runoffSet, kind: 'ok' });
   }
 
@@ -1665,8 +1685,8 @@ export class EditorScreen implements Screen {
     const side = k.sign > 0 ? 1 : -1;
     const l = { x: -c.tangents[k.apex].y, y: c.tangents[k.apex].x };
     const lat = (c.width / 2 + c.wallOffset) / 2;
-    const cell = paintCell(c.points[k.apex].x + l.x * lat * side, c.points[k.apex].y + l.y * lat * side);
-    return cell >= 0 ? paintGrid(this.extras.paint)[cell] : 0;
+    const cell = paintCell(c.points[k.apex].x + l.x * lat * side, c.points[k.apex].y + l.y * lat * side,this.extras.paintFrame);
+    return cell >= 0 ? paintGrid(this.extras.paint,this.extras.paintFrame)[cell] : 0;
   }
 
   /** Bump kerb on the inside of numbered corner `i`: on or off. */
@@ -1989,6 +2009,7 @@ export class EditorScreen implements Screen {
 
   /** Every dot's bank if they're all set the same (degrees), 'mixed', or null (all on the track's level). */
   private bankAllState(): number | 'mixed' | null {
+    if (this.dots.some(d => !!d.bank)) return 'mixed';
     const bs = this.dots.map((d) => d.b);
     if (bs.every((b) => b === undefined)) return null;
     return bs.every((b) => b === bs[0]) ? (bs[0] as number) : 'mixed';
@@ -2030,11 +2051,11 @@ export class EditorScreen implements Screen {
     const s = this.game.surface;
     const ctx = s.begin();
     const v = this.view;
-    drawPaper(ctx, v, s.w, s.h);
+    drawPaper(ctx, v, s.w, s.h,this.paper);
     if (this.trace) {
       // The image to trace, fitted to the drawing area (× its size), under everything else.
       const { img, opacity, size } = this.trace;
-      const fitS = Math.min(WORLD.width / img.width, WORLD.height / img.height) * size;
+      const fitS = Math.min(this.paper.width / img.width, this.paper.height / img.height) * size;
       const w = img.width * fitS;
       const hh = img.height * fitS;
       ctx.save();

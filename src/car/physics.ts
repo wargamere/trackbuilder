@@ -1,4 +1,5 @@
 import { HANDLING } from '../config/handling.ts';
+import { pointBounds, type Bounds } from '../track/bounds.ts';
 import { DAMAGE, DEFAULT_SETUP, SETUP, TYRES, type CarSetup, type Compound } from '../config/race.ts';
 import { clamp } from '../core/math.ts';
 import { locatorFor, type TrackLocator } from '../track/locator.ts';
@@ -204,6 +205,7 @@ export class CarPhysics {
   /** Something in the car has failed (a championship's mechanical failures): broken down, whatever the damage. */
   failed = false;
   private readonly track: Track;
+  private readonly worldBounds: Bounds;
   private readonly locator: TrackLocator;
   private readonly obstacles: ObstacleGrid;
   private readonly surf: TrackSurface;
@@ -218,6 +220,8 @@ export class CarPhysics {
   private readonly roadSurface: { speedFactor: number; accelFactor: number; drag: number; gripFactor: number; rough: number };
 
   constructor(track: Track) {
+    const bounds = pointBounds(track.center.points, 150);
+    this.worldBounds = { x0: Math.min(-HANDLING.worldLimit, bounds.x0), x1: Math.max(HANDLING.worldLimit, bounds.x1), z0: Math.min(-HANDLING.worldLimit, bounds.z0), z1: Math.max(HANDLING.worldLimit, bounds.z1) };
     this.track = track;
     const kind = HANDLING.roads[track.options.road];
     this.roadSurface = { ...HANDLING.road, accelFactor: kind.accel, rough: kind.rough };
@@ -609,13 +613,13 @@ export class CarPhysics {
         st.yawRate *= 0.5;
       }
     });
-    const lim = H.worldLimit;
-    if (Math.abs(st.x) > lim) {
-      st.x = Math.sign(st.x) * lim;
+    const bounds = this.worldBounds;
+    if (st.x < bounds.x0 || st.x > bounds.x1) {
+      st.x = clamp(st.x, bounds.x0, bounds.x1);
       st.vx = 0;
     }
-    if (Math.abs(st.z) > lim) {
-      st.z = Math.sign(st.z) * lim;
+    if (st.z < bounds.z0 || st.z > bounds.z1) {
+      st.z = clamp(st.z, bounds.z0, bounds.z1);
       st.vz = 0;
     }
   }

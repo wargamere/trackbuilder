@@ -3,6 +3,8 @@ import { hashString, rng } from '../core/random.ts';
 import { kerbLayout } from './kerbs.ts';
 import { edgeOffsets, leftOf } from './spline.ts';
 import type { Track, TrackDef } from './track.ts';
+import { paperFor } from './bounds.ts';
+import type { Vec2 } from '../core/math.ts';
 
 /**
  * What the editor adds to a track beyond its dots and options: scenery
@@ -10,7 +12,9 @@ import type { Track, TrackDef } from './track.ts';
  * billboards, brake boards), bump kerbs, and run-off painted onto the paper.
  * All of it is in world metres, so it stays where it was put when the road
  * is reshaped (things the road now runs over are left out when the track is
- * built). Stored with the track and in its code (see track/code.ts).
+ * built). Stored with the track and in its code (see track/code.ts). Also
+ * the DRS zones drawn on it (each from one point on the road to another,
+ * forwards round the lap; see race/drs.ts).
  */
 
 /** Things that can be placed. The order is the one track codes store. */
@@ -25,10 +29,22 @@ export interface Placed {
   rot: number;
 }
 
+/** A DRS zone drawn in the editor: from the road nearest (x, y) forwards to the road nearest (x2, y2) (m, 0.5 m steps). */
+export interface DrsMark {
+  x: number;
+  y: number;
+  x2: number;
+  y2: number;
+}
+
 export interface TrackExtras {
   placed?: Placed[];
+  /** DRS zones drawn by hand (none: the track's own, worked out from its straights). */
+  drs?: DrsMark[];
   /** Painted run-off: the paint grid (PAINT) run-length coded, [run, kind, run, kind, ...] in rows from the top left. */
   paint?: number[];
+  /** Optional bounded raster for full-size circuits. Missing: the original paper grid. */
+  paintFrame?: PaintFrame;
 }
 
 /**
@@ -56,29 +72,35 @@ export const quantizeRot = (a: number): number => {
 
 /** The run-off paint grid: square cells over the paper. */
 export const PAINT = { cell: 4, cols: Math.ceil(WORLD.width / 4), rows: Math.ceil(WORLD.height / 4) } as const;
+export interface PaintFrame { x0:number; y0:number; cell:number; cols:number; rows:number }
+const DEFAULT_PAINT:PaintFrame={...PAINT,x0:-WORLD.width/2,y0:-WORLD.height/2};
+export function cleanPaintFrame(raw:unknown):PaintFrame|null {
+  if(!raw||typeof raw!=='object')return null;const f=raw as PaintFrame;
+  return [f.x0,f.y0,f.cell,f.cols,f.rows].every(Number.isFinite)&&Math.abs(f.x0)<=8192&&Math.abs(f.y0)<=8192&&Number.isInteger(f.cell)&&f.cell>=4&&f.cell<=128&&Number.isInteger(f.cols)&&Number.isInteger(f.rows)&&f.cols>0&&f.rows>0&&f.cols<=512&&f.rows<=512&&f.cols*f.rows<=40000?{x0:f.x0,y0:f.y0,cell:f.cell,cols:f.cols,rows:f.rows}:null;
+}
 /** Paint values: 0 = as the track (its run-off option), then grass, gravel, tarmac. */
 export const PAINT_KINDS: readonly (RunoffId | null)[] = [null, 'grass', 'gravel', 'tarmac'];
 
 /** The paint grid cell holding world point (x, y), or -1 off the paper. */
-export function paintCell(x: number, y: number): number {
-  const cx = Math.floor((x + WORLD.width / 2) / PAINT.cell);
-  const cy = Math.floor((y + WORLD.height / 2) / PAINT.cell);
-  return cx < 0 || cy < 0 || cx >= PAINT.cols || cy >= PAINT.rows ? -1 : cy * PAINT.cols + cx;
+export function paintCell(x: number, y: number, frame:PaintFrame=DEFAULT_PAINT): number {
+  const cx = Math.floor((x-frame.x0) / frame.cell);
+  const cy = Math.floor((y-frame.y0) / frame.cell);
+  return cx < 0 || cy < 0 || cx >= frame.cols || cy >= frame.rows ? -1 : cy * frame.cols + cx;
 }
 
 /** World centre of a paint cell. */
-export function cellCentre(k: number): { x: number; y: number } {
-  return { x: ((k % PAINT.cols) + 0.5) * PAINT.cell - WORLD.width / 2, y: (Math.floor(k / PAINT.cols) + 0.5) * PAINT.cell - WORLD.height / 2 };
+export function cellCentre(k: number, frame:PaintFrame=DEFAULT_PAINT): { x: number; y: number } {
+  return { x: ((k % frame.cols) + 0.5) * frame.cell + frame.x0, y: (Math.floor(k / frame.cols) + 0.5) * frame.cell + frame.y0 };
 }
 
 const grids = new WeakMap<number[], Uint8Array>();
 
 /** The paint grid from its run-length code (all "as the track" without one). */
-export function paintGrid(rle: readonly number[] | undefined): Uint8Array {
-  const size = PAINT.cols * PAINT.rows;
+export function paintGrid(rle: readonly number[] | undefined, frame:PaintFrame=DEFAULT_PAINT): Uint8Array {
+  const size = frame.cols * frame.rows;
   if (!rle?.length) return new Uint8Array(size);
   const hit = grids.get(rle as number[]);
-  if (hit) return hit;
+  if (hit?.length===size) return hit;
   const g = new Uint8Array(size);
   let at = 0;
   for (let i = 0; i + 1 < rle.length && at < size; i += 2) {
@@ -89,6 +111,16 @@ export function paintGrid(rle: readonly number[] | undefined): Uint8Array {
   }
   grids.set(rle as number[], g);
   return g;
+}
+
+/** Expand paint coverage without allocating a dense four-metre grid across a whole GP circuit. */
+export function editablePaint(e:TrackExtras,points:readonly Vec2[]):{grid:Uint8Array;frame:PaintFrame|undefined} {
+  const paper=paperFor(points),old=e.paintFrame??DEFAULT_PAINT;
+  if(old.x0<=-paper.width/2&&old.y0<=-paper.height/2&&old.x0+old.cols*old.cell>=paper.width/2&&old.y0+old.rows*old.cell>=paper.height/2)return {grid:paintGrid(e.paint,e.paintFrame).slice(),frame:e.paintFrame};
+  const cell=Math.max(4,Math.ceil(Math.max(paper.width,paper.height)/200)),cols=Math.ceil(paper.width/cell),rows=Math.ceil(paper.height/cell);
+  const frame={cell,cols,rows,x0:-cols*cell/2,y0:-rows*cell/2},grid=new Uint8Array(cols*rows),before=paintGrid(e.paint,e.paintFrame);
+  for(let k=0;k<grid.length;k++){const p=cellCentre(k,frame),at=paintCell(p.x,p.y,old);if(at>=0)grid[k]=before[at];}
+  return {grid,frame};
 }
 
 /** Run-length code of a paint grid, or undefined if nothing is painted. */
@@ -108,7 +140,7 @@ export function paintCode(g: Uint8Array): number[] | undefined {
 }
 
 /** True if there's nothing in the extras. */
-export const emptyExtras = (e: TrackExtras | undefined): boolean => !e || (!e.placed?.length && !e.paint?.length);
+export const emptyExtras = (e: TrackExtras | undefined): boolean => !e || (!e.placed?.length && !e.paint?.length && !e.drs?.length);
 
 /** A copy with placed things rounded the way codes store them (0.5 m, 1/64 turn) and no empty parts; undefined if empty. */
 export function cleanExtras(e: TrackExtras | undefined): TrackExtras | undefined {
@@ -117,6 +149,8 @@ export function cleanExtras(e: TrackExtras | undefined): TrackExtras | undefined
   const q = TRACK.quantize;
   if (e?.placed?.length) out.placed = e.placed.map((p) => ({ kind: p.kind, x: Math.round(p.x / q) * q, y: Math.round(p.y / q) * q, rot: quantizeRot(p.rot) }));
   if (e?.paint?.length) out.paint = [...e.paint];
+  if (out.paint&&e?.paintFrame) { const frame=cleanPaintFrame(e.paintFrame);if(frame)out.paintFrame=frame; }
+  if (e?.drs?.length) out.drs = e.drs.map((m) => ({ x: Math.round(m.x / q) * q, y: Math.round(m.y / q) * q, x2: Math.round(m.x2 / q) * q, y2: Math.round(m.y2 / q) * q }));
   return out;
 }
 
@@ -124,7 +158,9 @@ export function cleanExtras(e: TrackExtras | undefined): TrackExtras | undefined
 export function extrasKey(e: TrackExtras | undefined): string {
   if (emptyExtras(e)) return '';
   const placed = (e?.placed ?? []).map((p) => `${p.kind}@${p.x},${p.y},${Math.round((p.rot / (Math.PI * 2)) * ROT_STEPS)}`).join(';');
-  return `${placed}#${(e?.paint ?? []).join(',')}`;
+  const drs = (e?.drs ?? []).map((m) => `${m.x},${m.y},${m.x2},${m.y2}`).join(';');
+  const frame=e?.paintFrame;const raster=frame?`#grid${frame.x0},${frame.y0},${frame.cell},${frame.cols},${frame.rows}`:'';
+  return `${placed}#${(e?.paint ?? []).join(',')}${raster}${drs ? `#drs${drs}` : ''}`;
 }
 
 // ------------------------------------------------------------- footprints
@@ -277,7 +313,7 @@ export function chicaneCorners(track: Track): number[] {
     if (j === i) continue;
     const b = ks[j];
     const gap = (((b.start - (a.start + a.count)) % n) + n) % n;
-    if (Math.sign(a.sign) !== Math.sign(b.sign) && gap * track.center.spacing < 45) {
+    if (Math.sign(a.sign) !== Math.sign(b.sign) && gap * track.center.spacing < Math.max(45,track.center.length*.025)) {
       out.add(i);
       out.add(j);
     }
@@ -313,7 +349,8 @@ export function runoffLayout(track: Track): RunoffLayout {
   const n = c.points.length;
   const base = Math.max(0, RUNOFF_IDS.indexOf(track.options.runoff));
   const out: RunoffLayout = { left: new Uint8Array(n).fill(base), right: new Uint8Array(n).fill(base) };
-  const g = paintGrid(track.def.extras?.paint);
+  const frame=track.def.extras?.paintFrame;
+  const g = paintGrid(track.def.extras?.paint,frame);
   if (track.def.extras?.paint?.length) {
     const { left, right } = edgeOffsets(c);
     for (let i = 0; i < n; i++) {
@@ -323,7 +360,7 @@ export function runoffLayout(track: Track): RunoffLayout {
         const edge = side === 1 ? left[i] : right[i];
         // Just past the edge, then halfway out to the barrier.
         for (const lat of [edge + 1.5, (edge + c.wallOffset) / 2 + 0.75]) {
-          const k = paintCell(p.x + l.x * lat * side, p.y + l.y * lat * side);
+          const k = paintCell(p.x + l.x * lat * side, p.y + l.y * lat * side,frame);
           const v = k >= 0 ? g[k] : 0;
           if (!v) continue;
           const id = RUNOFF_IDS.indexOf(PAINT_KINDS[v] as RunoffId);
@@ -338,7 +375,7 @@ export function runoffLayout(track: Track): RunoffLayout {
 }
 
 /** Paints the run-off beside numbered corner `i` (both sides, the length of the corner and a little more) with paint value `v`. */
-export function paintCorner(g: Uint8Array, track: Track, i: number, v: number): void {
+export function paintCorner(g: Uint8Array, track: Track, i: number, v: number, frame:PaintFrame|undefined=track.def.extras?.paintFrame): void {
   const k = track.kerbs[i];
   if (!k) return;
   const c = track.center;
@@ -351,7 +388,7 @@ export function paintCorner(g: Uint8Array, track: Track, i: number, v: number): 
     for (const side of [1, -1] as const) {
       const edge = side === 1 ? left[s] : right[s];
       for (let lat = edge + 0.5; lat <= c.wallOffset + 2; lat += 1.5) {
-        const cell = paintCell(p.x + l.x * lat * side, p.y + l.y * lat * side);
+        const cell = paintCell(p.x + l.x * lat * side, p.y + l.y * lat * side,frame);
         if (cell >= 0) g[cell] = v;
       }
     }
@@ -359,12 +396,12 @@ export function paintCorner(g: Uint8Array, track: Track, i: number, v: number): 
 }
 
 /** Paints a round dab of paint value `v`, `radius` m across, at (x, y). */
-export function paintDab(g: Uint8Array, x: number, y: number, radius: number, v: number): void {
-  const r = Math.max(PAINT.cell / 2, radius);
-  for (let yy = y - r; yy <= y + r + 1e-6; yy += PAINT.cell / 2) {
-    for (let xx = x - r; xx <= x + r + 1e-6; xx += PAINT.cell / 2) {
+export function paintDab(g: Uint8Array, x: number, y: number, radius: number, v: number, frame:PaintFrame=DEFAULT_PAINT): void {
+  const r = Math.max(frame.cell / 2, radius);
+  for (let yy = y - r; yy <= y + r + 1e-6; yy += frame.cell / 2) {
+    for (let xx = x - r; xx <= x + r + 1e-6; xx += frame.cell / 2) {
       if ((xx - x) ** 2 + (yy - y) ** 2 > r * r) continue;
-      const k = paintCell(xx, yy);
+      const k = paintCell(xx, yy,frame);
       if (k >= 0) g[k] = v;
     }
   }

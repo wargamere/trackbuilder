@@ -1,7 +1,7 @@
 import { DEFAULT_OPTIONS, OPTION_CHOICES, THEME_IDS, TRACK, type TrackOptions } from '../config/track.ts';
 import { fromBase64Url, toBase64Url } from '../core/base64.ts';
 import type { Dot } from '../core/math.ts';
-import { cleanExtras, PLACED_KINDS, ROT_STEPS, type Placed, type TrackExtras } from './extras.ts';
+import { cleanExtras, cleanPaintFrame, PLACED_KINDS, ROT_STEPS, type DrsMark, type Placed, type TrackExtras } from './extras.ts';
 
 /**
  * TRACK CODES — a short text form of a track that players copy and paste.
@@ -10,16 +10,18 @@ import { cleanExtras, PLACED_KINDS, ROT_STEPS, type Placed, type TrackExtras } f
  * centre-line spline runs through) and options, so the code stores just those
  * plus the name:
  *   "IC1." + base64url(
- *     version (5), name length, name (UTF-8), options (varint), road width
- *     (byte, 0.5 m steps), flags (bit 0: per-corner banking follows), dot count
- *     (varint), first dot (2 × int16 + uint8 height), then each next dot as
+ *     version (6), name length, name (UTF-8), options (varint), road width
+ *     (byte, 0.5 m steps), flags (bit 0: legacy banking, bit 1: signed crossfall), dot count
+ *     (varint), first dot (2 × int16 + varint height), then each next dot as
  *     zig-zag varint deltas of x, y and height, [one varint per dot: 0 = the
- *     track's banking, else bank degrees + 1], extras, checksum byte)
+ *     track's banking, else bank degrees + 1], [signed crossfall per dot:
+ *     0 = unset, else zigzag(half-degrees) + 1], extras, checksum byte)
  * Positions and heights are in 0.5 m steps, so most deltas fit in a byte or
  * two. A 30-dot track is about 100-200 characters. Version 1 codes (no
  * heights or options), version 2 codes (an options byte with just banking,
  * barriers and scenery), version 3 codes (preset widths, no per-corner
- * banking) and version 4 codes (no extras) still decode.
+ * banking), version 4 codes (no extras) and version 5 codes (byte heights,
+ * unsigned banking only) still decode.
  *
  * Options bits: banking 0-1, barriers on 2, theme 3-4, then each field of
  * OPTION_CHOICES up to trees in order (index 0 = the default), then (version
@@ -34,10 +36,12 @@ import { cleanExtras, PLACED_KINDS, ROT_STEPS, type Placed, type TrackExtras } f
  *   tag 1, placed scenery: a varint count, then per thing its kind (byte),
  *          x and y (int16, 0.5 m steps) and rotation (byte, 1/64 turns);
  *   tag 2, painted run-off: a varint count of numbers, then the paint grid's
- *          run-length code as varints (see track/extras.ts).
+ *          run-length code as varints (see track/extras.ts);
+ *   tag 3, DRS zones drawn by hand: a varint count, then per zone its start
+ *          and end points (4 × int16, 0.5 m steps).
  */
 export const CODE_PREFIX = 'IC1.';
-const VERSION = 5;
+const VERSION = 6;
 const THEMES = THEME_IDS;
 const MAX_NAME_BYTES = 64;
 const MAX_DOTS = 2000;
@@ -122,7 +126,8 @@ export function encodeTrack(name: string, dots: readonly Dot[], options: Partial
   pushVarint(out, optionsBits(o));
   out.push(Math.max(0, Math.min(255, Math.round(o.width * 2))));
   const banks = dots.some((d) => d.b !== undefined);
-  out.push(banks ? 1 : 0);
+  const absoluteBanks = dots.some(d => d.bank !== undefined);
+  out.push((banks ? 1 : 0) | (absoluteBanks ? 2 : 0));
   pushVarint(out, dots.length);
   let px = 0;
   let py = 0;
@@ -130,9 +135,10 @@ export function encodeTrack(name: string, dots: readonly Dot[], options: Partial
   dots.forEach((d, i) => {
     const x = Math.round(d.x / q);
     const y = Math.round(d.y / q);
-    const hgt = Math.max(0, Math.min(255, Math.round((d.h ?? 0) / TRACK.heightStep)));
+    const hgt = Math.max(0, Math.min(TRACK.maxHeight / TRACK.heightStep, Math.round((d.h ?? 0) / TRACK.heightStep)));
     if (i === 0) {
-      out.push(x & 0xff, (x >> 8) & 0xff, y & 0xff, (y >> 8) & 0xff, hgt);
+      out.push(x & 0xff, (x >> 8) & 0xff, y & 0xff, (y >> 8) & 0xff);
+      pushVarint(out, hgt);
     } else {
       pushVarint(out, zigzag(x - px));
       pushVarint(out, zigzag(y - py));
@@ -143,12 +149,13 @@ export function encodeTrack(name: string, dots: readonly Dot[], options: Partial
     ph = hgt;
   });
   if (banks) for (const d of dots) pushVarint(out, d.b === undefined ? 0 : Math.max(0, Math.round(d.b)) + 1);
+  if (absoluteBanks) for (const d of dots) pushVarint(out, d.bank === undefined ? 0 : zigzag(Math.round(d.bank * 2)) + 1);
   const blocks = extraBlocks(cleanExtras(extras));
   pushVarint(out, blocks.length);
   for (const [tag, body] of blocks) {
     pushVarint(out, tag);
     pushVarint(out, body.length);
-    out.push(...body);
+    for(const value of body)out.push(value);
   }
   out.push(checksum(out, out.length));
   return CODE_PREFIX + toBase64Url(Uint8Array.from(out));
@@ -177,6 +184,16 @@ function extraBlocks(e: TrackExtras | undefined): [number, number[]][] {
     pushVarint(body, e.paint.length);
     for (const v of e.paint) pushVarint(body, v);
     out.push([2, body]);
+  }
+  if (e?.drs?.length) {
+    const body: number[] = [];
+    pushVarint(body, e.drs.length);
+    for (const m of e.drs) body.push(...int16Bytes(m.x / q), ...int16Bytes(m.y / q), ...int16Bytes(m.x2 / q), ...int16Bytes(m.y2 / q));
+    out.push([3, body]);
+  }
+  if(e?.paintFrame){
+    const f=e.paintFrame,body=[...int16Bytes(f.x0/q),...int16Bytes(f.y0/q)];
+    pushVarint(body,f.cell);pushVarint(body,f.cols);pushVarint(body,f.rows);out.push([4,body]);
   }
   return out;
 }
@@ -229,9 +246,23 @@ function readExtras(blocks: { tag: number; bytes: Uint8Array }[]): TrackExtras |
         paint.push(v);
       }
       e.paint = paint;
+    } else if (tag === 3) {
+      const count = varint();
+      if (count < 0 || count > 16) return null;
+      const drs: DrsMark[] = [];
+      for (let k = 0; k < count; k++) {
+        const [x, y, x2, y2] = [int16(), int16(), int16(), int16()];
+        if (x === null || y === null || x2 === null || y2 === null) return null;
+        drs.push({ x: x * q, y: y * q, x2: x2 * q, y2: y2 * q });
+      }
+      e.drs = drs;
+    } else if(tag===4) {
+      const x=int16(),y=int16(),cell=varint(),cols=varint(),rows=varint();
+      if(x===null||y===null)return null;
+      const frame=cleanPaintFrame({x0:x*q,y0:y*q,cell,cols,rows});if(!frame)return null;e.paintFrame=frame;
     }
   }
-  return e.placed || e.paint ? e : {};
+  return e.placed || e.paint || e.drs ? e : {};
 }
 
 /** Pulls a code out of whatever was pasted: the bare code, or a link with #track=… */
@@ -277,12 +308,14 @@ function decodeBody(code: string): DecodeResult {
   if (rawOptions < 0) return { ok: false, error: 'format' };
   const options = version >= 2 ? optionsFrom(rawOptions) : { ...DEFAULT_OPTIONS };
   let banks = false;
+  let absoluteBanks = false;
   if (version >= 4) {
     const w = byte();
     const flags = byte();
     if (w < 0 || flags < 0) return { ok: false, error: 'format' };
     options.width = Math.max(TRACK.minWidth, Math.min(TRACK.maxWidth, w / 2));
     banks = (flags & 1) !== 0;
+    absoluteBanks = version >= 6 && (flags & 2) !== 0;
   }
   const count = varint();
   if (count < 3 || count > MAX_DOTS) return { ok: false, error: 'format' };
@@ -296,7 +329,7 @@ function decodeBody(code: string): DecodeResult {
   };
   const x0 = int16();
   const y0 = int16();
-  const h0 = version >= 2 ? byte() : 0;
+  const h0 = version >= 6 ? varint() : version >= 2 ? byte() : 0;
   if (x0 === null || y0 === null || h0 < 0) return { ok: false, error: 'format' };
   const hs = TRACK.heightStep;
   const dot = (x: number, y: number, hgt: number): Dot => (hgt ? { x: x * q, y: y * q, h: hgt * hs } : { x: x * q, y: y * q });
@@ -321,6 +354,10 @@ function decodeBody(code: string): DecodeResult {
       if (v > 0) d.b = v - 1;
     }
   }
+  if (absoluteBanks) for (const d of dots) {
+    const v = varint(); if (v < 0) return { ok: false, error: 'format' };
+    if (v > 0) { const bank = unzigzag(v - 1) / 2; if (Math.abs(bank) > 35) return { ok: false, error: 'format' }; d.bank = bank; }
+  }
   let extras: TrackExtras | undefined;
   if (version >= 5) {
     const count = varint();
@@ -335,7 +372,7 @@ function decodeBody(code: string): DecodeResult {
     }
     const e = readExtras(blocks);
     if (!e) return { ok: false, error: 'format' };
-    if (e.placed || e.paint) extras = e;
+    if (e.placed || e.paint || e.drs) extras = e;
   }
   if (i !== end) return { ok: false, error: 'format' };
   return extras ? { ok: true, name, dots, options, extras } : { ok: true, name, dots, options };

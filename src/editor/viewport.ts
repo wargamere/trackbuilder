@@ -1,6 +1,7 @@
 import { WORLD } from '../config/track.ts';
 import type { Vec2 } from '../core/math.ts';
 import { fitView, type View } from './render2d.ts';
+import type { PaperSize } from '../track/bounds.ts';
 
 export const ZOOM = { min: 1, max: 8, step: 1.4 } as const;
 
@@ -13,6 +14,8 @@ export class Viewport {
   private fit: View = { scale: 1, ox: 0, oy: 0 };
   private w = 1;
   private h = 1;
+  private paper:PaperSize=WORLD;
+  private margins=[0,0,0,0];
   zoom = 1;
   /** World point shown at the fit centre. */
   private cx = 0;
@@ -23,8 +26,15 @@ export class Viewport {
   setScreen(w: number, h: number, top: number, bottom: number, left = 0, right = 0): void {
     this.w = w;
     this.h = h;
-    this.fit = fitView(w, h, top, bottom, left, right);
+    this.margins=[top,bottom,left,right];
+    this.fit = fitView(w, h, top, bottom, left, right,this.paper);
     this.update();
+  }
+
+  setWorld(paper:PaperSize):void {
+    if(paper.width===this.paper.width&&paper.height===this.paper.height)return;
+    this.paper=paper;const [top,bottom,left,right]=this.margins;
+    this.setScreen(this.w,this.h,top,bottom,left,right);
   }
 
   reset(): void {
@@ -75,8 +85,8 @@ export class Viewport {
     // Keep the centre inside the world, with the edges no further in than half the view.
     const halfW = this.w / 2 / scale;
     const halfH = this.h / 2 / scale;
-    const limX = Math.max(0, WORLD.width / 2 - halfW * 0.5);
-    const limY = Math.max(0, WORLD.height / 2 - halfH * 0.5);
+    const limX = Math.max(0, this.paper.width / 2 - halfW * 0.5);
+    const limY = Math.max(0, this.paper.height / 2 - halfH * 0.5);
     if (this.zoom <= 1.0001) {
       this.cx = 0;
       this.cy = 0;

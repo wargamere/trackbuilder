@@ -45,7 +45,7 @@ export const TRACK = {
   /** Banked corners reach their full angle at this radius or tighter. */
   bankRadius: 30,
   /** Dot heights are limited to this range (m) and rounded to `heightStep`. */
-  maxHeight: 40,
+  maxHeight: 200,
   heightStep: 0.5,
   /** Steepest slope (rise / run); anything steeper is eased out when the track is built. */
   maxGrade: 0.45,

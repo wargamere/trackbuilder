@@ -14,6 +14,8 @@ import { laneU, onLane, outerAt, pitLane, pitWallAt, type PitLane } from '../src
 import { pitLayout } from '../src/track/pits.ts';
 import { leftOf, sampleAt } from '../src/track/spline.ts';
 import { buildTrack, type Track } from '../src/track/track.ts';
+import { bakedDef } from '../src/track/catalog.ts';
+import { WORLD_TRACKS } from '../src/track/data/world.ts';
 
 const DT = 1 / HANDLING.tickRate;
 const half = HANDLING.halfWidth;
@@ -177,7 +179,8 @@ test('an AI stop through the pit lane: in over the ramp, down to the limit by th
 });
 
 test('a full field all in on the same lap, on a track with 4 boxes: everyone stops once, queueing for a shared box, and finishes', () => {
-  const t = builtInTracks().find((b) => b.def.name === 'Las Vegas')!.track();
+  // Keep the compact four-box stress fixture; the full-size Vegas has 24 garages.
+  const t = buildTrack(bakedDef({ ...WORLD_TRACKS.find(b => b.id === 'world-us-2023')!, id: 'compact-pit-queue' }));
   const lane = pitLane(t)!;
   assert.equal(lane.boxes.length, 4);
   const laps = 4;

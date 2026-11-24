@@ -52,7 +52,7 @@ test('drafts retain unfinished points, heights, name and options independently o
 });
 
 test('corrupt or out-of-bounds drafts cannot break editor startup', () => {
-  for (const invalid of [null, {}, { dots: 'oops' }, { dots: [null], closed: true, name: 'x', options: {}, savedAt: 1 }, { dots: [{ x: 900, y: 0 }], closed: true, name: 'x', options: {}, savedAt: 1 }]) {
+  for (const invalid of [null, {}, { dots: 'oops' }, { dots: [null], closed: true, name: 'x', options: {}, savedAt: 1 }, { dots: [{ x: 10000, y: 0 }], closed: true, name: 'x', options: {}, savedAt: 1 }]) {
     saveJSON('editor.draft.v1', invalid);
     assert.equal(readDraft(), null);
   }
